@@ -1,16 +1,19 @@
 import 'track.dart';
 import 'album.dart';
 import 'artist.dart';
+import 'music_source.dart';
 
 class SearchResult {
   final List<Track> tracks;
   final List<Album> albums;
   final List<Artist> artists;
+  final MusicSource source;
 
   const SearchResult({
     this.tracks = const [],
     this.albums = const [],
     this.artists = const [],
+    this.source = MusicSource.tidal,
   });
 
   bool get isEmpty => tracks.isEmpty && albums.isEmpty && artists.isEmpty;
@@ -33,6 +36,7 @@ class SearchResult {
       artists: artistsData
           .map((a) => Artist.fromTidalJson(a as Map<String, dynamic>))
           .toList(),
+      source: MusicSource.tidal,
     );
   }
 
@@ -40,11 +44,13 @@ class SearchResult {
     List<Track>? tracks,
     List<Album>? albums,
     List<Artist>? artists,
+    MusicSource? source,
   }) {
     return SearchResult(
       tracks: tracks ?? this.tracks,
       albums: albums ?? this.albums,
       artists: artists ?? this.artists,
+      source: source ?? this.source,
     );
   }
 }

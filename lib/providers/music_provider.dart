@@ -139,7 +139,7 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
       final results = await Future.wait([
         _tidalService.getNewAlbums(limit: 10).catchError((_) => <Album>[]),
         _tidalService.getPopularPlaylists(limit: 10).catchError((_) => <Playlist>[]),
-        _tidalService.getFeaturedPlaylists(limit: 10).catchError((_) => <Playlist>[]),
+        _tidalService.getTrendingTracks(limit: 20).catchError((_) => <Track>[]),
         _recommendationService.getRecommendations(limit: 20).catchError((_) => <Track>[]),
       ]);
 
@@ -147,8 +147,8 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
         isLoading: false,
         newAlbums: results[0] as List<Album>,
         popularPlaylists: results[1] as List<Playlist>,
-        featuredPlaylists: results[2] as List<Playlist>,
-        recommendations: results[3] as List<Track>,
+        featuredPlaylists: <Playlist>[], // Not available in hifi-api
+        recommendations: [...(results[2] as List<Track>), ...(results[3] as List<Track>)],
       );
     } catch (e) {
       state = state.copyWith(isLoading: false, error: e.toString());
