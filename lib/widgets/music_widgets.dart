@@ -694,3 +694,141 @@ class ForYouSection extends StatelessWidget {
     );
   }
 }
+
+/// Track Card Widget - For horizontal scroll lists (Echo-style)
+class TrackCard extends StatelessWidget {
+  final Track track;
+  final double width;
+  final VoidCallback? onTap;
+
+  const TrackCard({
+    super.key,
+    required this.track,
+    required this.width,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: SizedBox(
+        width: width,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Cover Art with play button overlay
+            Stack(
+              children: [
+                Container(
+                  width: width,
+                  height: width,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(AppTheme.radiusM),
+                    color: AppTheme.surfaceColor,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.2),
+                        blurRadius: 8,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(AppTheme.radiusM),
+                    child: track.coverArtUrl != null
+                        ? CachedNetworkImage(
+                            imageUrl: track.coverArtUrl!,
+                            fit: BoxFit.cover,
+                            placeholder: (_, __) => _TrackPlaceholder(title: track.title),
+                            errorWidget: (_, __, ___) => _TrackPlaceholder(title: track.title),
+                          )
+                        : _TrackPlaceholder(title: track.title),
+                  ),
+                ),
+                // Play button overlay
+                Positioned.fill(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(AppTheme.radiusM),
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.transparent,
+                          Colors.black.withOpacity(0.3),
+                        ],
+                      ),
+                    ),
+                    child: Center(
+                      child: Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: AppTheme.primaryColor.withOpacity(0.9),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.play_arrow_rounded,
+                          color: Colors.white,
+                          size: 24,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppTheme.spacingS),
+            // Track Title
+            Text(
+              track.title,
+              style: AppTheme.bodyMedium.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 2),
+            // Artist & Duration
+            Text(
+              '${_formatDuration(track.duration)} • ${track.artist}',
+              style: AppTheme.bodySmall.copyWith(
+                color: AppTheme.textSecondary,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatDuration(Duration duration) {
+    final minutes = duration.inMinutes;
+    final seconds = duration.inSeconds % 60;
+    return '$minutes:${seconds.toString().padLeft(2, '0')}';
+  }
+}
+
+/// Track card placeholder
+class _TrackPlaceholder extends StatelessWidget {
+  final String title;
+
+  const _TrackPlaceholder({required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: AppTheme.surfaceColor,
+      child: Center(
+        child: Icon(
+          Icons.music_note_rounded,
+          color: AppTheme.primaryColor.withOpacity(0.5),
+          size: 40,
+        ),
+      ),
+    );
+  }
+}

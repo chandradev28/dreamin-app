@@ -84,49 +84,78 @@ final searchProvider = StateNotifierProvider<SearchNotifier, SearchState>((ref) 
   return SearchNotifier(tidalService);
 });
 
-/// Home Data State
+/// Home Data State with Echo-style sections
 class HomeDataState {
   final bool isLoading;
-  final List<Album> newAlbums;
+  final List<Track> recommendations;           // For You section
+  final List<Album> newAlbums;                 // New releases for you
+  final List<Artist> recentlyPlayedArtists;    // Continue streaming (circular avatars)
+  final List<Track> mixesTracks;               // Mixes inspired by...
+  final List<Artist> similarArtists;           // Since you like [Artist]
+  final String? similarToArtistName;           // The artist to compare
+  final List<Track> lovedTracks;               // Recently you've been loving
+  final List<Playlist> playlistsForYou;        // Playlists you'll love
+  final List<String> topGenres;                // Your top genres
   final List<Playlist> popularPlaylists;
   final List<Playlist> featuredPlaylists;
-  final List<Track> recommendations;
   final String? error;
 
   const HomeDataState({
     this.isLoading = false,
+    this.recommendations = const [],
     this.newAlbums = const [],
+    this.recentlyPlayedArtists = const [],
+    this.mixesTracks = const [],
+    this.similarArtists = const [],
+    this.similarToArtistName,
+    this.lovedTracks = const [],
+    this.playlistsForYou = const [],
+    this.topGenres = const [],
     this.popularPlaylists = const [],
     this.featuredPlaylists = const [],
-    this.recommendations = const [],
     this.error,
   });
 
   HomeDataState copyWith({
     bool? isLoading,
+    List<Track>? recommendations,
     List<Album>? newAlbums,
+    List<Artist>? recentlyPlayedArtists,
+    List<Track>? mixesTracks,
+    List<Artist>? similarArtists,
+    String? similarToArtistName,
+    List<Track>? lovedTracks,
+    List<Playlist>? playlistsForYou,
+    List<String>? topGenres,
     List<Playlist>? popularPlaylists,
     List<Playlist>? featuredPlaylists,
-    List<Track>? recommendations,
     String? error,
   }) {
     return HomeDataState(
       isLoading: isLoading ?? this.isLoading,
+      recommendations: recommendations ?? this.recommendations,
       newAlbums: newAlbums ?? this.newAlbums,
+      recentlyPlayedArtists: recentlyPlayedArtists ?? this.recentlyPlayedArtists,
+      mixesTracks: mixesTracks ?? this.mixesTracks,
+      similarArtists: similarArtists ?? this.similarArtists,
+      similarToArtistName: similarToArtistName ?? this.similarToArtistName,
+      lovedTracks: lovedTracks ?? this.lovedTracks,
+      playlistsForYou: playlistsForYou ?? this.playlistsForYou,
+      topGenres: topGenres ?? this.topGenres,
       popularPlaylists: popularPlaylists ?? this.popularPlaylists,
       featuredPlaylists: featuredPlaylists ?? this.featuredPlaylists,
-      recommendations: recommendations ?? this.recommendations,
       error: error,
     );
   }
 }
 
-/// Home Data Notifier
+/// Home Data Notifier with Echo-style content loading
 class HomeDataNotifier extends StateNotifier<HomeDataState> {
   final TidalService _tidalService;
   final RecommendationService _recommendationService;
+  final AppDatabase _database;
 
-  HomeDataNotifier(this._tidalService, this._recommendationService) 
+  HomeDataNotifier(this._tidalService, this._recommendationService, this._database) 
       : super(const HomeDataState()) {
     loadData();
   }
@@ -135,20 +164,94 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
     state = state.copyWith(isLoading: true, error: null);
 
     try {
-      // Load data in parallel
-      final results = await Future.wait([
+      // Load base data in parallel
+      final baseFutures = await Future.wait([
+        _tidalService.getTrendingTracks(limit: 15).catchError((_) => <Track>[]),
+        _recommendationService.getRecommendations(limit: 15).catchError((_) => <Track>[]),
         _tidalService.getNewAlbums(limit: 10).catchError((_) => <Album>[]),
         _tidalService.getPopularPlaylists(limit: 10).catchError((_) => <Playlist>[]),
-        _tidalService.getTrendingTracks(limit: 20).catchError((_) => <Track>[]),
-        _recommendationService.getRecommendations(limit: 20).catchError((_) => <Track>[]),
       ]);
+
+      final trendingTracks = baseFutures[0] as List<Track>;
+      final recommendations = baseFutures[1] as List<Track>;
+      final newAlbums = baseFutures[2] as List<Album>;
+      final playlists = baseFutures[3] as List<Playlist>;
+
+      // Get recently played artists from history
+      final recentHistory = await _database.getRecentlyPlayed(limit: 20);
+      final artistsMap = <String, Artist>{};
+      for (final history in recentHistory) {
+        try {
+          final json = jsonDecode(history.trackJson) as Map<String, dynamic>;
+          final track = Track.fromTidalJson(json);
+          if (track.artistId.isNotEmpty && !artistsMap.containsKey(track.artistId)) {
+            artistsMap[track.artistId] = Artist(
+              id: track.artistId,
+              name: track.artist,
+              imageUrl: track.coverArtUrl,
+              source: track.source,
+            );
+          }
+        } catch (_) {}
+      }
+      final recentArtists = artistsMap.values.take(6).toList();
+
+      // Get top genres from history
+      final topGenres = await _database.getTopGenres(limit: 6);
+
+      // Get "mixes inspired by" - fetch tracks based on top artist if available
+      List<Track> mixesTracks = [];
+      String? similarArtistName;
+      List<Artist> similarArtists = [];
+      
+      if (recentArtists.isNotEmpty) {
+        final topArtist = recentArtists.first;
+        similarArtistName = topArtist.name;
+        
+        // Search for similar content
+        final artistSearchResults = await _tidalService
+            .searchArtists(topArtist.name, limit: 5)
+            .catchError((_) => <Artist>[]);
+        
+        // Filter out the same artist
+        similarArtists = artistSearchResults
+            .where((a) => a.id != topArtist.id)
+            .take(4)
+            .toList();
+
+        // Get mixes from similar genre
+        if (topGenres.isNotEmpty) {
+          mixesTracks = await _tidalService
+              .searchTracks(topGenres.first, limit: 10)
+              .catchError((_) => <Track>[]);
+        }
+      } else if (topGenres.isNotEmpty) {
+        // Fallback to genre-based mixes
+        mixesTracks = await _tidalService
+            .searchTracks(topGenres.first, limit: 10)
+            .catchError((_) => <Track>[]);
+      }
+
+      // Get loved tracks (favorites)
+      final favorites = await _database.getAllFavorites();
+      final lovedTracks = favorites.take(10).map((f) {
+        final json = jsonDecode(f.trackJson) as Map<String, dynamic>;
+        return Track.fromTidalJson(json);
+      }).toList();
 
       state = state.copyWith(
         isLoading: false,
-        newAlbums: results[0] as List<Album>,
-        popularPlaylists: results[1] as List<Playlist>,
-        featuredPlaylists: <Playlist>[], // Not available in hifi-api
-        recommendations: [...(results[2] as List<Track>), ...(results[3] as List<Track>)],
+        recommendations: [...trendingTracks, ...recommendations].take(20).toList(),
+        newAlbums: newAlbums,
+        recentlyPlayedArtists: recentArtists,
+        mixesTracks: mixesTracks,
+        similarArtists: similarArtists,
+        similarToArtistName: similarArtistName,
+        lovedTracks: lovedTracks,
+        playlistsForYou: playlists,
+        topGenres: topGenres,
+        popularPlaylists: playlists,
+        featuredPlaylists: <Playlist>[],
       );
     } catch (e) {
       state = state.copyWith(isLoading: false, error: e.toString());
@@ -165,7 +268,8 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
 final homeDataProvider = StateNotifierProvider<HomeDataNotifier, HomeDataState>((ref) {
   final tidalService = ref.watch(tidalServiceProvider);
   final recommendationService = ref.watch(recommendationServiceProvider);
-  return HomeDataNotifier(tidalService, recommendationService);
+  final database = ref.watch(databaseProvider);
+  return HomeDataNotifier(tidalService, recommendationService, database);
 });
 
 /// Album Detail Provider

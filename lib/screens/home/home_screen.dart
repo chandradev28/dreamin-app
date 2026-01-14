@@ -4,8 +4,9 @@ import '../../core/theme/app_theme.dart';
 import '../../core/utils/responsive.dart';
 import '../../providers/providers.dart';
 import '../../widgets/widgets.dart';
+import '../../models/models.dart';
 
-/// Home Screen - Responsive with Recommendations
+/// Home Screen - Echo-style with multiple sections
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
@@ -64,7 +65,7 @@ class HomeScreen extends ConsumerWidget {
                 ),
               )
             else ...[
-              // For You - Recommendations
+              // 1. FOR YOU - Recommendations (Main featured section)
               if (homeData.recommendations.isNotEmpty)
                 SliverToBoxAdapter(
                   child: ForYouSection(
@@ -78,11 +79,53 @@ class HomeScreen extends ConsumerWidget {
                   ),
                 ),
 
-              // Suggested New Albums
+              // 2. CONTINUE STREAMING - Recently Played Artists (circular avatars)
+              if (homeData.recentlyPlayedArtists.isNotEmpty) ...[
+                const SliverToBoxAdapter(
+                  child: SectionHeader(
+                    title: 'Continue streaming',
+                  ),
+                ),
+                SliverToBoxAdapter(
+                  child: _ArtistCircleList(
+                    artists: homeData.recentlyPlayedArtists,
+                    onArtistTap: (artist) {
+                      // Navigate to artist detail
+                    },
+                  ),
+                ),
+              ],
+
+              // 3. MIXES INSPIRED BY - Tracks based on listening history
+              if (homeData.mixesTracks.isNotEmpty) ...[
+                const SliverToBoxAdapter(
+                  child: SectionHeader(
+                    title: 'Mixes inspired by...',
+                  ),
+                ),
+                SliverToBoxAdapter(
+                  child: HorizontalScrollList(
+                    items: homeData.mixesTracks,
+                    itemWidth: responsive.albumCardWidth,
+                    itemBuilder: (track, width) => TrackCard(
+                      track: track,
+                      width: width,
+                      onTap: () {
+                        ref.read(playerProvider.notifier).playQueue(
+                          homeData.mixesTracks,
+                          startIndex: homeData.mixesTracks.indexOf(track),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ],
+
+              // 4. NEW RELEASES FOR YOU
               if (homeData.newAlbums.isNotEmpty) ...[
                 const SliverToBoxAdapter(
                   child: SectionHeader(
-                    title: 'Suggested New Albums',
+                    title: 'New releases for you',
                   ),
                 ),
                 SliverToBoxAdapter(
@@ -100,16 +143,59 @@ class HomeScreen extends ConsumerWidget {
                 ),
               ],
 
-              // Popular Playlists
-              if (homeData.popularPlaylists.isNotEmpty) ...[
+              // 5. SINCE YOU LIKE [ARTIST] - Similar artists
+              if (homeData.similarArtists.isNotEmpty && 
+                  homeData.similarToArtistName != null) ...[
+                SliverToBoxAdapter(
+                  child: SectionHeader(
+                    title: 'Since you like ${homeData.similarToArtistName}',
+                  ),
+                ),
+                SliverToBoxAdapter(
+                  child: _ArtistCircleList(
+                    artists: homeData.similarArtists,
+                    onArtistTap: (artist) {
+                      // Navigate to artist detail
+                    },
+                  ),
+                ),
+              ],
+
+              // 6. RECENTLY YOU'VE BEEN LOVING - Favorites
+              if (homeData.lovedTracks.isNotEmpty) ...[
                 const SliverToBoxAdapter(
                   child: SectionHeader(
-                    title: 'Popular Playlists',
+                    title: "Recently you've been loving...",
                   ),
                 ),
                 SliverToBoxAdapter(
                   child: HorizontalScrollList(
-                    items: homeData.popularPlaylists,
+                    items: homeData.lovedTracks,
+                    itemWidth: responsive.albumCardWidth,
+                    itemBuilder: (track, width) => TrackCard(
+                      track: track,
+                      width: width,
+                      onTap: () {
+                        ref.read(playerProvider.notifier).playQueue(
+                          homeData.lovedTracks,
+                          startIndex: homeData.lovedTracks.indexOf(track),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ],
+
+              // 7. PLAYLISTS YOU'LL LOVE
+              if (homeData.playlistsForYou.isNotEmpty) ...[
+                const SliverToBoxAdapter(
+                  child: SectionHeader(
+                    title: "Playlists you'll love",
+                  ),
+                ),
+                SliverToBoxAdapter(
+                  child: HorizontalScrollList(
+                    items: homeData.playlistsForYou,
                     itemWidth: responsive.playlistCardWidth,
                     itemBuilder: (playlist, width) => PlaylistCard(
                       playlist: playlist,
@@ -122,24 +208,19 @@ class HomeScreen extends ConsumerWidget {
                 ),
               ],
 
-              // Featured Playlists
-              if (homeData.featuredPlaylists.isNotEmpty) ...[
+              // 8. YOUR TOP GENRES
+              if (homeData.topGenres.isNotEmpty) ...[
                 const SliverToBoxAdapter(
                   child: SectionHeader(
-                    title: 'Featured Playlists',
+                    title: 'Your top genres',
                   ),
                 ),
                 SliverToBoxAdapter(
-                  child: HorizontalScrollList(
-                    items: homeData.featuredPlaylists,
-                    itemWidth: responsive.playlistCardWidth,
-                    itemBuilder: (playlist, width) => PlaylistCard(
-                      playlist: playlist,
-                      width: width,
-                      onTap: () {
-                        // Navigate to playlist detail
-                      },
-                    ),
+                  child: _GenreChipsGrid(
+                    genres: homeData.topGenres,
+                    onGenreTap: (genre) {
+                      // Navigate to genre search
+                    },
                   ),
                 ),
               ],
@@ -151,6 +232,147 @@ class HomeScreen extends ConsumerWidget {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Circular artist avatars (Echo-style)
+class _ArtistCircleList extends StatelessWidget {
+  final List<Artist> artists;
+  final Function(Artist) onArtistTap;
+
+  const _ArtistCircleList({
+    required this.artists,
+    required this.onArtistTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 130,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacingM),
+        itemCount: artists.length,
+        itemBuilder: (context, index) {
+          final artist = artists[index];
+          return Padding(
+            padding: const EdgeInsets.only(right: AppTheme.spacingM),
+            child: GestureDetector(
+              onTap: () => onArtistTap(artist),
+              child: SizedBox(
+                width: 90,
+                child: Column(
+                  children: [
+                    // Circular avatar
+                    Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: AppTheme.surfaceColor,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.3),
+                            blurRadius: 8,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: ClipOval(
+                        child: artist.imageUrl != null
+                            ? Image.network(
+                                artist.imageUrl!,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => _ArtistPlaceholder(name: artist.name),
+                              )
+                            : _ArtistPlaceholder(name: artist.name),
+                      ),
+                    ),
+                    const SizedBox(height: AppTheme.spacingS),
+                    // Artist name
+                    Text(
+                      artist.name,
+                      style: AppTheme.bodySmall,
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// Artist placeholder avatar
+class _ArtistPlaceholder extends StatelessWidget {
+  final String name;
+
+  const _ArtistPlaceholder({required this.name});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: AppTheme.primaryColor.withOpacity(0.2),
+      child: Center(
+        child: Text(
+          name.isNotEmpty ? name[0].toUpperCase() : '?',
+          style: AppTheme.headlineMedium.copyWith(
+            color: AppTheme.primaryColor,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Genre chips grid (Echo-style)
+class _GenreChipsGrid extends StatelessWidget {
+  final List<String> genres;
+  final Function(String) onGenreTap;
+
+  const _GenreChipsGrid({
+    required this.genres,
+    required this.onGenreTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacingM),
+      child: Wrap(
+        spacing: AppTheme.spacingS,
+        runSpacing: AppTheme.spacingS,
+        children: genres.map((genre) {
+          return GestureDetector(
+            onTap: () => onGenreTap(genre),
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.spacingM,
+                vertical: AppTheme.spacingS,
+              ),
+              decoration: BoxDecoration(
+                color: AppTheme.surfaceColor,
+                borderRadius: BorderRadius.circular(AppTheme.radiusM),
+                border: Border.all(
+                  color: AppTheme.primaryColor.withOpacity(0.3),
+                ),
+              ),
+              child: Text(
+                genre,
+                style: AppTheme.bodyMedium.copyWith(
+                  color: AppTheme.textPrimary,
+                ),
+              ),
+            ),
+          );
+        }).toList(),
       ),
     );
   }

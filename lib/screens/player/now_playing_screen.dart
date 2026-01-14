@@ -16,10 +16,56 @@ class NowPlayingScreen extends ConsumerWidget {
     final responsive = Responsive(context);
 
     if (track == null) {
-      return const Scaffold(
+      return Scaffold(
         backgroundColor: AppTheme.backgroundColor,
-        body: Center(
-          child: Text('No track playing'),
+        body: SafeArea(
+          child: Column(
+            children: [
+              // Header with back button
+              Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: responsive.horizontalPadding,
+                  vertical: responsive.value(mobile: 12.0, tablet: 16.0),
+                ),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: Icon(
+                        Icons.keyboard_arrow_down,
+                        size: responsive.value(mobile: 32.0, tablet: 40.0),
+                      ),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                  ],
+                ),
+              ),
+              // Empty state
+              Expanded(
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.music_off_rounded,
+                        size: 80,
+                        color: AppTheme.secondaryColor.withOpacity(0.5),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No track playing',
+                        style: AppTheme.titleLarge,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Select a track to start playing',
+                        style: AppTheme.bodyMedium,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }
