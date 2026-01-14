@@ -11,14 +11,14 @@ enum TidalQuality {
   /// HiFi quality (16-bit/44.1kHz FLAC lossless)
   hifi('LOSSLESS'),
   /// Master quality (24-bit/up to 192kHz MQA)
-  master('HI_RES');
+  master('HI_RES_LOSSLESS');
 
   final String apiValue;
   const TidalQuality(this.apiValue);
 }
 
 /// TIDAL API Service - ACTIVE
-/// Always streams HIGHEST QUALITY available (HiFi/Master)
+/// Uses hifi-api format with working endpoints
 class TidalService {
   final Dio _dio;
   int _currentEndpointIndex = 0;
@@ -73,89 +73,84 @@ class TidalService {
 
   // ==================== SEARCH ====================
 
-  /// Search for tracks, albums, and artists
-  Future<SearchResult> search(String query, {int limit = 20}) async {
+  /// Search for tracks
+  Future<List<Track>> searchTracks(String query, {int limit = 25}) async {
     try {
       final response = await _executeWithFallback((baseUrl) {
         return _dio.get(
           '$baseUrl${TidalEndpoints.searchPath}',
-          queryParameters: {
-            'q': query,
-            'limit': limit,
-            'type': 'tracks,albums,artists',
-          },
-        );
-      });
-
-      return SearchResult.fromTidalJson(response.data as Map<String, dynamic>);
-    } catch (e) {
-      throw TidalApiException('Search failed: $e');
-    }
-  }
-
-  /// Search only tracks
-  Future<List<Track>> searchTracks(String query, {int limit = 20}) async {
-    try {
-      final response = await _executeWithFallback((baseUrl) {
-        return _dio.get(
-          '$baseUrl${TidalEndpoints.searchPath}',
-          queryParameters: {
-            'q': query,
-            'limit': limit,
-            'type': 'tracks',
-          },
+          queryParameters: {'s': query},  // hifi-api uses 's' for track search
         );
       });
 
       final data = response.data as Map<String, dynamic>;
-      final tracks = data['tracks'] as List<dynamic>? ?? [];
-      return tracks.map((t) => Track.fromTidalJson(t as Map<String, dynamic>)).toList();
+      final items = data['data']?['items'] as List<dynamic>? ?? 
+                    data['items'] as List<dynamic>? ?? [];
+      
+      return items.take(limit).map((t) => Track.fromTidalJson(t as Map<String, dynamic>)).toList();
     } catch (e) {
       throw TidalApiException('Track search failed: $e');
     }
   }
 
-  /// Search only albums
+  /// Search for albums
   Future<List<Album>> searchAlbums(String query, {int limit = 20}) async {
     try {
       final response = await _executeWithFallback((baseUrl) {
         return _dio.get(
           '$baseUrl${TidalEndpoints.searchPath}',
-          queryParameters: {
-            'q': query,
-            'limit': limit,
-            'type': 'albums',
-          },
+          queryParameters: {'al': query},  // hifi-api uses 'al' for album search
         );
       });
 
       final data = response.data as Map<String, dynamic>;
-      final albums = data['albums'] as List<dynamic>? ?? [];
-      return albums.map((a) => Album.fromTidalJson(a as Map<String, dynamic>)).toList();
+      // Albums come from top-hits search under 'albums' key
+      final items = data['data']?['albums'] as List<dynamic>? ??
+                    data['albums']?['items'] as List<dynamic>? ?? [];
+      
+      return items.take(limit).map((a) => Album.fromTidalJson(a as Map<String, dynamic>)).toList();
     } catch (e) {
       throw TidalApiException('Album search failed: $e');
     }
   }
 
-  /// Search only artists
+  /// Search for artists
   Future<List<Artist>> searchArtists(String query, {int limit = 20}) async {
     try {
       final response = await _executeWithFallback((baseUrl) {
         return _dio.get(
           '$baseUrl${TidalEndpoints.searchPath}',
-          queryParameters: {
-            'q': query,
-            'limit': limit,
-            'type': 'artists',
-          },
+          queryParameters: {'a': query},  // hifi-api uses 'a' for artist search
         );
       });
 
       final data = response.data as Map<String, dynamic>;
-      final artists = data['artists'] as List<dynamic>? ?? [];
-      return artists.map((a) => Artist.fromTidalJson(a as Map<String, dynamic>)).toList();
+      // Artists come from top-hits search
+      final items = data['data']?['artists'] as List<dynamic>? ??
+                    data['artists']?['items'] as List<dynamic>? ?? [];
+      
+      return items.take(limit).map((a) => Artist.fromTidalJson(a as Map<String, dynamic>)).toList();
     } catch (e) {
       throw TidalApiException('Artist search failed: $e');
+    }
+  }
+
+  /// Combined search (returns all types)
+  Future<SearchResult> search(String query, {int limit = 20}) async {
+    try {
+      // Search tracks first (main search)
+      final tracks = await searchTracks(query, limit: limit);
+      
+      // For albums and artists, we could do parallel searches
+      // but for now just return tracks
+      return SearchResult(
+        tracks: tracks,
+        albums: [],
+        artists: [],
+        source: MusicSource.tidal,
+      );
+    } catch (e) {
+      throw TidalApiException('Search failed: $e');
     }
   }
 
@@ -165,13 +160,15 @@ class TidalService {
   Future<AlbumDetail> getAlbum(String albumId) async {
     try {
       final response = await _executeWithFallback((baseUrl) {
-        return _dio.get('$baseUrl${TidalEndpoints.albumPath}/$albumId');
+        return _dio.get(
+          '$baseUrl${TidalEndpoints.albumPath}',
+          queryParameters: {'id': int.parse(albumId)},
+        );
       });
 
       final data = response.data as Map<String, dynamic>;
-      final albumData = data['album'] as Map<String, dynamic>? ?? data;
-      final tracksData = data['tracks'] as List<dynamic>? ?? 
-          albumData['tracks']?['items'] as List<dynamic>? ?? [];
+      final albumData = data['data'] as Map<String, dynamic>? ?? data;
+      final tracksData = albumData['items'] as List<dynamic>? ?? [];
 
       return AlbumDetail.fromTidalJson(albumData, tracksData);
     } catch (e) {
@@ -179,37 +176,29 @@ class TidalService {
     }
   }
 
-  /// Get album tracks only
-  Future<List<Track>> getAlbumTracks(String albumId) async {
-    try {
-      final response = await _executeWithFallback((baseUrl) {
-        return _dio.get('$baseUrl${TidalEndpoints.albumPath}/$albumId/tracks');
-      });
-
-      final data = response.data;
-      if (data is List) {
-        return data.map((t) => Track.fromTidalJson(t as Map<String, dynamic>)).toList();
-      }
-      final items = (data as Map<String, dynamic>)['items'] as List<dynamic>? ?? [];
-      return items.map((t) => Track.fromTidalJson(t as Map<String, dynamic>)).toList();
-    } catch (e) {
-      throw TidalApiException('Failed to get album tracks: $e');
-    }
-  }
-
   // ==================== ARTIST ====================
 
-  /// Get artist details with top albums
+  /// Get artist details with albums and tracks
   Future<ArtistDetail> getArtist(String artistId) async {
     try {
       final response = await _executeWithFallback((baseUrl) {
-        return _dio.get('$baseUrl${TidalEndpoints.artistPath}/$artistId');
+        return _dio.get(
+          '$baseUrl${TidalEndpoints.artistPath}',
+          queryParameters: {'f': int.parse(artistId)},  // 'f' gives full data with albums/tracks
+        );
       });
 
       final data = response.data as Map<String, dynamic>;
-      final artistData = data['artist'] as Map<String, dynamic>? ?? data;
-      final albumsData = data['albums'] as List<dynamic>? ?? 
-          artistData['albums']?['items'] as List<dynamic>? ?? [];
+      final albumsData = data['albums']?['items'] as List<dynamic>? ?? [];
+      final tracksData = data['tracks'] as List<dynamic>? ?? [];
+
+      // Construct artist from first track or album
+      final artistData = <String, dynamic>{
+        'id': artistId,
+        'name': tracksData.isNotEmpty 
+            ? (tracksData.first as Map<String, dynamic>)['artist']?['name'] ?? 'Unknown'
+            : 'Unknown',
+      };
 
       return ArtistDetail.fromTidalJson(artistData, albumsData);
     } catch (e) {
@@ -217,66 +206,21 @@ class TidalService {
     }
   }
 
-  /// Get artist's top tracks
-  Future<List<Track>> getArtistTopTracks(String artistId, {int limit = 10}) async {
+  /// Get artist info only
+  Future<Artist> getArtistInfo(String artistId) async {
     try {
       final response = await _executeWithFallback((baseUrl) {
         return _dio.get(
-          '$baseUrl${TidalEndpoints.artistPath}/$artistId/toptracks',
-          queryParameters: {'limit': limit},
+          '$baseUrl${TidalEndpoints.artistPath}',
+          queryParameters: {'id': int.parse(artistId)},  // 'id' gives basic artist info
         );
       });
 
-      final data = response.data;
-      if (data is List) {
-        return data.map((t) => Track.fromTidalJson(t as Map<String, dynamic>)).toList();
-      }
-      final items = (data as Map<String, dynamic>)['items'] as List<dynamic>? ?? [];
-      return items.map((t) => Track.fromTidalJson(t as Map<String, dynamic>)).toList();
+      final data = response.data as Map<String, dynamic>;
+      final artistData = data['artist'] as Map<String, dynamic>? ?? data;
+      return Artist.fromTidalJson(artistData);
     } catch (e) {
-      throw TidalApiException('Failed to get artist top tracks: $e');
-    }
-  }
-
-  /// Get artist's albums
-  Future<List<Album>> getArtistAlbums(String artistId, {int limit = 20}) async {
-    try {
-      final response = await _executeWithFallback((baseUrl) {
-        return _dio.get(
-          '$baseUrl${TidalEndpoints.artistPath}/$artistId/albums',
-          queryParameters: {'limit': limit},
-        );
-      });
-
-      final data = response.data;
-      if (data is List) {
-        return data.map((a) => Album.fromTidalJson(a as Map<String, dynamic>)).toList();
-      }
-      final items = (data as Map<String, dynamic>)['items'] as List<dynamic>? ?? [];
-      return items.map((a) => Album.fromTidalJson(a as Map<String, dynamic>)).toList();
-    } catch (e) {
-      throw TidalApiException('Failed to get artist albums: $e');
-    }
-  }
-
-  /// Get similar artists
-  Future<List<Artist>> getSimilarArtists(String artistId, {int limit = 10}) async {
-    try {
-      final response = await _executeWithFallback((baseUrl) {
-        return _dio.get(
-          '$baseUrl${TidalEndpoints.artistPath}/$artistId/similar',
-          queryParameters: {'limit': limit},
-        );
-      });
-
-      final data = response.data;
-      if (data is List) {
-        return data.map((a) => Artist.fromTidalJson(a as Map<String, dynamic>)).toList();
-      }
-      final items = (data as Map<String, dynamic>)['items'] as List<dynamic>? ?? [];
-      return items.map((a) => Artist.fromTidalJson(a as Map<String, dynamic>)).toList();
-    } catch (e) {
-      throw TidalApiException('Failed to get similar artists: $e');
+      throw TidalApiException('Failed to get artist info: $e');
     }
   }
 
@@ -286,13 +230,15 @@ class TidalService {
   Future<PlaylistDetail> getPlaylist(String playlistId) async {
     try {
       final response = await _executeWithFallback((baseUrl) {
-        return _dio.get('$baseUrl${TidalEndpoints.playlistPath}/$playlistId');
+        return _dio.get(
+          '$baseUrl${TidalEndpoints.playlistPath}',
+          queryParameters: {'id': playlistId},
+        );
       });
 
       final data = response.data as Map<String, dynamic>;
       final playlistData = data['playlist'] as Map<String, dynamic>? ?? data;
-      final tracksData = data['tracks'] as List<dynamic>? ?? 
-          playlistData['tracks']?['items'] as List<dynamic>? ?? [];
+      final tracksData = data['items'] as List<dynamic>? ?? [];
 
       return PlaylistDetail.fromTidalJson(playlistData, tracksData);
     } catch (e) {
@@ -300,33 +246,36 @@ class TidalService {
     }
   }
 
-  // ==================== TRACK ====================
+  // ==================== TRACK & STREAMING ====================
 
-  /// Get track details
+  /// Get track info
   Future<Track> getTrack(String trackId) async {
     try {
       final response = await _executeWithFallback((baseUrl) {
-        return _dio.get('$baseUrl${TidalEndpoints.trackPath}/$trackId');
+        return _dio.get(
+          '$baseUrl${TidalEndpoints.infoPath}',
+          queryParameters: {'id': int.parse(trackId)},
+        );
       });
 
-      return Track.fromTidalJson(response.data as Map<String, dynamic>);
+      final data = response.data as Map<String, dynamic>;
+      final trackData = data['data'] as Map<String, dynamic>? ?? data;
+      return Track.fromTidalJson(trackData);
     } catch (e) {
       throw TidalApiException('Failed to get track: $e');
     }
   }
 
-  // ==================== STREAMING (HIGHEST QUALITY) ====================
-
   /// Get stream URL for a track - ALWAYS HIGHEST QUALITY
-  /// Tries Master (24-bit) first, falls back to HiFi (16-bit FLAC)
   Future<StreamInfo> getStreamInfo(String trackId, {TidalQuality? quality}) async {
     final requestedQuality = quality ?? preferredQuality;
     
     try {
       final response = await _executeWithFallback((baseUrl) {
         return _dio.get(
-          '$baseUrl${TidalEndpoints.streamPath}/$trackId',
+          '$baseUrl${TidalEndpoints.trackPath}',
           queryParameters: {
+            'id': int.parse(trackId),
             'quality': requestedQuality.apiValue,
           },
         );
@@ -353,138 +302,94 @@ class TidalService {
   Future<Lyrics?> getLyrics(String trackId) async {
     try {
       final response = await _executeWithFallback((baseUrl) {
-        return _dio.get('$baseUrl${TidalEndpoints.lyricsPath}/$trackId');
+        return _dio.get(
+          '$baseUrl${TidalEndpoints.lyricsPath}',
+          queryParameters: {'id': int.parse(trackId)},
+        );
       });
 
       final data = response.data as Map<String, dynamic>;
-      return Lyrics.fromJson(data);
+      final lyricsData = data['lyrics'] as Map<String, dynamic>? ?? data;
+      return Lyrics.fromJson(lyricsData);
     } catch (e) {
       // Lyrics may not be available for all tracks
       return null;
     }
   }
 
-  // ==================== DISCOVERY ====================
+  // ==================== DISCOVERY (Home Page) ====================
 
-  /// Get new albums (for home page)
-  Future<List<Album>> getNewAlbums({int limit = 20}) async {
-    try {
-      final response = await _executeWithFallback((baseUrl) {
-        return _dio.get(
-          '$baseUrl${TidalEndpoints.newAlbumsPath}',
-          queryParameters: {'limit': limit},
-        );
-      });
-
-      final data = response.data;
-      if (data is List) {
-        return data.map((a) => Album.fromTidalJson(a as Map<String, dynamic>)).toList();
-      }
-      final items = (data as Map<String, dynamic>)['items'] as List<dynamic>? ?? [];
-      return items.map((a) => Album.fromTidalJson(a as Map<String, dynamic>)).toList();
-    } catch (e) {
-      throw TidalApiException('Failed to get new albums: $e');
-    }
-  }
-
-  /// Get popular playlists (for home page)
-  Future<List<Playlist>> getPopularPlaylists({int limit = 20}) async {
-    try {
-      final response = await _executeWithFallback((baseUrl) {
-        return _dio.get(
-          '$baseUrl${TidalEndpoints.popularPlaylistsPath}',
-          queryParameters: {'limit': limit},
-        );
-      });
-
-      final data = response.data;
-      if (data is List) {
-        return data.map((p) => Playlist.fromTidalJson(p as Map<String, dynamic>)).toList();
-      }
-      final items = (data as Map<String, dynamic>)['items'] as List<dynamic>? ?? [];
-      return items.map((p) => Playlist.fromTidalJson(p as Map<String, dynamic>)).toList();
-    } catch (e) {
-      throw TidalApiException('Failed to get popular playlists: $e');
-    }
-  }
-
-  /// Get featured playlists (for home page)
-  Future<List<Playlist>> getFeaturedPlaylists({int limit = 20}) async {
-    try {
-      final response = await _executeWithFallback((baseUrl) {
-        return _dio.get(
-          '$baseUrl${TidalEndpoints.featuredPlaylistsPath}',
-          queryParameters: {'limit': limit},
-        );
-      });
-
-      final data = response.data;
-      if (data is List) {
-        return data.map((p) => Playlist.fromTidalJson(p as Map<String, dynamic>)).toList();
-      }
-      final items = (data as Map<String, dynamic>)['items'] as List<dynamic>? ?? [];
-      return items.map((p) => Playlist.fromTidalJson(p as Map<String, dynamic>)).toList();
-    } catch (e) {
-      throw TidalApiException('Failed to get featured playlists: $e');
-    }
-  }
-
-  /// Get trending tracks
+  /// Get trending/popular tracks (for home page)
+  /// Uses search with popular keywords as fallback
   Future<List<Track>> getTrendingTracks({int limit = 20}) async {
     try {
-      final response = await _executeWithFallback((baseUrl) {
-        return _dio.get(
-          '$baseUrl${TidalEndpoints.trendingPath}',
-          queryParameters: {'limit': limit},
-        );
-      });
-
-      final data = response.data;
-      if (data is List) {
-        return data.map((t) => Track.fromTidalJson(t as Map<String, dynamic>)).toList();
-      }
-      final items = (data as Map<String, dynamic>)['items'] as List<dynamic>? ?? [];
-      return items.map((t) => Track.fromTidalJson(t as Map<String, dynamic>)).toList();
+      // Search for popular music terms
+      return await searchTracks('top hits 2024', limit: limit);
     } catch (e) {
-      throw TidalApiException('Failed to get trending tracks: $e');
-    }
-  }
-
-  /// Get genres
-  Future<List<String>> getGenres() async {
-    try {
-      final response = await _executeWithFallback((baseUrl) {
-        return _dio.get('$baseUrl${TidalEndpoints.genresPath}');
-      });
-
-      final data = response.data;
-      if (data is List) {
-        return data.map((g) => g.toString()).toList();
-      }
+      // Return empty list on failure - home page will show other content
       return [];
-    } catch (e) {
-      throw TidalApiException('Failed to get genres: $e');
     }
   }
 
-  /// Get moods/playlists by mood
-  Future<List<Playlist>> getMoodPlaylists(String mood, {int limit = 20}) async {
+  /// Get new albums (search for recent releases)
+  Future<List<Album>> getNewAlbums({int limit = 20}) async {
+    try {
+      return await searchAlbums('new releases 2024', limit: limit);
+    } catch (e) {
+      return [];
+    }
+  }
+
+  /// Get popular playlists (not directly available in hifi-api)
+  Future<List<Playlist>> getPopularPlaylists({int limit = 20}) async {
+    // hifi-api doesn't have a playlists discovery endpoint
+    // Return empty - user can search for playlists
+    return [];
+  }
+
+  /// Get featured content for home page
+  Future<Map<String, dynamic>> getHomeContent() async {
+    try {
+      // Fetch multiple content types in parallel
+      final results = await Future.wait([
+        searchTracks('popular', limit: 10),
+        searchTracks('hip hop', limit: 10),
+        searchTracks('pop hits', limit: 10),
+        searchTracks('r&b', limit: 10),
+      ]);
+
+      return {
+        'trending': results[0],
+        'hipHop': results[1],
+        'pop': results[2],
+        'rnb': results[3],
+      };
+    } catch (e) {
+      return {};
+    }
+  }
+
+  // ==================== COVER ART ====================
+
+  /// Get album cover URL from track ID
+  Future<String?> getCoverUrl(String trackId) async {
     try {
       final response = await _executeWithFallback((baseUrl) {
         return _dio.get(
-          '$baseUrl${TidalEndpoints.moodsPath}/$mood',
-          queryParameters: {'limit': limit},
+          '$baseUrl${TidalEndpoints.coverPath}',
+          queryParameters: {'id': int.parse(trackId)},
         );
       });
 
-      final data = response.data;
-      if (data is List) {
-        return data.map((p) => Playlist.fromTidalJson(p as Map<String, dynamic>)).toList();
+      final data = response.data as Map<String, dynamic>;
+      final covers = data['covers'] as List<dynamic>?;
+      if (covers != null && covers.isNotEmpty) {
+        final cover = covers.first as Map<String, dynamic>;
+        return cover['1280'] as String? ?? cover['640'] as String?;
       }
-      final items = (data as Map<String, dynamic>)['items'] as List<dynamic>? ?? [];
-      return items.map((p) => Playlist.fromTidalJson(p as Map<String, dynamic>)).toList();
+      return null;
     } catch (e) {
-      throw TidalApiException('Failed to get mood playlists: $e');
+      return null;
     }
   }
 
@@ -494,7 +399,7 @@ class TidalService {
   Future<bool> checkHealth() async {
     try {
       final response = await _dio.get(
-        '$_currentEndpoint/api/health',
+        _currentEndpoint,
         options: Options(
           sendTimeout: const Duration(seconds: 5),
           receiveTimeout: const Duration(seconds: 5),
@@ -534,13 +439,16 @@ class StreamInfo {
   });
 
   factory StreamInfo.fromJson(Map<String, dynamic> json) {
+    // hifi-api returns the stream data in 'data' field
+    final streamData = json['data'] as Map<String, dynamic>? ?? json;
+    
     return StreamInfo(
-      url: json['url'] as String? ?? '',
-      codec: json['codec'] as String? ?? 'FLAC',
-      bitDepth: json['bitDepth'] as int? ?? json['bit_depth'] as int? ?? 16,
-      sampleRate: json['sampleRate'] as int? ?? json['sample_rate'] as int? ?? 44100,
-      quality: json['quality'] as String? ?? 'LOSSLESS',
-      bitrate: json['bitrate'] as int? ?? 1411,
+      url: streamData['url'] as String? ?? streamData['manifest'] as String? ?? '',
+      codec: streamData['codec'] as String? ?? 'FLAC',
+      bitDepth: streamData['bitDepth'] as int? ?? streamData['bit_depth'] as int? ?? 16,
+      sampleRate: streamData['sampleRate'] as int? ?? streamData['sample_rate'] as int? ?? 44100,
+      quality: streamData['audioQuality'] as String? ?? streamData['quality'] as String? ?? 'LOSSLESS',
+      bitrate: streamData['bitrate'] as int? ?? 1411,
     );
   }
 
@@ -569,13 +477,44 @@ class Lyrics {
   });
 
   factory Lyrics.fromJson(Map<String, dynamic> json) {
-    final syncedData = json['syncedLyrics'] as List<dynamic>? ?? [];
+    // hifi-api returns lyrics in different format
+    final lyricsText = json['lyrics'] as String? ?? 
+                       json['subtitles'] as String? ?? '';
+    
+    final syncedData = json['subtitles'] as String?;
+    List<LyricLine> syncedLines = [];
+    
+    if (syncedData != null && syncedData.contains('[')) {
+      // Parse LRC format
+      syncedLines = _parseLrcLyrics(syncedData);
+    }
+    
     return Lyrics(
-      trackId: json['trackId'] as String? ?? '',
-      lyrics: json['lyrics'] as String? ?? json['text'] as String? ?? '',
-      syncedLyrics: syncedData.map((l) => LyricLine.fromJson(l as Map<String, dynamic>)).toList(),
-      isSynced: json['isSynced'] as bool? ?? syncedData.isNotEmpty,
+      trackId: (json['trackId'] ?? '').toString(),
+      lyrics: lyricsText,
+      syncedLyrics: syncedLines,
+      isSynced: syncedLines.isNotEmpty,
     );
+  }
+  
+  static List<LyricLine> _parseLrcLyrics(String lrc) {
+    final lines = <LyricLine>[];
+    final regex = RegExp(r'\[(\d+):(\d+)\.(\d+)\](.*)');
+    
+    for (final line in lrc.split('\n')) {
+      final match = regex.firstMatch(line);
+      if (match != null) {
+        final minutes = int.parse(match.group(1)!);
+        final seconds = int.parse(match.group(2)!);
+        final ms = int.parse(match.group(3)!);
+        final text = match.group(4)?.trim() ?? '';
+        
+        final timeMs = (minutes * 60 * 1000) + (seconds * 1000) + (ms * 10);
+        lines.add(LyricLine(startTimeMs: timeMs, text: text));
+      }
+    }
+    
+    return lines;
   }
 }
 
