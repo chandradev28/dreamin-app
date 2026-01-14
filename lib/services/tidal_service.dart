@@ -193,11 +193,15 @@ class TidalService {
       final tracksData = data['tracks'] as List<dynamic>? ?? [];
 
       // Construct artist from first track or album
+      String artistName = 'Unknown';
+      if (tracksData.isNotEmpty) {
+        final firstTrack = tracksData.first as Map<String, dynamic>;
+        final artist = firstTrack['artist'] as Map<String, dynamic>?;
+        artistName = artist?['name'] as String? ?? 'Unknown';
+      }
       final artistData = <String, dynamic>{
         'id': artistId,
-        'name': tracksData.isNotEmpty 
-            ? (tracksData.first as Map<String, dynamic>)['artist']?['name'] ?? 'Unknown'
-            : 'Unknown',
+        'name': artistName,
       };
 
       return ArtistDetail.fromTidalJson(artistData, albumsData);
