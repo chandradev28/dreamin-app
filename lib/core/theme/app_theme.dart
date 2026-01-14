@@ -232,11 +232,21 @@ class AppTheme {
     ),
   );
 
+  // Text Colors (for direct access)
+  static const Color textPrimary = primaryColor;
+  static const Color textSecondary = secondaryColor;
+
   // Border Radius
   static const BorderRadius radiusSmall = BorderRadius.all(Radius.circular(8));
   static const BorderRadius radiusMedium = BorderRadius.all(Radius.circular(12));
   static const BorderRadius radiusLarge = BorderRadius.all(Radius.circular(16));
   static const BorderRadius radiusXLarge = BorderRadius.all(Radius.circular(24));
+
+  // Radius values (double)
+  static const double radiusS = 8;
+  static const double radiusM = 12;
+  static const double radiusL = 16;
+  static const double radiusXL = 24;
 
   // Spacing
   static const double spacingXS = 4;
