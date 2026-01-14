@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:dio/dio.dart';
 import '../core/constants/api_constants.dart';
 import '../models/models.dart';
@@ -446,8 +447,34 @@ class StreamInfo {
     // hifi-api returns the stream data in 'data' field
     final streamData = json['data'] as Map<String, dynamic>? ?? json;
     
+    // The manifest is base64-encoded JSON containing the actual stream URL
+    String streamUrl = '';
+    final manifestBase64 = streamData['manifest'] as String?;
+    
+    if (manifestBase64 != null && manifestBase64.isNotEmpty) {
+      try {
+        // Decode base64 manifest
+        final manifestJson = utf8.decode(base64Decode(manifestBase64));
+        final manifest = jsonDecode(manifestJson) as Map<String, dynamic>;
+        
+        // Extract URL from urls array
+        final urls = manifest['urls'] as List<dynamic>?;
+        if (urls != null && urls.isNotEmpty) {
+          streamUrl = urls.first as String;
+        }
+      } catch (e) {
+        // If decoding fails, try using manifest directly
+        streamUrl = manifestBase64;
+      }
+    }
+    
+    // Fallback to direct url field if present
+    if (streamUrl.isEmpty) {
+      streamUrl = streamData['url'] as String? ?? '';
+    }
+    
     return StreamInfo(
-      url: streamData['url'] as String? ?? streamData['manifest'] as String? ?? '',
+      url: streamUrl,
       codec: streamData['codec'] as String? ?? 'FLAC',
       bitDepth: streamData['bitDepth'] as int? ?? streamData['bit_depth'] as int? ?? 16,
       sampleRate: streamData['sampleRate'] as int? ?? streamData['sample_rate'] as int? ?? 44100,
