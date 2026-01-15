@@ -164,87 +164,104 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
     state = state.copyWith(isLoading: true, error: null);
 
     try {
-      // Load base data in parallel
+      // Load ALL data in parallel - no dependency on history
       final baseFutures = await Future.wait([
-        _tidalService.getTrendingTracks(limit: 15).catchError((_) => <Track>[]),
+        _tidalService.getTrendingTracks(limit: 20).catchError((_) => <Track>[]),
         _recommendationService.getRecommendations(limit: 15).catchError((_) => <Track>[]),
         _tidalService.getNewAlbums(limit: 10).catchError((_) => <Album>[]),
         _tidalService.getPopularPlaylists(limit: 10).catchError((_) => <Playlist>[]),
+        // Search for popular artists for "Continue streaming" section
+        _tidalService.searchArtists('pop', limit: 8).catchError((_) => <Artist>[]),
+        // Search for tracks for "Mixes inspired by" section
+        _tidalService.searchTracks('electronic chill', limit: 10).catchError((_) => <Track>[]),
+        // Search for artists for "Since you like" section
+        _tidalService.searchArtists('rock', limit: 6).catchError((_) => <Artist>[]),
       ]);
 
       final trendingTracks = baseFutures[0] as List<Track>;
       final recommendations = baseFutures[1] as List<Track>;
       final newAlbums = baseFutures[2] as List<Album>;
       final playlists = baseFutures[3] as List<Playlist>;
+      final popArtists = baseFutures[4] as List<Artist>;
+      final mixesTracks = baseFutures[5] as List<Track>;
+      final rockArtists = baseFutures[6] as List<Artist>;
 
-      // Get recently played artists from history
-      final recentHistory = await _database.getRecentlyPlayed(limit: 20);
-      final artistsMap = <String, Artist>{};
-      for (final history in recentHistory) {
-        try {
-          final json = jsonDecode(history.trackJson) as Map<String, dynamic>;
-          final track = Track.fromTidalJson(json);
-          if (track.artistId.isNotEmpty && !artistsMap.containsKey(track.artistId)) {
-            artistsMap[track.artistId] = Artist(
-              id: track.artistId,
-              name: track.artist,
-              imageUrl: track.coverArtUrl,
-              source: track.source,
-            );
-          }
-        } catch (_) {}
-      }
-      final recentArtists = artistsMap.values.take(6).toList();
-
-      // Get top genres from history
-      final topGenres = await _database.getTopGenres(limit: 6);
-
-      // Get "mixes inspired by" - fetch tracks based on top artist if available
-      List<Track> mixesTracks = [];
+      // Try to get user history - if available, use it; otherwise use API defaults
+      List<Artist> recentArtists = [];
+      List<String> topGenres = [];
+      List<Track> lovedTracks = [];
       String? similarArtistName;
       List<Artist> similarArtists = [];
-      
-      if (recentArtists.isNotEmpty) {
-        final topArtist = recentArtists.first;
-        similarArtistName = topArtist.name;
-        
-        // Search for similar content
-        final artistSearchResults = await _tidalService
-            .searchArtists(topArtist.name, limit: 5)
-            .catchError((_) => <Artist>[]);
-        
-        // Filter out the same artist
-        similarArtists = artistSearchResults
-            .where((a) => a.id != topArtist.id)
-            .take(4)
-            .toList();
 
-        // Get mixes from similar genre
-        if (topGenres.isNotEmpty) {
-          mixesTracks = await _tidalService
-              .searchTracks(topGenres.first, limit: 10)
-              .catchError((_) => <Track>[]);
+      try {
+        // Get recently played artists from history
+        final recentHistory = await _database.getRecentlyPlayed(limit: 20);
+        final artistsMap = <String, Artist>{};
+        for (final history in recentHistory) {
+          try {
+            final json = jsonDecode(history.trackJson) as Map<String, dynamic>;
+            final track = Track.fromTidalJson(json);
+            if (track.artistId.isNotEmpty && !artistsMap.containsKey(track.artistId)) {
+              artistsMap[track.artistId] = Artist(
+                id: track.artistId,
+                name: track.artist,
+                imageUrl: track.coverArtUrl,
+                source: track.source,
+              );
+            }
+          } catch (_) {}
         }
-      } else if (topGenres.isNotEmpty) {
-        // Fallback to genre-based mixes
-        mixesTracks = await _tidalService
-            .searchTracks(topGenres.first, limit: 10)
-            .catchError((_) => <Track>[]);
+        recentArtists = artistsMap.values.take(6).toList();
+
+        // Get top genres from history
+        topGenres = await _database.getTopGenres(limit: 6);
+
+        // Get loved tracks (favorites)
+        final favorites = await _database.getAllFavorites();
+        lovedTracks = favorites.take(10).map((f) {
+          final json = jsonDecode(f.trackJson) as Map<String, dynamic>;
+          return Track.fromTidalJson(json);
+        }).toList();
+
+        // Get similar artists if we have history
+        if (recentArtists.isNotEmpty) {
+          similarArtistName = recentArtists.first.name;
+          final artistSearchResults = await _tidalService
+              .searchArtists(recentArtists.first.name, limit: 5)
+              .catchError((_) => <Artist>[]);
+          similarArtists = artistSearchResults
+              .where((a) => a.id != recentArtists.first.id)
+              .take(4)
+              .toList();
+        }
+      } catch (_) {
+        // Database error - continue with API defaults
       }
 
-      // Get loved tracks (favorites)
-      final favorites = await _database.getAllFavorites();
-      final lovedTracks = favorites.take(10).map((f) {
-        final json = jsonDecode(f.trackJson) as Map<String, dynamic>;
-        return Track.fromTidalJson(json);
-      }).toList();
+      // FALLBACKS - Use API data if user history is empty
+      if (recentArtists.isEmpty) {
+        recentArtists = popArtists.take(6).toList();
+      }
+
+      if (topGenres.isEmpty) {
+        topGenres = ['Pop', 'Rock', 'Electronic', 'Hip Hop', 'R&B', 'Jazz'];
+      }
+
+      if (lovedTracks.isEmpty) {
+        lovedTracks = trendingTracks.take(8).toList();
+      }
+
+      if (similarArtists.isEmpty) {
+        similarArtistName = rockArtists.isNotEmpty ? rockArtists.first.name : 'Popular Artists';
+        similarArtists = rockArtists.skip(1).take(5).toList();
+      }
 
       state = state.copyWith(
         isLoading: false,
         recommendations: [...trendingTracks, ...recommendations].take(20).toList(),
         newAlbums: newAlbums,
         recentlyPlayedArtists: recentArtists,
-        mixesTracks: mixesTracks,
+        mixesTracks: mixesTracks.isNotEmpty ? mixesTracks : trendingTracks.take(10).toList(),
         similarArtists: similarArtists,
         similarToArtistName: similarArtistName,
         lovedTracks: lovedTracks,
