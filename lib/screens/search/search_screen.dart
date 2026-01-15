@@ -195,14 +195,17 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               Tab(text: 'Artists (${searchResult.artists.length})'),
             ],
           ),
-          // Tab Content
+          // Tab Content with black background
           Expanded(
-            child: TabBarView(
-              children: [
-                _buildTracksList(searchResult.tracks, responsive),
-                _buildAlbumsGrid(searchResult.albums, responsive),
-                _buildArtistsGrid(searchResult.artists, responsive),
-              ],
+            child: Container(
+              color: AppTheme.backgroundColor,
+              child: TabBarView(
+                children: [
+                  _buildTracksList(searchResult.tracks, responsive),
+                  _buildAlbumsGrid(searchResult.albums, responsive),
+                  _buildArtistsGrid(searchResult.artists, responsive),
+                ],
+              ),
             ),
           ),
         ],
@@ -212,89 +215,107 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   Widget _buildTracksList(List tracks, Responsive responsive) {
     if (tracks.isEmpty) {
-      return const Center(
-        child: Text('No tracks found', style: TextStyle(color: AppTheme.secondaryColor)),
+      return Container(
+        color: AppTheme.backgroundColor,
+        child: const Center(
+          child: Text('No tracks found', style: TextStyle(color: AppTheme.secondaryColor)),
+        ),
       );
     }
 
-    return ListView.builder(
-      padding: EdgeInsets.only(bottom: responsive.miniPlayerHeight + responsive.bottomNavHeight + 20),
-      itemCount: tracks.length,
-      itemBuilder: (context, index) {
-        final track = tracks[index];
-        final playerState = ref.watch(playerProvider);
-        final favState = ref.watch(favoritesProvider);
-        
-        return TrackListTile(
-          track: track,
-          isPlaying: playerState.currentTrack?.id == track.id,
-          isFavorite: favState.favoriteIds.contains('${track.id}_${track.source.name}'),
-          onTap: () {
-            ref.read(playerProvider.notifier).playQueue(tracks.cast(), startIndex: index);
-          },
-          onFavoriteTap: () {
-            ref.read(favoritesProvider.notifier).toggleFavorite(track);
-          },
-        );
-      },
+    return Container(
+      color: AppTheme.backgroundColor,
+      child: ListView.builder(
+        padding: EdgeInsets.only(bottom: responsive.miniPlayerHeight + responsive.bottomNavHeight + 20),
+        itemCount: tracks.length,
+        itemBuilder: (context, index) {
+          final track = tracks[index];
+          final playerState = ref.watch(playerProvider);
+          final favState = ref.watch(favoritesProvider);
+          
+          return TrackListTile(
+            track: track,
+            isPlaying: playerState.currentTrack?.id == track.id,
+            isFavorite: favState.favoriteIds.contains('${track.id}_${track.source.name}'),
+            onTap: () {
+              ref.read(playerProvider.notifier).playQueue(tracks.cast(), startIndex: index);
+            },
+            onFavoriteTap: () {
+              ref.read(favoritesProvider.notifier).toggleFavorite(track);
+            },
+          );
+        },
+      ),
     );
   }
 
   Widget _buildAlbumsGrid(List albums, Responsive responsive) {
     if (albums.isEmpty) {
-      return const Center(
-        child: Text('No albums found', style: TextStyle(color: AppTheme.secondaryColor)),
+      return Container(
+        color: AppTheme.backgroundColor,
+        child: const Center(
+          child: Text('No albums found', style: TextStyle(color: AppTheme.secondaryColor)),
+        ),
       );
     }
 
-    return GridView.builder(
-      padding: EdgeInsets.all(responsive.horizontalPadding).copyWith(
-        bottom: responsive.miniPlayerHeight + responsive.bottomNavHeight + 20,
+    return Container(
+      color: AppTheme.backgroundColor,
+      child: GridView.builder(
+        padding: EdgeInsets.all(responsive.horizontalPadding).copyWith(
+          bottom: responsive.miniPlayerHeight + responsive.bottomNavHeight + 20,
+        ),
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: responsive.gridColumns,
+          mainAxisSpacing: responsive.cardSpacing,
+          crossAxisSpacing: responsive.cardSpacing,
+          childAspectRatio: 0.75,
+        ),
+        itemCount: albums.length,
+        itemBuilder: (context, index) {
+          return AlbumCard(
+            album: albums[index],
+            onTap: () {
+              // Navigate to album detail
+            },
+          );
+        },
       ),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: responsive.gridColumns,
-        mainAxisSpacing: responsive.cardSpacing,
-        crossAxisSpacing: responsive.cardSpacing,
-        childAspectRatio: 0.75,
-      ),
-      itemCount: albums.length,
-      itemBuilder: (context, index) {
-        return AlbumCard(
-          album: albums[index],
-          onTap: () {
-            // Navigate to album detail
-          },
-        );
-      },
     );
   }
 
   Widget _buildArtistsGrid(List artists, Responsive responsive) {
     if (artists.isEmpty) {
-      return const Center(
-        child: Text('No artists found', style: TextStyle(color: AppTheme.secondaryColor)),
+      return Container(
+        color: AppTheme.backgroundColor,
+        child: const Center(
+          child: Text('No artists found', style: TextStyle(color: AppTheme.secondaryColor)),
+        ),
       );
     }
 
-    return GridView.builder(
-      padding: EdgeInsets.all(responsive.horizontalPadding).copyWith(
-        bottom: responsive.miniPlayerHeight + responsive.bottomNavHeight + 20,
+    return Container(
+      color: AppTheme.backgroundColor,
+      child: GridView.builder(
+        padding: EdgeInsets.all(responsive.horizontalPadding).copyWith(
+          bottom: responsive.miniPlayerHeight + responsive.bottomNavHeight + 20,
+        ),
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: responsive.value(mobile: 3, tablet: 4, desktop: 6),
+          mainAxisSpacing: responsive.cardSpacing,
+          crossAxisSpacing: responsive.cardSpacing,
+          childAspectRatio: 0.85,
+        ),
+        itemCount: artists.length,
+        itemBuilder: (context, index) {
+          return ArtistCard(
+            artist: artists[index],
+            onTap: () {
+              // Navigate to artist detail
+            },
+          );
+        },
       ),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: responsive.value(mobile: 3, tablet: 4, desktop: 6),
-        mainAxisSpacing: responsive.cardSpacing,
-        crossAxisSpacing: responsive.cardSpacing,
-        childAspectRatio: 0.85,
-      ),
-      itemCount: artists.length,
-      itemBuilder: (context, index) {
-        return ArtistCard(
-          artist: artists[index],
-          onTap: () {
-            // Navigate to artist detail
-          },
-        );
-      },
     );
   }
 }
