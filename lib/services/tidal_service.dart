@@ -84,11 +84,31 @@ class TidalService {
         );
       });
 
-      final data = response.data as Map<String, dynamic>;
-      final items = data['data']?['items'] as List<dynamic>? ?? 
-                    data['items'] as List<dynamic>? ?? [];
+      final data = response.data;
+      List<dynamic> items = [];
       
-      return items.take(limit).map((t) => Track.fromTidalJson(t as Map<String, dynamic>)).toList();
+      if (data is Map<String, dynamic>) {
+        if (data['data'] is Map && data['data']['items'] is List) {
+          items = data['data']['items'] as List;
+        } else if (data['data'] is Map && data['data']['tracks'] is List) {
+          items = data['data']['tracks'] as List;
+        } else if (data['tracks'] is Map && data['tracks']['items'] is List) {
+          items = data['tracks']['items'] as List;
+        } else if (data['tracks'] is List) {
+          items = data['tracks'] as List;
+        } else if (data['items'] is List) {
+          items = data['items'] as List;
+        }
+      } else if (data is List) {
+        items = data;
+      }
+      
+      return items.take(limit).map((t) {
+        if (t is Map<String, dynamic>) {
+          return Track.fromTidalJson(t);
+        }
+        return Track(id: '', title: 'Unknown', artist: '', source: MusicSource.tidal);
+      }).where((t) => t.id.isNotEmpty).toList();
     } catch (e) {
       throw TidalApiException('Track search failed: $e');
     }
@@ -104,12 +124,32 @@ class TidalService {
         );
       });
 
-      final data = response.data as Map<String, dynamic>;
-      // Albums come from top-hits search under 'albums' key
-      final items = data['data']?['albums'] as List<dynamic>? ??
-                    data['albums']?['items'] as List<dynamic>? ?? [];
+      final data = response.data;
+      List<dynamic> items = [];
       
-      return items.take(limit).map((a) => Album.fromTidalJson(a as Map<String, dynamic>)).toList();
+      if (data is Map<String, dynamic>) {
+        // Try various response structures
+        if (data['data'] is Map && data['data']['albums'] is List) {
+          items = data['data']['albums'] as List;
+        } else if (data['data'] is Map && data['data']['albums'] is Map && data['data']['albums']['items'] is List) {
+          items = data['data']['albums']['items'] as List;
+        } else if (data['albums'] is Map && data['albums']['items'] is List) {
+          items = data['albums']['items'] as List;
+        } else if (data['albums'] is List) {
+          items = data['albums'] as List;
+        } else if (data['items'] is List) {
+          items = data['items'] as List;
+        }
+      } else if (data is List) {
+        items = data;
+      }
+      
+      return items.take(limit).map((a) {
+        if (a is Map<String, dynamic>) {
+          return Album.fromTidalJson(a);
+        }
+        return Album(id: '', title: 'Unknown', artist: '', source: MusicSource.tidal);
+      }).where((a) => a.id.isNotEmpty).toList();
     } catch (e) {
       throw TidalApiException('Album search failed: $e');
     }
@@ -165,10 +205,31 @@ class TidalService {
         );
       });
 
-      final data = response.data as Map<String, dynamic>;
-      final items = data['data']?['playlists']?['items'] as List<dynamic>? ?? [];
+      final data = response.data;
+      List<dynamic> items = [];
       
-      return items.take(limit).map((p) => Playlist.fromTidalJson(p as Map<String, dynamic>)).toList();
+      if (data is Map<String, dynamic>) {
+        if (data['data'] is Map && data['data']['playlists'] is Map && data['data']['playlists']['items'] is List) {
+          items = data['data']['playlists']['items'] as List;
+        } else if (data['data'] is Map && data['data']['playlists'] is List) {
+          items = data['data']['playlists'] as List;
+        } else if (data['playlists'] is Map && data['playlists']['items'] is List) {
+          items = data['playlists']['items'] as List;
+        } else if (data['playlists'] is List) {
+          items = data['playlists'] as List;
+        } else if (data['items'] is List) {
+          items = data['items'] as List;
+        }
+      } else if (data is List) {
+        items = data;
+      }
+      
+      return items.take(limit).map((p) {
+        if (p is Map<String, dynamic>) {
+          return Playlist.fromTidalJson(p);
+        }
+        return Playlist(id: '', title: 'Unknown', trackCount: 0, source: MusicSource.tidal);
+      }).where((p) => p.id.isNotEmpty).toList();
     } catch (e) {
       throw TidalApiException('Playlist search failed: $e');
     }
