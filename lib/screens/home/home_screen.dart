@@ -5,6 +5,9 @@ import '../../core/utils/responsive.dart';
 import '../../providers/providers.dart';
 import '../../widgets/widgets.dart';
 import '../../models/models.dart';
+import '../album/album_detail_screen.dart';
+import '../playlist/playlist_detail_screen.dart';
+import '../artist/artist_detail_screen.dart';
 
 /// Home Screen - Echo-style with multiple sections
 class HomeScreen extends ConsumerWidget {
@@ -90,7 +93,14 @@ class HomeScreen extends ConsumerWidget {
                   child: _ArtistCircleList(
                     artists: homeData.recentlyPlayedArtists,
                     onArtistTap: (artist) {
-                      // Navigate to artist detail
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => ArtistDetailScreen(
+                            artistId: artist.id,
+                            artist: artist,
+                          ),
+                        ),
+                      );
                     },
                   ),
                 ),
@@ -136,7 +146,14 @@ class HomeScreen extends ConsumerWidget {
                       album: album,
                       width: width,
                       onTap: () {
-                        // Navigate to album detail
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => AlbumDetailScreen(
+                              albumId: album.id,
+                              album: album,
+                            ),
+                          ),
+                        );
                       },
                     ),
                   ),
@@ -155,7 +172,14 @@ class HomeScreen extends ConsumerWidget {
                   child: _ArtistCircleList(
                     artists: homeData.similarArtists,
                     onArtistTap: (artist) {
-                      // Navigate to artist detail
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => ArtistDetailScreen(
+                            artistId: artist.id,
+                            artist: artist,
+                          ),
+                        ),
+                      );
                     },
                   ),
                 ),
@@ -201,7 +225,14 @@ class HomeScreen extends ConsumerWidget {
                       playlist: playlist,
                       width: width,
                       onTap: () {
-                        // Navigate to playlist detail
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => PlaylistDetailScreen(
+                              playlistId: playlist.id,
+                              playlist: playlist,
+                            ),
+                          ),
+                        );
                       },
                     ),
                   ),
