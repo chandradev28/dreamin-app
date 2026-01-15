@@ -107,9 +107,7 @@ class MiniPlayer extends ConsumerWidget {
                         Consumer(
                           builder: (context, ref, child) {
                             final favState = ref.watch(favoritesProvider);
-                            final isFav = favState.favoriteIds.contains(
-                              '${track.id}_${track.source.name}',
-                            );
+                            final isFav = favState.isFavorite(track);
                             return IconButton(
                               icon: Icon(
                                 isFav ? Icons.favorite : Icons.favorite_border,

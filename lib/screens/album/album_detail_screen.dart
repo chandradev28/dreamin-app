@@ -28,7 +28,9 @@ class AlbumDetailScreen extends ConsumerWidget {
       body: albumDetailAsync.when(
         loading: () => _buildLoadingState(context, responsive),
         error: (error, stack) => _buildErrorState(context, error.toString(), responsive),
-        data: (albumDetail) => _buildContent(context, ref, albumDetail, responsive),
+        data: (albumDetail) => albumDetail == null
+            ? _buildErrorState(context, 'Album not found', responsive)
+            : _buildContent(context, ref, albumDetail, responsive),
       ),
     );
   }
@@ -291,7 +293,7 @@ class AlbumDetailScreen extends ConsumerWidget {
                   track: track,
                   index: index + 1,
                   isPlaying: playerState.currentTrack?.id == track.id,
-                  isFavorite: favState.favoriteIds.contains('${track.id}_${track.source.name}'),
+                  isFavorite: favState.isFavorite(track),
                   onTap: () {
                     ref.read(playerProvider.notifier).playQueue(
                       albumDetail.tracks,

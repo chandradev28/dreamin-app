@@ -28,7 +28,9 @@ class PlaylistDetailScreen extends ConsumerWidget {
       body: playlistDetailAsync.when(
         loading: () => _buildLoadingState(context, responsive),
         error: (error, stack) => _buildErrorState(context, error.toString(), responsive),
-        data: (playlistDetail) => _buildContent(context, ref, playlistDetail, responsive),
+        data: (playlistDetail) => playlistDetail == null
+            ? _buildErrorState(context, 'Playlist not found', responsive)
+            : _buildContent(context, ref, playlistDetail, responsive),
       ),
     );
   }
@@ -298,7 +300,7 @@ class PlaylistDetailScreen extends ConsumerWidget {
                 return TrackListTile(
                   track: track,
                   isPlaying: playerState.currentTrack?.id == track.id,
-                  isFavorite: favState.favoriteIds.contains('${track.id}_${track.source.name}'),
+                  isFavorite: favState.isFavorite(track),
                   onTap: () {
                     ref.read(playerProvider.notifier).playQueue(
                       playlistDetail.tracks,

@@ -290,7 +290,7 @@ class NowPlayingScreen extends ConsumerWidget {
 
   Widget _buildTrackInfo(track, WidgetRef ref, Responsive responsive) {
     final favState = ref.watch(favoritesProvider);
-    final isFavorite = favState.favoriteIds.contains('${track.id}_${track.source.name}');
+    final isFavorite = favState.isFavorite(track);
 
     return Row(
       children: [

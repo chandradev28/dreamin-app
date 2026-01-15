@@ -1,6 +1,7 @@
 import 'package:equatable/equatable.dart';
 import 'music_source.dart';
 import 'album.dart';
+import 'track.dart';
 
 class Artist extends Equatable {
   final String id;
@@ -44,6 +45,7 @@ class Artist extends Equatable {
 class ArtistDetail extends Artist {
   final List<Album> albums;
   final List<Album>? topAlbums;
+  final List<Track> topTracks;
 
   const ArtistDetail({
     required super.id,
@@ -54,16 +56,21 @@ class ArtistDetail extends Artist {
     super.bio,
     required this.albums,
     this.topAlbums,
+    this.topTracks = const [],
   });
 
   factory ArtistDetail.fromTidalJson(
     Map<String, dynamic> artistJson,
-    List<dynamic> albumsJson,
-  ) {
+    List<dynamic> albumsJson, {
+    List<dynamic>? tracksJson,
+  }) {
     final artist = Artist.fromTidalJson(artistJson);
     final albums = albumsJson
         .map((a) => Album.fromTidalJson(a as Map<String, dynamic>))
         .toList();
+    final tracks = tracksJson
+        ?.map((t) => Track.fromTidalJson(t as Map<String, dynamic>))
+        .toList() ?? <Track>[];
 
     return ArtistDetail(
       id: artist.id,
@@ -73,6 +80,7 @@ class ArtistDetail extends Artist {
       source: artist.source,
       bio: artist.bio,
       albums: albums,
+      topTracks: tracks,
     );
   }
 }

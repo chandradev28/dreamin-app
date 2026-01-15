@@ -61,7 +61,7 @@ class LibraryScreen extends ConsumerWidget {
                     icon: Icons.history,
                     iconColor: AppTheme.tidalBadge,
                     title: 'Recently Played',
-                    subtitle: '${historyState.recentlyPlayed.length} tracks',
+                    subtitle: '${historyState.history.length} tracks',
                     onTap: () {},
                   ),
                   _LibraryTile(
@@ -92,7 +92,7 @@ class LibraryScreen extends ConsumerWidget {
             ),
 
             // Recently Played Preview
-            if (historyState.recentlyPlayed.isNotEmpty) ...[
+            if (historyState.history.isNotEmpty) ...[
               SliverToBoxAdapter(
                 child: Padding(
                   padding: EdgeInsets.symmetric(
@@ -106,7 +106,7 @@ class LibraryScreen extends ConsumerWidget {
                 delegate: SliverChildBuilderDelegate(
                   (context, index) {
                     if (index >= 5) return null;
-                    final track = historyState.recentlyPlayed[index];
+                    final track = historyState.history[index];
                     final playerState = ref.watch(playerProvider);
                     final favState = ref.watch(favoritesProvider);
                     
@@ -149,12 +149,12 @@ class LibraryScreen extends ConsumerWidget {
                         ),
                         trailing: IconButton(
                           icon: Icon(
-                            favState.favoriteIds.contains('${track.id}_${track.source.name}')
+                            favState.isFavorite(track)
                                 ? Icons.favorite
                                 : Icons.favorite_border,
                             size: 20,
                           ),
-                          color: favState.favoriteIds.contains('${track.id}_${track.source.name}')
+                          color: favState.isFavorite(track)
                               ? AppTheme.accentColor
                               : AppTheme.secondaryColor,
                           onPressed: () {
@@ -163,14 +163,14 @@ class LibraryScreen extends ConsumerWidget {
                         ),
                         onTap: () {
                           ref.read(playerProvider.notifier).playQueue(
-                            historyState.recentlyPlayed,
+                            historyState.history,
                             startIndex: index,
                           );
                         },
                       ),
                     );
                   },
-                  childCount: historyState.recentlyPlayed.length.clamp(0, 5),
+                  childCount: historyState.history.length.clamp(0, 5),
                 ),
               ),
             ],

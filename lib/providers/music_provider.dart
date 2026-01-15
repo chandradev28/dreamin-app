@@ -1,5 +1,4 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'dart:convert';
 import '../data/database.dart';
 import '../services/tidal_service.dart';
 import '../services/recommendation_service.dart';
@@ -88,14 +87,20 @@ final searchProvider = StateNotifierProvider<SearchNotifier, SearchState>((ref) 
 // TIDAL HOMEPAGE STATE - Simple API-based sections
 // ============================================================================
 
-/// Home Data State - Simple TIDAL sections
+/// Home Data State - TIDAL sections with backward compatibility
 class HomeDataState {
   final bool isLoading;
-  final List<Playlist> songsOfTheYear;      // Songs of the Year playlists
-  final List<Track> trendingTracks;          // Recommended new tracks (bento box)
-  final List<Playlist> popularPlaylists;     // Popular playlists on TIDAL
-  final List<Album> newAlbums;               // Suggested new albums for you
-  final List<Album> albumsYouLlEnjoy;        // Albums you'll enjoy
+  // New TIDAL sections
+  final List<Playlist> songsOfTheYear;       // Songs of the Year playlists
+  final List<Track> trendingTracks;           // Recommended new tracks (bento box)
+  final List<Playlist> popularPlaylists;      // Popular playlists on TIDAL
+  final List<Album> newAlbums;                // Suggested new albums for you
+  final List<Album> albumsYouLlEnjoy;         // Albums you'll enjoy
+  // Legacy fields for backward compatibility with other screens
+  final List<Track> recommendations;          // Alias for trendingTracks
+  final List<Playlist> playlistsForYou;       // Alias for songsOfTheYear
+  final List<String> topGenres;               // Default genres
+  final List<Artist> recentlyPlayedArtists;   // Empty for now
   final String? error;
 
   const HomeDataState({
@@ -105,6 +110,10 @@ class HomeDataState {
     this.popularPlaylists = const [],
     this.newAlbums = const [],
     this.albumsYouLlEnjoy = const [],
+    this.recommendations = const [],
+    this.playlistsForYou = const [],
+    this.topGenres = const [],
+    this.recentlyPlayedArtists = const [],
     this.error,
   });
 
@@ -115,6 +124,10 @@ class HomeDataState {
     List<Playlist>? popularPlaylists,
     List<Album>? newAlbums,
     List<Album>? albumsYouLlEnjoy,
+    List<Track>? recommendations,
+    List<Playlist>? playlistsForYou,
+    List<String>? topGenres,
+    List<Artist>? recentlyPlayedArtists,
     String? error,
   }) {
     return HomeDataState(
@@ -124,6 +137,10 @@ class HomeDataState {
       popularPlaylists: popularPlaylists ?? this.popularPlaylists,
       newAlbums: newAlbums ?? this.newAlbums,
       albumsYouLlEnjoy: albumsYouLlEnjoy ?? this.albumsYouLlEnjoy,
+      recommendations: recommendations ?? this.recommendations,
+      playlistsForYou: playlistsForYou ?? this.playlistsForYou,
+      topGenres: topGenres ?? this.topGenres,
+      recentlyPlayedArtists: recentlyPlayedArtists ?? this.recentlyPlayedArtists,
       error: error,
     );
   }
@@ -158,15 +175,30 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
         // 5. Albums you'll enjoy (pop hits)
         _tidalService.searchAlbums('pop hits', limit: 10)
             .catchError((_) => <Album>[]),
+        // 6. Get some artists for legacy support
+        _tidalService.searchArtists('pop', limit: 6)
+            .catchError((_) => <Artist>[]),
       ]);
+
+      final songsOfYear = results[0] as List<Playlist>;
+      final trending = results[1] as List<Track>;
+      final popular = results[2] as List<Playlist>;
+      final albums = results[3] as List<Album>;
+      final albumsEnjoy = results[4] as List<Album>;
+      final artists = results[5] as List<Artist>;
 
       state = state.copyWith(
         isLoading: false,
-        songsOfTheYear: results[0] as List<Playlist>,
-        trendingTracks: results[1] as List<Track>,
-        popularPlaylists: results[2] as List<Playlist>,
-        newAlbums: results[3] as List<Album>,
-        albumsYouLlEnjoy: results[4] as List<Album>,
+        songsOfTheYear: songsOfYear,
+        trendingTracks: trending,
+        popularPlaylists: popular,
+        newAlbums: albums,
+        albumsYouLlEnjoy: albumsEnjoy,
+        // Legacy field mappings for backward compatibility
+        recommendations: trending,
+        playlistsForYou: songsOfYear,
+        topGenres: const ['Pop', 'Rock', 'Hip Hop', 'R&B', 'Electronic', 'Jazz'],
+        recentlyPlayedArtists: artists,
       );
     } catch (e) {
       state = state.copyWith(isLoading: false, error: e.toString());
@@ -216,207 +248,4 @@ final playlistDetailProvider = FutureProvider.family<PlaylistDetail?, String>((r
   } catch (e) {
     return null;
   }
-});
-
-// ============================================================================
-// PLAYER PROVIDERS
-// ============================================================================
-
-class PlayerState {
-  final Track? currentTrack;
-  final List<Track> queue;
-  final int currentIndex;
-  final bool isPlaying;
-  final bool isLoading;
-  final Duration position;
-  final Duration duration;
-  final bool shuffle;
-  final RepeatMode repeatMode;
-
-  const PlayerState({
-    this.currentTrack,
-    this.queue = const [],
-    this.currentIndex = 0,
-    this.isPlaying = false,
-    this.isLoading = false,
-    this.position = Duration.zero,
-    this.duration = Duration.zero,
-    this.shuffle = false,
-    this.repeatMode = RepeatMode.off,
-  });
-
-  PlayerState copyWith({
-    Track? currentTrack,
-    List<Track>? queue,
-    int? currentIndex,
-    bool? isPlaying,
-    bool? isLoading,
-    Duration? position,
-    Duration? duration,
-    bool? shuffle,
-    RepeatMode? repeatMode,
-  }) {
-    return PlayerState(
-      currentTrack: currentTrack ?? this.currentTrack,
-      queue: queue ?? this.queue,
-      currentIndex: currentIndex ?? this.currentIndex,
-      isPlaying: isPlaying ?? this.isPlaying,
-      isLoading: isLoading ?? this.isLoading,
-      position: position ?? this.position,
-      duration: duration ?? this.duration,
-      shuffle: shuffle ?? this.shuffle,
-      repeatMode: repeatMode ?? this.repeatMode,
-    );
-  }
-}
-
-enum RepeatMode { off, one, all }
-
-class PlayerNotifier extends StateNotifier<PlayerState> {
-  final TidalService _tidalService;
-  final AppDatabase _database;
-
-  PlayerNotifier(this._tidalService, this._database) : super(const PlayerState());
-
-  Future<void> playTrack(Track track) async {
-    state = state.copyWith(
-      currentTrack: track,
-      queue: [track],
-      currentIndex: 0,
-      isLoading: true,
-    );
-
-    try {
-      // Get stream URL
-      final streamUrl = await _tidalService.getStreamUrl(track.id);
-      if (streamUrl != null) {
-        // Save to history
-        await _database.recordPlay(
-          trackId: track.id,
-          source: track.source == MusicSource.tidal ? 0 : 1,
-          trackJson: jsonEncode(track.toJson()),
-          playedDurationMs: 0,
-          genre: track.genre,
-          artistId: track.artistId,
-        );
-      }
-      state = state.copyWith(isLoading: false, isPlaying: true);
-    } catch (e) {
-      state = state.copyWith(isLoading: false);
-    }
-  }
-
-  Future<void> playQueue(List<Track> tracks, {int startIndex = 0}) async {
-    if (tracks.isEmpty) return;
-
-    state = state.copyWith(
-      queue: tracks,
-      currentIndex: startIndex,
-      currentTrack: tracks[startIndex],
-      isLoading: true,
-    );
-
-    try {
-      final track = tracks[startIndex];
-      final streamUrl = await _tidalService.getStreamUrl(track.id);
-      if (streamUrl != null) {
-        await _database.recordPlay(
-          trackId: track.id,
-          source: track.source == MusicSource.tidal ? 0 : 1,
-          trackJson: jsonEncode(track.toJson()),
-          playedDurationMs: 0,
-          genre: track.genre,
-          artistId: track.artistId,
-        );
-      }
-      state = state.copyWith(isLoading: false, isPlaying: true);
-    } catch (e) {
-      state = state.copyWith(isLoading: false);
-    }
-  }
-
-  void pause() {
-    state = state.copyWith(isPlaying: false);
-  }
-
-  void resume() {
-    state = state.copyWith(isPlaying: true);
-  }
-
-  void togglePlayPause() {
-    state = state.copyWith(isPlaying: !state.isPlaying);
-  }
-
-  Future<void> next() async {
-    if (state.queue.isEmpty) return;
-    
-    int nextIndex = state.currentIndex + 1;
-    if (nextIndex >= state.queue.length) {
-      if (state.repeatMode == RepeatMode.all) {
-        nextIndex = 0;
-      } else {
-        return;
-      }
-    }
-
-    await playQueue(state.queue, startIndex: nextIndex);
-  }
-
-  Future<void> previous() async {
-    if (state.queue.isEmpty) return;
-    
-    int prevIndex = state.currentIndex - 1;
-    if (prevIndex < 0) {
-      if (state.repeatMode == RepeatMode.all) {
-        prevIndex = state.queue.length - 1;
-      } else {
-        prevIndex = 0;
-      }
-    }
-
-    await playQueue(state.queue, startIndex: prevIndex);
-  }
-
-  void seek(Duration position) {
-    state = state.copyWith(position: position);
-  }
-
-  void toggleShuffle() {
-    state = state.copyWith(shuffle: !state.shuffle);
-  }
-
-  void toggleRepeat() {
-    final modes = RepeatMode.values;
-    final nextIndex = (modes.indexOf(state.repeatMode) + 1) % modes.length;
-    state = state.copyWith(repeatMode: modes[nextIndex]);
-  }
-
-  void updatePosition(Duration position) {
-    state = state.copyWith(position: position);
-  }
-
-  void updateDuration(Duration duration) {
-    state = state.copyWith(duration: duration);
-  }
-
-  void stop() {
-    state = const PlayerState();
-  }
-}
-
-/// Player Provider
-final playerProvider = StateNotifierProvider<PlayerNotifier, PlayerState>((ref) {
-  final tidalService = ref.watch(tidalServiceProvider);
-  final database = ref.watch(databaseProvider);
-  return PlayerNotifier(tidalService, database);
-});
-
-/// Current Track Provider (convenience)
-final currentTrackProvider = Provider<Track?>((ref) {
-  return ref.watch(playerProvider).currentTrack;
-});
-
-/// Is Playing Provider (convenience)
-final isPlayingProvider = Provider<bool>((ref) {
-  return ref.watch(playerProvider).isPlaying;
 });

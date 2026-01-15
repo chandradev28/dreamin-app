@@ -30,7 +30,9 @@ class ArtistDetailScreen extends ConsumerWidget {
       body: artistDetailAsync.when(
         loading: () => _buildLoadingState(context, responsive),
         error: (error, stack) => _buildErrorState(context, error.toString(), responsive),
-        data: (artistDetail) => _buildContent(context, ref, artistDetail, responsive),
+        data: (artistDetail) => artistDetail == null
+            ? _buildErrorState(context, 'Artist not found', responsive)
+            : _buildContent(context, ref, artistDetail, responsive),
       ),
     );
   }

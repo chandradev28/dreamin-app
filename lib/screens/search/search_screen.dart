@@ -433,7 +433,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           return TrackListTile(
             track: track,
             isPlaying: playerState.currentTrack?.id == track.id,
-            isFavorite: favState.favoriteIds.contains('${track.id}_${track.source.name}'),
+            isFavorite: favState.isFavorite(track),
             onTap: () {
               ref.read(playerProvider.notifier).playQueue(tracks, startIndex: index);
             },

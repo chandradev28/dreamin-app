@@ -413,3 +413,161 @@ final playerProvider = StateNotifierProvider<PlayerNotifier, PlayerState>((ref) 
   final database = ref.watch(databaseProvider);
   return PlayerNotifier(tidalService, database, ref);
 });
+
+// ============================================================================
+// FAVORITES PROVIDER
+// ============================================================================
+
+class FavoritesState {
+  final List<Track> favorites;
+  final bool isLoading;
+  final String? error;
+
+  const FavoritesState({
+    this.favorites = const [],
+    this.isLoading = false,
+    this.error,
+  });
+
+  FavoritesState copyWith({
+    List<Track>? favorites,
+    bool? isLoading,
+    String? error,
+  }) {
+    return FavoritesState(
+      favorites: favorites ?? this.favorites,
+      isLoading: isLoading ?? this.isLoading,
+      error: error,
+    );
+  }
+
+  bool isFavorite(Track track) {
+    return favorites.any((f) => f.id == track.id && f.source == track.source);
+  }
+}
+
+class FavoritesNotifier extends StateNotifier<FavoritesState> {
+  final AppDatabase _database;
+
+  FavoritesNotifier(this._database) : super(const FavoritesState()) {
+    loadFavorites();
+  }
+
+  Future<void> loadFavorites() async {
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      final favorites = await _database.getAllFavorites();
+      final tracks = favorites.map((f) {
+        try {
+          final json = jsonDecode(f.trackJson) as Map<String, dynamic>;
+          return Track.fromTidalJson(json);
+        } catch (_) {
+          return null;
+        }
+      }).whereType<Track>().toList();
+      
+      state = state.copyWith(favorites: tracks, isLoading: false);
+    } catch (e) {
+      state = state.copyWith(isLoading: false, error: e.toString());
+    }
+  }
+
+  Future<void> toggleFavorite(Track track) async {
+    try {
+      final isFav = state.isFavorite(track);
+      if (isFav) {
+        await _database.removeFavorite(track.id, track.source.index);
+        state = state.copyWith(
+          favorites: state.favorites.where((f) => 
+            !(f.id == track.id && f.source == track.source)
+          ).toList(),
+        );
+      } else {
+        await _database.addFavorite(
+          trackId: track.id,
+          source: track.source.index,
+          trackJson: jsonEncode(track.toJson()),
+        );
+        state = state.copyWith(
+          favorites: [...state.favorites, track],
+        );
+      }
+    } catch (e) {
+      state = state.copyWith(error: e.toString());
+    }
+  }
+}
+
+final favoritesProvider = StateNotifierProvider<FavoritesNotifier, FavoritesState>((ref) {
+  final database = ref.watch(databaseProvider);
+  return FavoritesNotifier(database);
+});
+
+// ============================================================================
+// HISTORY PROVIDER
+// ============================================================================
+
+class HistoryState {
+  final List<Track> history;
+  final bool isLoading;
+  final String? error;
+
+  const HistoryState({
+    this.history = const [],
+    this.isLoading = false,
+    this.error,
+  });
+
+  HistoryState copyWith({
+    List<Track>? history,
+    bool? isLoading,
+    String? error,
+  }) {
+    return HistoryState(
+      history: history ?? this.history,
+      isLoading: isLoading ?? this.isLoading,
+      error: error,
+    );
+  }
+}
+
+class HistoryNotifier extends StateNotifier<HistoryState> {
+  final AppDatabase _database;
+
+  HistoryNotifier(this._database) : super(const HistoryState()) {
+    loadHistory();
+  }
+
+  Future<void> loadHistory() async {
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      final history = await _database.getRecentlyPlayed(limit: 50);
+      final tracks = history.map((h) {
+        try {
+          final json = jsonDecode(h.trackJson) as Map<String, dynamic>;
+          return Track.fromTidalJson(json);
+        } catch (_) {
+          return null;
+        }
+      }).whereType<Track>().toList();
+      
+      state = state.copyWith(history: tracks, isLoading: false);
+    } catch (e) {
+      state = state.copyWith(isLoading: false, error: e.toString());
+    }
+  }
+
+  Future<void> clearHistory() async {
+    try {
+      await _database.clearHistory();
+      state = state.copyWith(history: []);
+    } catch (e) {
+      state = state.copyWith(error: e.toString());
+    }
+  }
+}
+
+final historyProvider = StateNotifierProvider<HistoryNotifier, HistoryState>((ref) {
+  final database = ref.watch(databaseProvider);
+  return HistoryNotifier(database);
+});

@@ -48,6 +48,13 @@ class AppTheme {
   );
 
   // Text Styles
+  static TextStyle get displayLarge => GoogleFonts.inter(
+    fontSize: 48,
+    fontWeight: FontWeight.bold,
+    color: primaryColor,
+    letterSpacing: -1.0,
+  );
+
   static TextStyle get headlineLarge => GoogleFonts.inter(
     fontSize: 32,
     fontWeight: FontWeight.bold,
