@@ -24,6 +24,7 @@ class PlayerState {
   final RepeatMode repeatMode;
   final List<Track> queue;
   final int queueIndex;
+  final String? queueSource; // Playlist/album name for 'Playing From'
   final String? error;
 
   const PlayerState({
@@ -37,6 +38,7 @@ class PlayerState {
     this.repeatMode = RepeatMode.off,
     this.queue = const [],
     this.queueIndex = 0,
+    this.queueSource,
     this.error,
   });
 
@@ -46,6 +48,7 @@ class PlayerState {
   bool get hasError => status == PlaybackStatus.error;
   bool get hasTrack => currentTrack != null;
   bool get hasQueue => queue.isNotEmpty;
+  bool get shuffleEnabled => isShuffleOn;
 
   double get progress {
     if (duration.inMilliseconds == 0) return 0;
@@ -63,6 +66,7 @@ class PlayerState {
     RepeatMode? repeatMode,
     List<Track>? queue,
     int? queueIndex,
+    String? queueSource,
     String? error,
   }) {
     return PlayerState(
@@ -76,6 +80,7 @@ class PlayerState {
       repeatMode: repeatMode ?? this.repeatMode,
       queue: queue ?? this.queue,
       queueIndex: queueIndex ?? this.queueIndex,
+      queueSource: queueSource ?? this.queueSource,
       error: error,
     );
   }
@@ -202,13 +207,14 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   }
 
   /// Play a list of tracks (album/playlist)
-  Future<void> playQueue(List<Track> tracks, {int startIndex = 0}) async {
+  Future<void> playQueue(List<Track> tracks, {int startIndex = 0, String? source}) async {
     if (tracks.isEmpty) return;
 
     _originalQueue = List.from(tracks);
     state = state.copyWith(
       queue: tracks,
       queueIndex: startIndex,
+      queueSource: source,
     );
 
     await play(tracks[startIndex]);
@@ -338,6 +344,11 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     };
     state = state.copyWith(repeatMode: nextMode);
   }
+
+  // Aliases for now_playing_screen
+  Future<void> next() => skipNext();
+  Future<void> previous() => skipPrevious();
+  void cycleRepeatMode() => toggleRepeat();
 
   /// Set volume
   Future<void> setVolume(double volume) async {

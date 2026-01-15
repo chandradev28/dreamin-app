@@ -50,11 +50,29 @@ class Playlist extends Equatable {
   }
 
   factory Playlist.fromTidalJson(Map<String, dynamic> json) {
-    final image = json['image'] as String? ?? json['squareImage'] as String?;
+    // Try multiple image fields the API might return
+    String? image = json['image'] as String? 
+        ?? json['squareImage'] as String?
+        ?? json['picture'] as String?;
+    
     String? coverUrl;
-    if (image != null) {
-      final formattedImage = image.replaceAll('-', '/');
-      coverUrl = 'https://resources.tidal.com/images/$formattedImage/640x640.jpg';
+    
+    // If we have an image ID, build the URL
+    if (image != null && image.isNotEmpty) {
+      // Handle both formats: with dashes (needs conversion) or already formatted
+      if (image.contains('-')) {
+        final formattedImage = image.replaceAll('-', '/');
+        coverUrl = 'https://resources.tidal.com/images/$formattedImage/640x640.jpg';
+      } else if (image.startsWith('http')) {
+        coverUrl = image;
+      } else {
+        coverUrl = 'https://resources.tidal.com/images/$image/640x640.jpg';
+      }
+    }
+    
+    // Some responses have imageUrl directly
+    if (coverUrl == null && json['imageUrl'] != null) {
+      coverUrl = json['imageUrl'] as String;
     }
 
     return Playlist(

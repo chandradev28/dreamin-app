@@ -48,6 +48,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   iconsax: ^0.0.8
   path: ^1.9.0
+  palette_generator: ^0.3.3+7
 
 dev_dependencies:
   flutter_test:

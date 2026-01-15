@@ -1,65 +1,135 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'dart:math' as math;
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:palette_generator/palette_generator.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/responsive.dart';
 import '../../providers/providers.dart';
+import '../../models/models.dart';
 
-/// Now Playing Screen - Responsive
-class NowPlayingScreen extends ConsumerWidget {
+/// Now Playing Screen - TIDAL Style
+/// Features:
+/// - "Playing From" header showing source playlist/album
+/// - Large album cover
+/// - Dynamic background color from cover art
+/// - Track info with action buttons
+/// - Progress bar with quality badge
+/// - Playback controls
+class NowPlayingScreen extends ConsumerStatefulWidget {
   const NowPlayingScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<NowPlayingScreen> createState() => _NowPlayingScreenState();
+}
+
+class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
+  Color _dominantColor = AppTheme.backgroundColor;
+  Color _secondaryColor = AppTheme.surfaceColor;
+  String? _lastCoverUrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _extractColors();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _extractColors();
+  }
+
+  Future<void> _extractColors() async {
+    final playerState = ref.read(playerProvider);
+    final track = playerState.currentTrack;
+    
+    if (track?.coverArtUrl == null || track!.coverArtUrl == _lastCoverUrl) return;
+    _lastCoverUrl = track.coverArtUrl;
+
+    try {
+      final paletteGenerator = await PaletteGenerator.fromImageProvider(
+        CachedNetworkImageProvider(track.coverArtUrl!),
+        maximumColorCount: 5,
+      );
+      
+      if (mounted) {
+        setState(() {
+          _dominantColor = paletteGenerator.dominantColor?.color ?? AppTheme.backgroundColor;
+          _secondaryColor = paletteGenerator.darkMutedColor?.color ?? 
+                           paletteGenerator.mutedColor?.color ?? 
+                           AppTheme.surfaceColor;
+        });
+      }
+    } catch (e) {
+      // Use default colors if extraction fails
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final playerState = ref.watch(playerProvider);
     final track = playerState.currentTrack;
     final responsive = Responsive(context);
 
+    // Extract colors when track changes
+    if (track?.coverArtUrl != _lastCoverUrl) {
+      _extractColors();
+    }
+
     if (track == null) {
-      return Scaffold(
-        backgroundColor: AppTheme.backgroundColor,
-        body: SafeArea(
+      return _buildEmptyState(context, responsive);
+    }
+
+    return Scaffold(
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              _dominantColor.withOpacity(0.8),
+              _secondaryColor.withOpacity(0.6),
+              AppTheme.backgroundColor,
+            ],
+            stops: const [0.0, 0.4, 0.8],
+          ),
+        ),
+        child: SafeArea(
           child: Column(
             children: [
-              // Header with back button
-              Padding(
-                padding: EdgeInsets.symmetric(
-                  horizontal: responsive.horizontalPadding,
-                  vertical: responsive.value(mobile: 12.0, tablet: 16.0),
-                ),
-                child: Row(
-                  children: [
-                    IconButton(
-                      icon: Icon(
-                        Icons.keyboard_arrow_down,
-                        size: responsive.value(mobile: 32.0, tablet: 40.0),
-                      ),
-                      onPressed: () => Navigator.of(context).pop(),
-                    ),
-                  ],
-                ),
-              ),
-              // Empty state
+              // Header with drag handle and "Playing From"
+              _buildHeader(context, playerState, responsive),
+              
+              // Main content
               Expanded(
-                child: Center(
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
                   child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(
-                        Icons.music_off_rounded,
-                        size: 80,
-                        color: AppTheme.secondaryColor.withOpacity(0.5),
-                      ),
+                      // Album Cover
+                      _buildAlbumCover(track, responsive),
+                      
+                      const SizedBox(height: 24),
+                      
+                      // Track Info with Actions
+                      _buildTrackInfo(track, responsive),
+                      
+                      const SizedBox(height: 24),
+                      
+                      // Progress Bar
+                      _buildProgressBar(playerState, responsive),
+                      
                       const SizedBox(height: 16),
-                      Text(
-                        'No track playing',
-                        style: AppTheme.titleLarge,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Select a track to start playing',
-                        style: AppTheme.bodyMedium,
-                      ),
+                      
+                      // Playback Controls
+                      _buildPlaybackControls(playerState, responsive),
+                      
+                      const SizedBox(height: 24),
+                      
+                      // Bottom Actions (queue, quality, info)
+                      _buildBottomActions(responsive),
+                      
+                      const SizedBox(height: 20),
                     ],
                   ),
                 ),
@@ -67,228 +137,138 @@ class NowPlayingScreen extends ConsumerWidget {
             ],
           ),
         ),
-      );
-    }
+      ),
+    );
+  }
 
+  Widget _buildEmptyState(BuildContext context, Responsive responsive) {
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
       body: SafeArea(
-        child: responsive.isLandscape
-            ? _buildLandscapeLayout(context, ref, playerState, responsive)
-            : _buildPortraitLayout(context, ref, playerState, responsive),
-      ),
-    );
-  }
-
-  Widget _buildPortraitLayout(
-    BuildContext context,
-    WidgetRef ref,
-    PlayerState playerState,
-    Responsive responsive,
-  ) {
-    final track = playerState.currentTrack!;
-
-    return Column(
-      children: [
-        // Header
-        _buildHeader(context, responsive),
-
-        // Main Content
-        Expanded(
-          child: Padding(
-            padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // Waveform / Album Art
-                Expanded(
-                  flex: 3,
-                  child: Center(
-                    child: _WaveformVisualizer(
-                      isPlaying: playerState.isPlaying,
-                      size: responsive.nowPlayingCoverSize,
-                    ),
+        child: Column(
+          children: [
+            Padding(
+              padding: EdgeInsets.all(responsive.horizontalPadding),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.keyboard_arrow_down, size: 32),
+                    onPressed: () => Navigator.pop(context),
                   ),
-                ),
-
-                // Track Info
-                _buildTrackInfo(track, ref, responsive),
-
-                // Progress Bar
-                SizedBox(height: responsive.sectionSpacing),
-                _ProgressBar(
-                  position: playerState.position,
-                  duration: playerState.duration,
-                  onSeek: (position) {
-                    ref.read(playerProvider.notifier).seek(position);
-                  },
-                ),
-
-                // Playback Controls
-                SizedBox(height: responsive.sectionSpacing),
-                _PlaybackControls(
-                  isPlaying: playerState.isPlaying,
-                  isShuffleOn: playerState.isShuffleOn,
-                  repeatMode: playerState.repeatMode,
-                  responsive: responsive,
-                  onPlayPause: () {
-                    ref.read(playerProvider.notifier).togglePlayPause();
-                  },
-                  onPrevious: () {
-                    ref.read(playerProvider.notifier).skipPrevious();
-                  },
-                  onNext: () {
-                    ref.read(playerProvider.notifier).skipNext();
-                  },
-                  onShuffle: () {
-                    ref.read(playerProvider.notifier).toggleShuffle();
-                  },
-                  onRepeat: () {
-                    ref.read(playerProvider.notifier).toggleRepeat();
-                  },
-                ),
-
-                // Volume Slider
-                SizedBox(height: responsive.sectionSpacing),
-                _VolumeSlider(
-                  volume: playerState.volume,
-                  isMuted: playerState.isMuted,
-                  onVolumeChanged: (volume) {
-                    ref.read(playerProvider.notifier).setVolume(volume);
-                  },
-                ),
-
-                SizedBox(height: responsive.sectionSpacing),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildLandscapeLayout(
-    BuildContext context,
-    WidgetRef ref,
-    PlayerState playerState,
-    Responsive responsive,
-  ) {
-    final track = playerState.currentTrack!;
-
-    return Row(
-      children: [
-        // Left side - Waveform
-        Expanded(
-          flex: 1,
-          child: Center(
-            child: _WaveformVisualizer(
-              isPlaying: playerState.isPlaying,
-              size: responsive.screenHeight * 0.5,
-            ),
-          ),
-        ),
-
-        // Right side - Controls
-        Expanded(
-          flex: 1,
-          child: Padding(
-            padding: EdgeInsets.all(responsive.horizontalPadding),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // Track Info
-                _buildTrackInfo(track, ref, responsive),
-
-                SizedBox(height: responsive.sectionSpacing),
-
-                // Progress Bar
-                _ProgressBar(
-                  position: playerState.position,
-                  duration: playerState.duration,
-                  onSeek: (position) {
-                    ref.read(playerProvider.notifier).seek(position);
-                  },
-                ),
-
-                SizedBox(height: responsive.sectionSpacing),
-
-                // Controls
-                _PlaybackControls(
-                  isPlaying: playerState.isPlaying,
-                  isShuffleOn: playerState.isShuffleOn,
-                  repeatMode: playerState.repeatMode,
-                  responsive: responsive,
-                  onPlayPause: () => ref.read(playerProvider.notifier).togglePlayPause(),
-                  onPrevious: () => ref.read(playerProvider.notifier).skipPrevious(),
-                  onNext: () => ref.read(playerProvider.notifier).skipNext(),
-                  onShuffle: () => ref.read(playerProvider.notifier).toggleShuffle(),
-                  onRepeat: () => ref.read(playerProvider.notifier).toggleRepeat(),
-                ),
-
-                SizedBox(height: responsive.sectionSpacing),
-
-                // Volume
-                _VolumeSlider(
-                  volume: playerState.volume,
-                  isMuted: playerState.isMuted,
-                  onVolumeChanged: (volume) {
-                    ref.read(playerProvider.notifier).setVolume(volume);
-                  },
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildHeader(BuildContext context, Responsive responsive) {
-    return Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: responsive.horizontalPadding,
-        vertical: responsive.value(mobile: 12.0, tablet: 16.0),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          IconButton(
-            icon: Icon(
-              Icons.keyboard_arrow_down,
-              size: responsive.value(mobile: 32.0, tablet: 40.0),
-            ),
-            onPressed: () => Navigator.of(context).pop(),
-          ),
-          Row(
-            children: [
-              _TabButton(
-                label: 'Playing',
-                isSelected: true,
-                onTap: () {},
-                responsive: responsive,
+                ],
               ),
-              SizedBox(width: responsive.sectionSpacing),
-              _TabButton(
-                label: 'Lyrics',
-                isSelected: false,
-                onTap: () {},
-                responsive: responsive,
+            ),
+            Expanded(
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.music_off_rounded, size: 80, color: AppTheme.secondaryColor),
+                    const SizedBox(height: 16),
+                    Text('No track playing', style: AppTheme.titleLarge),
+                    const SizedBox(height: 8),
+                    Text('Select a track to start', style: AppTheme.bodyMedium.copyWith(color: AppTheme.secondaryColor)),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context, PlayerState playerState, Responsive responsive) {
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding, vertical: 12),
+      child: Column(
+        children: [
+          // Drag handle
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.3),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 16),
+          // Playing From row
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'PLAYING FROM',
+                      style: AppTheme.labelSmall.copyWith(
+                        color: Colors.white.withOpacity(0.6),
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      playerState.queueSource ?? 'Your Library',
+                      style: AppTheme.bodyMedium.copyWith(color: Colors.white),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.cast_outlined, color: Colors.white70),
+                onPressed: () {},
               ),
             ],
-          ),
-          IconButton(
-            icon: Icon(
-              Icons.speaker_group_outlined,
-              size: responsive.value(mobile: 24.0, tablet: 28.0),
-            ),
-            onPressed: () {},
           ),
         ],
       ),
     );
   }
 
-  Widget _buildTrackInfo(track, WidgetRef ref, Responsive responsive) {
+  Widget _buildAlbumCover(Track track, Responsive responsive) {
+    final coverSize = responsive.value(mobile: 280.0, tablet: 380.0);
+    
+    return Container(
+      width: coverSize,
+      height: coverSize,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.4),
+            blurRadius: 30,
+            offset: const Offset(0, 15),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: track.coverArtUrl != null
+            ? CachedNetworkImage(
+                imageUrl: track.coverArtUrl!,
+                fit: BoxFit.cover,
+                placeholder: (_, __) => _buildPlaceholder(coverSize),
+                errorWidget: (_, __, ___) => _buildPlaceholder(coverSize),
+              )
+            : _buildPlaceholder(coverSize),
+      ),
+    );
+  }
+
+  Widget _buildPlaceholder(double size) {
+    return Container(
+      width: size,
+      height: size,
+      color: AppTheme.surfaceColor,
+      child: const Icon(Icons.music_note, size: 80, color: AppTheme.secondaryColor),
+    );
+  }
+
+  Widget _buildTrackInfo(Track track, Responsive responsive) {
     final favState = ref.watch(favoritesProvider);
     final isFavorite = favState.isFavorite(track);
 
@@ -300,219 +280,85 @@ class NowPlayingScreen extends ConsumerWidget {
             children: [
               Text(
                 track.title,
-                style: responsive.value(
-                  mobile: AppTheme.headlineSmall,
-                  tablet: AppTheme.headlineMedium,
-                ),
+                style: AppTheme.headlineSmall.copyWith(color: Colors.white),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 4),
               Text(
                 track.artist,
-                style: AppTheme.bodyMedium,
+                style: AppTheme.bodyLarge.copyWith(color: Colors.white70),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
         ),
+        // Favorite
         IconButton(
           icon: Icon(
             isFavorite ? Icons.favorite : Icons.favorite_border,
-            size: responsive.value(mobile: 28.0, tablet: 32.0),
+            color: isFavorite ? AppTheme.accentColor : Colors.white70,
           ),
-          color: isFavorite ? AppTheme.accentColor : AppTheme.primaryColor,
-          onPressed: () {
-            ref.read(favoritesProvider.notifier).toggleFavorite(track);
-          },
+          onPressed: () => ref.read(favoritesProvider.notifier).toggleFavorite(track),
+        ),
+        // Share
+        IconButton(
+          icon: const Icon(Icons.share_outlined, color: Colors.white70),
+          onPressed: () {},
+        ),
+        // More
+        IconButton(
+          icon: const Icon(Icons.more_vert, color: Colors.white70),
+          onPressed: () {},
         ),
       ],
     );
   }
-}
 
-class _TabButton extends StatelessWidget {
-  final String label;
-  final bool isSelected;
-  final VoidCallback onTap;
-  final Responsive responsive;
-
-  const _TabButton({
-    required this.label,
-    required this.isSelected,
-    required this.onTap,
-    required this.responsive,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Text(
-        label,
-        style: (isSelected
-            ? responsive.value(mobile: AppTheme.titleSmall, tablet: AppTheme.titleMedium)
-            : responsive.value(mobile: AppTheme.titleSmall, tablet: AppTheme.titleMedium)
-                .copyWith(color: AppTheme.secondaryColor)),
-      ),
-    );
-  }
-}
-
-class _WaveformVisualizer extends StatefulWidget {
-  final bool isPlaying;
-  final double size;
-
-  const _WaveformVisualizer({
-    required this.isPlaying,
-    required this.size,
-  });
-
-  @override
-  State<_WaveformVisualizer> createState() => _WaveformVisualizerState();
-}
-
-class _WaveformVisualizerState extends State<_WaveformVisualizer>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    );
-    if (widget.isPlaying) {
-      _controller.repeat();
-    }
-  }
-
-  @override
-  void didUpdateWidget(_WaveformVisualizer oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.isPlaying && !_controller.isAnimating) {
-      _controller.repeat();
-    } else if (!widget.isPlaying && _controller.isAnimating) {
-      _controller.stop();
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        return CustomPaint(
-          size: Size(widget.size, widget.size * 0.5),
-          painter: _WaveformPainter(
-            progress: _controller.value,
-            isPlaying: widget.isPlaying,
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _WaveformPainter extends CustomPainter {
-  final double progress;
-  final bool isPlaying;
-
-  _WaveformPainter({required this.progress, required this.isPlaying});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = AppTheme.primaryColor
-      ..strokeWidth = 2
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
-
-    final path = Path();
-    final width = size.width;
-    final height = size.height;
-    final centerY = height / 2;
-
-    path.moveTo(0, centerY);
-
-    for (double x = 0; x <= width; x += 3) {
-      final normalizedX = x / width;
-      final wave1 = math.sin((normalizedX * 4 * math.pi) + (progress * 2 * math.pi)) * 30;
-      final wave2 = math.sin((normalizedX * 8 * math.pi) + (progress * 3 * math.pi)) * 15;
-      final wave3 = math.sin((normalizedX * 2 * math.pi) + (progress * math.pi)) * 20;
-      
-      final amplitude = isPlaying ? (wave1 + wave2 + wave3) : (wave1 + wave2 + wave3) * 0.3;
-      final y = centerY + amplitude;
-      
-      path.lineTo(x, y);
-    }
-
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _WaveformPainter oldDelegate) {
-    return oldDelegate.progress != progress || oldDelegate.isPlaying != isPlaying;
-  }
-}
-
-class _ProgressBar extends StatelessWidget {
-  final Duration position;
-  final Duration duration;
-  final ValueChanged<Duration> onSeek;
-
-  const _ProgressBar({
-    required this.position,
-    required this.duration,
-    required this.onSeek,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final progress = duration.inMilliseconds > 0
-        ? position.inMilliseconds / duration.inMilliseconds
+  Widget _buildProgressBar(PlayerState playerState, Responsive responsive) {
+    final position = playerState.position;
+    final duration = playerState.duration;
+    final progress = duration.inMilliseconds > 0 
+        ? position.inMilliseconds / duration.inMilliseconds 
         : 0.0;
-    final responsive = Responsive(context);
 
     return Column(
       children: [
         SliderTheme(
           data: SliderTheme.of(context).copyWith(
-            trackHeight: responsive.value(mobile: 4.0, tablet: 6.0),
-            thumbShape: RoundSliderThumbShape(
-              enabledThumbRadius: responsive.value(mobile: 6.0, tablet: 8.0),
-            ),
-            overlayShape: RoundSliderOverlayShape(
-              overlayRadius: responsive.value(mobile: 14.0, tablet: 18.0),
-            ),
+            trackHeight: 3,
+            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+            overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+            activeTrackColor: Colors.white,
+            inactiveTrackColor: Colors.white.withOpacity(0.3),
+            thumbColor: Colors.white,
+            overlayColor: Colors.white.withOpacity(0.2),
           ),
           child: Slider(
             value: progress.clamp(0.0, 1.0),
             onChanged: (value) {
-              final newPosition = Duration(
-                milliseconds: (value * duration.inMilliseconds).round(),
-              );
-              onSeek(newPosition);
+              final newPosition = Duration(milliseconds: (duration.inMilliseconds * value).round());
+              ref.read(playerProvider.notifier).seek(newPosition);
             },
-            activeColor: AppTheme.primaryColor,
-            inactiveColor: AppTheme.surfaceLighter,
           ),
         ),
         Padding(
-          padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(_formatDuration(position), style: AppTheme.bodySmall),
-              Text(_formatDuration(duration), style: AppTheme.bodySmall),
+              Text(_formatDuration(position), style: AppTheme.labelSmall.copyWith(color: Colors.white70)),
+              // Quality badge
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text('HIGH', style: AppTheme.labelSmall.copyWith(color: Colors.white, fontSize: 10)),
+              ),
+              Text(_formatDuration(duration), style: AppTheme.labelSmall.copyWith(color: Colors.white70)),
             ],
           ),
         ),
@@ -520,138 +366,96 @@ class _ProgressBar extends StatelessWidget {
     );
   }
 
-  String _formatDuration(Duration duration) {
-    final minutes = duration.inMinutes;
-    final seconds = duration.inSeconds % 60;
-    return '$minutes:${seconds.toString().padLeft(2, '0')}';
-  }
-}
-
-class _PlaybackControls extends StatelessWidget {
-  final bool isPlaying;
-  final bool isShuffleOn;
-  final RepeatMode repeatMode;
-  final Responsive responsive;
-  final VoidCallback onPlayPause;
-  final VoidCallback onPrevious;
-  final VoidCallback onNext;
-  final VoidCallback onShuffle;
-  final VoidCallback onRepeat;
-
-  const _PlaybackControls({
-    required this.isPlaying,
-    required this.isShuffleOn,
-    required this.repeatMode,
-    required this.responsive,
-    required this.onPlayPause,
-    required this.onPrevious,
-    required this.onNext,
-    required this.onShuffle,
-    required this.onRepeat,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final playButtonSize = responsive.value(mobile: 72.0, tablet: 88.0);
-    final iconSize = responsive.value(mobile: 40.0, tablet: 48.0);
-    final navIconSize = responsive.value(mobile: 36.0, tablet: 44.0);
-    final smallIconSize = responsive.value(mobile: 24.0, tablet: 28.0);
-
+  Widget _buildPlaybackControls(PlayerState playerState, Responsive responsive) {
+    final notifier = ref.read(playerProvider.notifier);
+    
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      mainAxisAlignment: MainAxisAlignment.center,
       children: [
+        // Shuffle
         IconButton(
-          icon: Icon(Icons.shuffle, size: smallIconSize),
-          color: isShuffleOn ? AppTheme.primaryColor : AppTheme.secondaryColor,
-          onPressed: onShuffle,
+          icon: Icon(
+            Icons.shuffle,
+            color: playerState.shuffleEnabled ? AppTheme.primaryColor : Colors.white70,
+          ),
+          onPressed: () => notifier.toggleShuffle(),
         ),
+        const SizedBox(width: 16),
+        // Previous
         IconButton(
-          icon: Icon(Icons.skip_previous, size: navIconSize),
-          onPressed: onPrevious,
-          color: AppTheme.primaryColor,
+          icon: const Icon(Icons.skip_previous, size: 36, color: Colors.white),
+          onPressed: () => notifier.previous(),
         ),
+        const SizedBox(width: 16),
+        // Play/Pause
         Container(
-          width: playButtonSize,
-          height: playButtonSize,
+          width: 64,
+          height: 64,
           decoration: const BoxDecoration(
-            color: AppTheme.primaryColor,
             shape: BoxShape.circle,
+            color: Colors.white,
           ),
           child: IconButton(
             icon: Icon(
-              isPlaying ? Icons.pause : Icons.play_arrow,
-              size: iconSize,
-              color: AppTheme.backgroundColor,
+              playerState.isPlaying ? Icons.pause : Icons.play_arrow,
+              size: 36,
+              color: Colors.black,
             ),
-            onPressed: onPlayPause,
+            onPressed: () => notifier.togglePlayPause(),
           ),
         ),
+        const SizedBox(width: 16),
+        // Next
         IconButton(
-          icon: Icon(Icons.skip_next, size: navIconSize),
-          onPressed: onNext,
-          color: AppTheme.primaryColor,
+          icon: const Icon(Icons.skip_next, size: 36, color: Colors.white),
+          onPressed: () => notifier.next(),
         ),
+        const SizedBox(width: 16),
+        // Repeat
         IconButton(
           icon: Icon(
-            repeatMode == RepeatMode.one ? Icons.repeat_one : Icons.repeat,
-            size: smallIconSize,
+            playerState.repeatMode == RepeatMode.one 
+                ? Icons.repeat_one 
+                : Icons.repeat,
+            color: playerState.repeatMode != RepeatMode.off ? AppTheme.primaryColor : Colors.white70,
           ),
-          color: repeatMode != RepeatMode.off
-              ? AppTheme.primaryColor
-              : AppTheme.secondaryColor,
-          onPressed: onRepeat,
+          onPressed: () => notifier.cycleRepeatMode(),
         ),
       ],
     );
   }
-}
 
-class _VolumeSlider extends StatelessWidget {
-  final double volume;
-  final bool isMuted;
-  final ValueChanged<double> onVolumeChanged;
-
-  const _VolumeSlider({
-    required this.volume,
-    required this.isMuted,
-    required this.onVolumeChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final responsive = Responsive(context);
-
+  Widget _buildBottomActions(Responsive responsive) {
     return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Icon(
-          isMuted || volume == 0
-              ? Icons.volume_off
-              : volume < 0.5
-                  ? Icons.volume_down
-                  : Icons.volume_up,
-          color: AppTheme.secondaryColor,
-          size: responsive.value(mobile: 20.0, tablet: 24.0),
+        // Queue
+        IconButton(
+          icon: const Icon(Icons.queue_music_outlined, color: Colors.white70),
+          onPressed: () {},
+          tooltip: 'Queue',
         ),
-        Expanded(
-          child: SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              trackHeight: responsive.value(mobile: 3.0, tablet: 4.0),
-              thumbShape: RoundSliderThumbShape(
-                enabledThumbRadius: responsive.value(mobile: 5.0, tablet: 7.0),
-              ),
-              overlayShape: RoundSliderOverlayShape(
-                overlayRadius: responsive.value(mobile: 12.0, tablet: 16.0),
-              ),
-            ),
-            child: Slider(
-              value: volume,
-              onChanged: onVolumeChanged,
-              activeColor: AppTheme.secondaryColor,
-              inactiveColor: AppTheme.surfaceLighter,
-            ),
-          ),
+        const SizedBox(width: 32),
+        // Audio quality/Dolby
+        IconButton(
+          icon: const Icon(Icons.graphic_eq, color: Colors.white70),
+          onPressed: () {},
+          tooltip: 'Audio Quality',
+        ),
+        const SizedBox(width: 32),
+        // Info
+        IconButton(
+          icon: const Icon(Icons.info_outline, color: Colors.white70),
+          onPressed: () {},
+          tooltip: 'Track Info',
         ),
       ],
     );
+  }
+
+  String _formatDuration(Duration duration) {
+    final minutes = duration.inMinutes.toString().padLeft(2, '0');
+    final seconds = (duration.inSeconds % 60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
   }
 }

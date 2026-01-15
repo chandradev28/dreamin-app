@@ -48,11 +48,20 @@ class Album extends Equatable {
         ? (artists.first['id']?.toString() ?? '')
         : (json['artist']?['id']?.toString() ?? '');
 
-    final cover = json['cover'] as String?;
+    // Try multiple image fields
+    final cover = json['cover'] as String? 
+        ?? json['image'] as String?
+        ?? json['squareImage'] as String?;
     String? coverUrl;
-    if (cover != null) {
-      final formattedCover = cover.replaceAll('-', '/');
-      coverUrl = 'https://resources.tidal.com/images/$formattedCover/640x640.jpg';
+    if (cover != null && cover.isNotEmpty) {
+      if (cover.contains('-')) {
+        final formattedCover = cover.replaceAll('-', '/');
+        coverUrl = 'https://resources.tidal.com/images/$formattedCover/640x640.jpg';
+      } else if (cover.startsWith('http')) {
+        coverUrl = cover;
+      } else {
+        coverUrl = 'https://resources.tidal.com/images/$cover/640x640.jpg';
+      }
     }
 
     return Album(

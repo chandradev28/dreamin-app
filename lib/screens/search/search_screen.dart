@@ -5,13 +5,14 @@ import 'dart:async';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/responsive.dart';
 import '../../providers/providers.dart';
-import '../../widgets/widgets.dart';
 import '../../models/models.dart';
 import '../album/album_detail_screen.dart';
 import '../playlist/playlist_detail_screen.dart';
 import '../artist/artist_detail_screen.dart';
 
-/// Search Screen - Echo/Deezer Style with Browse Sections
+/// Search Screen - TIDAL Style
+/// Browse: Genres, Moods, Decades
+/// Search: Text suggestions + mixed results
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
 
@@ -20,33 +21,57 @@ class SearchScreen extends ConsumerStatefulWidget {
 }
 
 class _SearchScreenState extends ConsumerState<SearchScreen> {
-  final _searchController = TextEditingController();
-  final _scrollController = ScrollController();
-  Timer? _debounceTimer;
+  final TextEditingController _searchController = TextEditingController();
+  Timer? _debounce;
+  bool _isSearching = false;
+
+  static const List<String> genres = [
+    'Hip-Hop', 'Pop', 'R&B / Soul', 'Rock', 'Electronic', 
+    'Latin', 'Country', 'Jazz', 'Classical', 'Metal',
+  ];
+
+  static const List<String> moods = [
+    'Chill', 'Workout', 'Party', 'Focus', 'Sleep',
+    'Romance', 'Road Trip', 'Cooking', 'Meditation',
+  ];
+
+  static const List<String> decades = [
+    '1950s', '1960s', '1970s', '1980s', '1990s', '2000s', '2010s', '2020s',
+  ];
 
   @override
   void dispose() {
     _searchController.dispose();
-    _scrollController.dispose();
-    _debounceTimer?.cancel();
+    _debounce?.cancel();
     super.dispose();
   }
 
   void _onSearchChanged(String query) {
-    _debounceTimer?.cancel();
-    _debounceTimer = Timer(const Duration(milliseconds: 500), () {
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 400), () {
       if (query.trim().isNotEmpty) {
-        ref.read(searchProvider.notifier).search(query);
-      } else {
-        ref.read(searchProvider.notifier).clear();
+        ref.read(searchProvider.notifier).search(query.trim());
       }
     });
+    setState(() {
+      _isSearching = query.isNotEmpty;
+    });
+  }
+
+  void _onCategoryTap(String category) {
+    _searchController.text = category;
+    _onSearchChanged(category);
+    FocusScope.of(context).unfocus();
+  }
+
+  void _onSuggestionTap(String suggestion) {
+    _searchController.text = suggestion;
+    _onSearchChanged(suggestion);
   }
 
   @override
   Widget build(BuildContext context) {
     final searchState = ref.watch(searchProvider);
-    final homeData = ref.watch(homeDataProvider);
     final responsive = Responsive(context);
 
     return Scaffold(
@@ -54,76 +79,44 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // Search Header with Search Bar
-            Container(
-              color: AppTheme.backgroundColor,
-              padding: EdgeInsets.fromLTRB(
-                responsive.horizontalPadding,
-                responsive.value(mobile: 12.0, tablet: 16.0),
-                responsive.horizontalPadding,
-                responsive.value(mobile: 12.0, tablet: 16.0),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Title removed - search bar is prominent
-                  // Search Input - Echo Style (rounded, dark background)
-                  Container(
-                    height: responsive.value(mobile: 48.0, tablet: 56.0),
-                    decoration: BoxDecoration(
-                      color: AppTheme.surfaceColor,
-                      borderRadius: BorderRadius.circular(AppTheme.radiusM),
-                    ),
-                    child: TextField(
-                      controller: _searchController,
-                      onChanged: (value) {
-                        setState(() {});
-                        _onSearchChanged(value);
-                      },
-                      style: AppTheme.bodyLarge.copyWith(color: AppTheme.primaryColor),
-                      decoration: InputDecoration(
-                        hintText: 'Search',
-                        hintStyle: AppTheme.bodyLarge.copyWith(
-                          color: AppTheme.secondaryColor,
-                        ),
-                        prefixIcon: Icon(
-                          Icons.search,
-                          color: AppTheme.secondaryColor,
-                          size: responsive.value(mobile: 24.0, tablet: 28.0),
-                        ),
-                        suffixIcon: _searchController.text.isNotEmpty
-                            ? IconButton(
-                                icon: const Icon(
-                                  Icons.clear,
-                                  color: AppTheme.secondaryColor,
-                                ),
-                                onPressed: () {
-                                  _searchController.clear();
-                                  ref.read(searchProvider.notifier).clear();
-                                  setState(() {});
-                                },
-                              )
-                            : null,
-                        border: InputBorder.none,
-                        enabledBorder: InputBorder.none,
-                        focusedBorder: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: AppTheme.spacingM,
-                          vertical: AppTheme.spacingM,
-                        ),
-                      ),
-                    ),
+            // Search Bar
+            Padding(
+              padding: EdgeInsets.all(responsive.horizontalPadding),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: AppTheme.surfaceColor,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: TextField(
+                  controller: _searchController,
+                  onChanged: _onSearchChanged,
+                  style: AppTheme.bodyLarge,
+                  decoration: InputDecoration(
+                    hintText: 'Search',
+                    hintStyle: AppTheme.bodyLarge.copyWith(color: AppTheme.secondaryColor),
+                    prefixIcon: const Icon(Icons.search, color: AppTheme.secondaryColor),
+                    suffixIcon: _isSearching
+                        ? IconButton(
+                            icon: const Icon(Icons.close, color: AppTheme.secondaryColor),
+                            onPressed: () {
+                              _searchController.clear();
+                              ref.read(searchProvider.notifier).clear();
+                              setState(() => _isSearching = false);
+                            },
+                          )
+                        : null,
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                   ),
-                ],
+                ),
               ),
             ),
 
             // Content
             Expanded(
-              child: Container(
-                color: AppTheme.backgroundColor,
-                child: _buildContent(searchState, homeData, responsive),
-              ),
+              child: _isSearching
+                  ? _buildSearchResults(searchState, responsive)
+                  : _buildBrowseSection(responsive),
             ),
           ],
         ),
@@ -131,773 +124,339 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     );
   }
 
-  Widget _buildContent(SearchState searchState, HomeDataState homeData, Responsive responsive) {
-    // Show loading
-    if (searchState.isLoading) {
-      return Container(
-        color: AppTheme.backgroundColor,
-        child: const Center(
-          child: CircularProgressIndicator(color: AppTheme.primaryColor),
-        ),
-      );
-    }
+  // ===========================================================================
+  // BROWSE SECTION
+  // ===========================================================================
 
-    // Show error
-    if (searchState.error != null) {
-      return Container(
-        color: AppTheme.backgroundColor,
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.error_outline,
-                size: responsive.value(mobile: 48.0, tablet: 64.0),
-                color: AppTheme.errorColor,
-              ),
-              SizedBox(height: responsive.sectionSpacing),
-              Text('Search failed', style: AppTheme.titleLarge),
-              const SizedBox(height: AppTheme.spacingS),
-              Text(
-                searchState.error!,
-                style: AppTheme.bodyMedium,
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    // If no query, show BROWSE sections (Echo-style)
-    if (searchState.query.isEmpty || _searchController.text.isEmpty) {
-      return _buildBrowseSections(homeData, responsive);
-    }
-
-    // Show no results
-    if (searchState.result == null || searchState.result!.isEmpty) {
-      return Container(
-        color: AppTheme.backgroundColor,
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.search_off,
-                size: responsive.value(mobile: 48.0, tablet: 64.0),
-                color: AppTheme.secondaryColor,
-              ),
-              SizedBox(height: responsive.sectionSpacing),
-              Text('No results found', style: AppTheme.titleLarge),
-              const SizedBox(height: AppTheme.spacingS),
-              Text('Try a different search term', style: AppTheme.bodyMedium),
-            ],
-          ),
-        ),
-      );
-    }
-
-    // Show results
-    return _buildSearchResults(searchState.result!, responsive);
-  }
-
-  /// Echo-style Browse Sections (shown when not searching)
-  Widget _buildBrowseSections(HomeDataState homeData, Responsive responsive) {
+  Widget _buildBrowseSection(Responsive responsive) {
     return SingleChildScrollView(
-      controller: _scrollController,
-      padding: EdgeInsets.only(
-        bottom: responsive.miniPlayerHeight + responsive.bottomNavHeight + 20,
-      ),
+      padding: EdgeInsets.only(bottom: responsive.miniPlayerHeight + responsive.bottomNavHeight + 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // SECTION 1: Highlights (Featured Playlists)
-          if (homeData.playlistsForYou.isNotEmpty) ...[
-            _SectionHeader(
-              title: 'Highlights',
-              onSeeAll: () {},
-            ),
-            SizedBox(
-              height: responsive.value(mobile: 180.0, tablet: 220.0),
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
-                itemCount: homeData.playlistsForYou.length,
-                itemBuilder: (context, index) {
-                  final playlist = homeData.playlistsForYou[index];
-                  return _PlaylistBrowseCard(
-                    playlist: playlist,
-                    width: responsive.value(mobile: 140.0, tablet: 180.0),
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => PlaylistDetailScreen(
-                            playlistId: playlist.id,
-                            playlist: playlist,
-                          ),
-                        ),
-                      );
-                    },
-                  );
-                },
-              ),
-            ),
-            SizedBox(height: responsive.sectionSpacing),
-          ],
-
-          // SECTION 2: Your 2026 Level Up (New Albums)
-          if (homeData.newAlbums.isNotEmpty) ...[
-            _SectionHeader(
-              title: 'Your 2026 level up',
-              onSeeAll: () {},
-            ),
-            SizedBox(
-              height: responsive.value(mobile: 200.0, tablet: 240.0),
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
-                itemCount: homeData.newAlbums.length,
-                itemBuilder: (context, index) {
-                  final album = homeData.newAlbums[index];
-                  return _AlbumBrowseCard(
-                    album: album,
-                    width: responsive.value(mobile: 140.0, tablet: 180.0),
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => AlbumDetailScreen(
-                            albumId: album.id,
-                            album: album,
-                          ),
-                        ),
-                      );
-                    },
-                  );
-                },
-              ),
-            ),
-            SizedBox(height: responsive.sectionSpacing),
-          ],
-
-          // SECTION 3: This week's freshest releases (Trending Tracks as Playlists)
-          if (homeData.recommendations.isNotEmpty) ...[
-            _SectionHeader(
-              title: "This week's freshest releases",
-              onSeeAll: () {},
-            ),
-            SizedBox(
-              height: responsive.value(mobile: 180.0, tablet: 220.0),
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
-                itemCount: (homeData.recommendations.length / 2).ceil().clamp(0, 6),
-                itemBuilder: (context, index) {
-                  final track = homeData.recommendations[index];
-                  return _TrackBrowseCard(
-                    track: track,
-                    width: responsive.value(mobile: 140.0, tablet: 180.0),
-                    onTap: () {
-                      ref.read(playerProvider.notifier).playQueue(
-                        homeData.recommendations,
-                        startIndex: index,
-                      );
-                    },
-                  );
-                },
-              ),
-            ),
-            SizedBox(height: responsive.sectionSpacing),
-          ],
-
-          // SECTION 4: Top Genres as Cards
-          if (homeData.topGenres.isNotEmpty) ...[
-            _SectionHeader(
-              title: 'Browse by genre',
-              onSeeAll: () {},
-            ),
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
-              child: Wrap(
-                spacing: AppTheme.spacingS,
-                runSpacing: AppTheme.spacingS,
-                children: homeData.topGenres.map((genre) {
-                  return _GenreCard(
-                    genre: genre,
-                    onTap: () {
-                      _searchController.text = genre;
-                      _onSearchChanged(genre);
-                    },
-                  );
-                }).toList(),
-              ),
-            ),
-            SizedBox(height: responsive.sectionSpacing),
-          ],
-
-          // SECTION 5: Popular Artists
-          if (homeData.recentlyPlayedArtists.isNotEmpty) ...[
-            _SectionHeader(
-              title: 'Popular artists',
-              onSeeAll: () {},
-            ),
-            SizedBox(
-              height: responsive.value(mobile: 140.0, tablet: 170.0),
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
-                itemCount: homeData.recentlyPlayedArtists.length,
-                itemBuilder: (context, index) {
-                  final artist = homeData.recentlyPlayedArtists[index];
-                  return _ArtistBrowseCard(
-                    artist: artist,
-                    onTap: () {
-                      _searchController.text = artist.name;
-                      _onSearchChanged(artist.name);
-                    },
-                  );
-                },
-              ),
-            ),
-          ],
+          _BrowseSectionHeader(title: 'Genres', onViewAll: () {}),
+          _buildChipRow(genres, responsive),
+          const SizedBox(height: 24),
+          _BrowseSectionHeader(title: 'Moods & Activities', onViewAll: () {}),
+          _buildChipRow(moods, responsive),
+          const SizedBox(height: 24),
+          _BrowseSectionHeader(title: 'Decades', onViewAll: () {}),
+          _buildChipRow(decades, responsive),
+          const SizedBox(height: 24),
+          _buildNewReleasesSection(responsive),
         ],
       ),
     );
   }
 
-  /// Search results with tabs
-  Widget _buildSearchResults(SearchResult result, Responsive responsive) {
-    return DefaultTabController(
-      length: 3,
-      child: Column(
-        children: [
-          // Tabs
-          Container(
-            color: AppTheme.backgroundColor,
-            child: TabBar(
-              labelColor: AppTheme.primaryColor,
-              unselectedLabelColor: AppTheme.secondaryColor,
-              indicatorColor: AppTheme.primaryColor,
-              indicatorWeight: 3,
-              labelStyle: responsive.value(
-                mobile: AppTheme.labelLarge,
-                tablet: AppTheme.titleSmall,
-              ),
-              tabs: [
-                Tab(text: 'Tracks (${result.tracks.length})'),
-                Tab(text: 'Albums (${result.albums.length})'),
-                Tab(text: 'Artists (${result.artists.length})'),
-              ],
-            ),
-          ),
-          // Tab Content
-          Expanded(
-            child: Container(
-              color: AppTheme.backgroundColor,
-              child: TabBarView(
-                children: [
-                  _buildTracksList(result.tracks, responsive),
-                  _buildAlbumsGrid(result.albums, responsive),
-                  _buildArtistsGrid(result.artists, responsive),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTracksList(List<Track> tracks, Responsive responsive) {
-    if (tracks.isEmpty) {
-      return Container(
-        color: AppTheme.backgroundColor,
-        child: const Center(
-          child: Text('No tracks found', style: TextStyle(color: AppTheme.secondaryColor)),
-        ),
-      );
-    }
-
-    return Container(
-      color: AppTheme.backgroundColor,
+  Widget _buildChipRow(List<String> items, Responsive responsive) {
+    return SizedBox(
+      height: 44,
       child: ListView.builder(
-        padding: EdgeInsets.only(
-          top: AppTheme.spacingS,
-          bottom: responsive.miniPlayerHeight + responsive.bottomNavHeight + 20,
+        scrollDirection: Axis.horizontal,
+        padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
+        itemCount: items.length,
+        itemBuilder: (context, index) => Padding(
+          padding: const EdgeInsets.only(right: 8),
+          child: _CategoryChip(label: items[index], onTap: () => _onCategoryTap(items[index])),
         ),
-        itemCount: tracks.length,
-        itemBuilder: (context, index) {
-          final track = tracks[index];
-          final playerState = ref.watch(playerProvider);
-          final favState = ref.watch(favoritesProvider);
-
-          return TrackListTile(
-            track: track,
-            isPlaying: playerState.currentTrack?.id == track.id,
-            isFavorite: favState.isFavorite(track),
-            onTap: () {
-              ref.read(playerProvider.notifier).playQueue(tracks, startIndex: index);
-            },
-            onFavoriteTap: () {
-              ref.read(favoritesProvider.notifier).toggleFavorite(track);
-            },
-          );
-        },
       ),
     );
   }
 
-  Widget _buildAlbumsGrid(List<Album> albums, Responsive responsive) {
-    if (albums.isEmpty) {
-      return Container(
-        color: AppTheme.backgroundColor,
-        child: const Center(
-          child: Text('No albums found', style: TextStyle(color: AppTheme.secondaryColor)),
-        ),
-      );
-    }
+  Widget _buildNewReleasesSection(Responsive responsive) {
+    final homeData = ref.watch(homeDataProvider);
+    if (homeData.newAlbums.isEmpty) return const SizedBox.shrink();
 
-    return Container(
-      color: AppTheme.backgroundColor,
-      child: GridView.builder(
-        padding: EdgeInsets.all(responsive.horizontalPadding).copyWith(
-          bottom: responsive.miniPlayerHeight + responsive.bottomNavHeight + 20,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _BrowseSectionHeader(title: 'New Releases', onViewAll: () {}),
+        SizedBox(
+          height: 180,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
+            itemCount: homeData.newAlbums.length,
+            itemBuilder: (context, index) {
+              final album = homeData.newAlbums[index];
+              return _AlbumCard(
+                album: album,
+                onTap: () => Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => AlbumDetailScreen(albumId: album.id, album: album),
+                )),
+              );
+            },
+          ),
         ),
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: responsive.gridColumns,
-          mainAxisSpacing: responsive.cardSpacing,
-          crossAxisSpacing: responsive.cardSpacing,
-          childAspectRatio: 0.75,
-        ),
-        itemCount: albums.length,
-        itemBuilder: (context, index) {
-          return AlbumCard(
-            album: albums[index],
-            onTap: () {},
-          );
-        },
-      ),
+      ],
     );
   }
 
-  Widget _buildArtistsGrid(List<Artist> artists, Responsive responsive) {
-    if (artists.isEmpty) {
-      return Container(
-        color: AppTheme.backgroundColor,
-        child: const Center(
-          child: Text('No artists found', style: TextStyle(color: AppTheme.secondaryColor)),
+  // ===========================================================================
+  // SEARCH RESULTS WITH SUGGESTIONS
+  // ===========================================================================
+
+  Widget _buildSearchResults(SearchState searchState, Responsive responsive) {
+    if (searchState.isLoading) {
+      return const Center(child: CircularProgressIndicator(color: AppTheme.primaryColor));
+    }
+
+    if (searchState.error != null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.error_outline, size: 64, color: AppTheme.errorColor),
+            const SizedBox(height: 16),
+            Text('Search failed', style: AppTheme.titleLarge),
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Text(searchState.error!, style: AppTheme.bodyMedium.copyWith(color: AppTheme.secondaryColor), textAlign: TextAlign.center),
+            ),
+          ],
         ),
       );
     }
 
-    return Container(
-      color: AppTheme.backgroundColor,
-      child: GridView.builder(
-        padding: EdgeInsets.all(responsive.horizontalPadding).copyWith(
-          bottom: responsive.miniPlayerHeight + responsive.bottomNavHeight + 20,
+    final result = searchState.result;
+    if (result == null) {
+      return Center(child: Text('Start typing to search', style: AppTheme.bodyLarge.copyWith(color: AppTheme.secondaryColor)));
+    }
+
+    final hasResults = result.tracks.isNotEmpty || result.artists.isNotEmpty || result.albums.isNotEmpty;
+
+    if (!hasResults) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.search_off, size: 64, color: AppTheme.secondaryColor),
+            const SizedBox(height: 16),
+            Text('No results found', style: AppTheme.titleLarge),
+          ],
         ),
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: responsive.value(mobile: 3, tablet: 4, desktop: 6),
-          mainAxisSpacing: responsive.cardSpacing,
-          crossAxisSpacing: responsive.cardSpacing,
-          childAspectRatio: 0.85,
-        ),
-        itemCount: artists.length,
-        itemBuilder: (context, index) {
-          return ArtistCard(
-            artist: artists[index],
-            onTap: () {},
-          );
-        },
-      ),
+      );
+    }
+
+    // Build suggestions from results
+    final suggestions = _buildSuggestions(result);
+
+    return ListView(
+      padding: EdgeInsets.only(bottom: responsive.miniPlayerHeight + responsive.bottomNavHeight + 20),
+      children: [
+        // Text Suggestions (with search icon) - like TIDAL
+        ...suggestions.take(4).map((s) => _SuggestionTile(
+          suggestion: s,
+          query: _searchController.text,
+          onTap: () => _onSuggestionTap(s),
+        )),
+        
+        // Results with images
+        ...result.artists.take(4).map((artist) => _ArtistResultTile(
+          artist: artist,
+          onTap: () => Navigator.push(context, MaterialPageRoute(
+            builder: (_) => ArtistDetailScreen(artistId: artist.id, artist: artist),
+          )),
+        )),
+        
+        ...result.tracks.take(4).map((track) => _TrackResultTile(
+          track: track,
+          onTap: () => ref.read(playerProvider.notifier).playQueue(
+            result.tracks, 
+            startIndex: result.tracks.indexOf(track),
+          ),
+        )),
+      ],
     );
+  }
+
+  List<String> _buildSuggestions(SearchResult result) {
+    final suggestions = <String>{};
+    final query = _searchController.text.toLowerCase();
+    
+    for (final artist in result.artists.take(4)) {
+      suggestions.add(artist.name.toLowerCase());
+    }
+    
+    for (final track in result.tracks.take(4)) {
+      if (track.title.toLowerCase().contains(query)) {
+        suggestions.add('${track.artist.toLowerCase()} ${track.title.toLowerCase()}');
+      }
+    }
+    
+    return suggestions.toList();
   }
 }
 
-// ============================================================================
-// BROWSE CARDS - Echo/Deezer Style
-// ============================================================================
+// =============================================================================
+// WIDGETS
+// =============================================================================
 
-class _SectionHeader extends StatelessWidget {
+class _BrowseSectionHeader extends StatelessWidget {
   final String title;
-  final VoidCallback? onSeeAll;
+  final VoidCallback onViewAll;
 
-  const _SectionHeader({required this.title, this.onSeeAll});
+  const _BrowseSectionHeader({required this.title, required this.onViewAll});
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppTheme.spacingM,
-        AppTheme.spacingM,
-        AppTheme.spacingM,
-        AppTheme.spacingS,
-      ),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Expanded(
-            child: Text(
-              title,
-              style: AppTheme.titleLarge,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
+          Text(title, style: AppTheme.headlineSmall),
+          TextButton(
+            onPressed: onViewAll,
+            child: Text('VIEW AS LIST', style: AppTheme.labelSmall.copyWith(color: AppTheme.secondaryColor)),
           ),
-          if (onSeeAll != null)
-            IconButton(
-              icon: const Icon(Icons.arrow_forward, color: AppTheme.secondaryColor),
-              onPressed: onSeeAll,
-              iconSize: 20,
-            ),
         ],
       ),
     );
   }
 }
 
-class _PlaylistBrowseCard extends StatelessWidget {
-  final Playlist playlist;
-  final double width;
+class _CategoryChip extends StatelessWidget {
+  final String label;
   final VoidCallback onTap;
 
-  const _PlaylistBrowseCard({
-    required this.playlist,
-    required this.width,
-    required this.onTap,
-  });
+  const _CategoryChip({required this.label, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: width,
-        margin: const EdgeInsets.only(right: AppTheme.spacingM),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Image
-            Container(
-              width: width,
-              height: width,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(AppTheme.radiusM),
-                color: AppTheme.surfaceColor,
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(AppTheme.radiusM),
-                child: playlist.coverArtUrl != null
-                    ? CachedNetworkImage(
-                        imageUrl: playlist.coverArtUrl!,
-                        fit: BoxFit.cover,
-                        placeholder: (_, __) => _ImagePlaceholder(text: playlist.title),
-                        errorWidget: (_, __, ___) => _ImagePlaceholder(text: playlist.title),
-                      )
-                    : _ImagePlaceholder(text: playlist.title),
-              ),
-            ),
-            const SizedBox(height: AppTheme.spacingS),
-            // Name
-            Text(
-              playlist.title,
-              style: AppTheme.bodyMedium.copyWith(fontWeight: FontWeight.w600),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            // Subtitle
-            Text(
-              '${playlist.trackCount} tracks',
-              style: AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppTheme.surfaceLight,
+          borderRadius: BorderRadius.circular(20),
         ),
+        child: Text(label, style: AppTheme.bodyMedium),
       ),
     );
   }
 }
 
-class _AlbumBrowseCard extends StatelessWidget {
-  final Album album;
-  final double width;
+/// Search Suggestion Tile - shows search icon + highlighted text
+class _SuggestionTile extends StatelessWidget {
+  final String suggestion;
+  final String query;
   final VoidCallback onTap;
 
-  const _AlbumBrowseCard({
-    required this.album,
-    required this.width,
-    required this.onTap,
-  });
+  const _SuggestionTile({required this.suggestion, required this.query, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return ListTile(
       onTap: onTap,
-      child: Container(
-        width: width,
-        margin: const EdgeInsets.only(right: AppTheme.spacingM),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Image
-            Container(
-              width: width,
-              height: width,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(AppTheme.radiusM),
-                color: AppTheme.surfaceColor,
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(AppTheme.radiusM),
-                child: album.coverArtUrl != null
-                    ? CachedNetworkImage(
-                        imageUrl: album.coverArtUrl!,
-                        fit: BoxFit.cover,
-                        placeholder: (_, __) => _ImagePlaceholder(text: album.title),
-                        errorWidget: (_, __, ___) => _ImagePlaceholder(text: album.title),
-                      )
-                    : _ImagePlaceholder(text: album.title),
-              ),
-            ),
-            const SizedBox(height: AppTheme.spacingS),
-            // Title
-            Text(
-              album.title,
-              style: AppTheme.bodyMedium.copyWith(fontWeight: FontWeight.w600),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            // Artist
-            Text(
-              album.artist,
-              style: AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ),
+      leading: const Icon(Icons.search, color: AppTheme.secondaryColor, size: 20),
+      title: _buildHighlightedText(suggestion, query),
+      dense: true,
+    );
+  }
+
+  Widget _buildHighlightedText(String text, String query) {
+    final queryLower = query.toLowerCase();
+    final textLower = text.toLowerCase();
+    final index = textLower.indexOf(queryLower);
+
+    if (index == -1 || query.isEmpty) {
+      return Text(text, style: AppTheme.bodyMedium);
+    }
+
+    return RichText(
+      text: TextSpan(
+        style: AppTheme.bodyMedium.copyWith(color: AppTheme.secondaryColor),
+        children: [
+          TextSpan(text: text.substring(0, index)),
+          TextSpan(
+            text: text.substring(index, index + query.length),
+            style: AppTheme.bodyMedium.copyWith(color: AppTheme.primaryColor, fontWeight: FontWeight.bold),
+          ),
+          TextSpan(text: text.substring(index + query.length)),
+        ],
       ),
     );
   }
 }
 
-class _TrackBrowseCard extends StatelessWidget {
-  final Track track;
-  final double width;
-  final VoidCallback onTap;
-
-  const _TrackBrowseCard({
-    required this.track,
-    required this.width,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: width,
-        margin: const EdgeInsets.only(right: AppTheme.spacingM),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Image with play overlay
-            Stack(
-              children: [
-                Container(
-                  width: width,
-                  height: width,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(AppTheme.radiusM),
-                    color: AppTheme.surfaceColor,
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(AppTheme.radiusM),
-                    child: track.coverArtUrl != null
-                        ? CachedNetworkImage(
-                            imageUrl: track.coverArtUrl!,
-                            fit: BoxFit.cover,
-                            placeholder: (_, __) => _ImagePlaceholder(text: track.title),
-                            errorWidget: (_, __, ___) => _ImagePlaceholder(text: track.title),
-                          )
-                        : _ImagePlaceholder(text: track.title),
-                  ),
-                ),
-                // Play button overlay
-                Positioned(
-                  bottom: 8,
-                  right: 8,
-                  child: Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: AppTheme.primaryColor,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.3),
-                          blurRadius: 6,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: const Icon(Icons.play_arrow, color: Colors.white, size: 22),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppTheme.spacingS),
-            // Title
-            Text(
-              track.title,
-              style: AppTheme.bodyMedium.copyWith(fontWeight: FontWeight.w600),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            // Artist
-            Text(
-              track.artist,
-              style: AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ArtistBrowseCard extends StatelessWidget {
+class _ArtistResultTile extends StatelessWidget {
   final Artist artist;
   final VoidCallback onTap;
 
-  const _ArtistBrowseCard({
-    required this.artist,
-    required this.onTap,
-  });
+  const _ArtistResultTile({required this.artist, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return ListTile(
       onTap: onTap,
-      child: Container(
-        width: 100,
-        margin: const EdgeInsets.only(right: AppTheme.spacingM),
-        child: Column(
-          children: [
-            // Circular Image
-            Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppTheme.surfaceColor,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.2),
-                    blurRadius: 8,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: ClipOval(
-                child: artist.imageUrl != null
-                    ? CachedNetworkImage(
-                        imageUrl: artist.imageUrl!,
-                        fit: BoxFit.cover,
-                        placeholder: (_, __) => _ArtistPlaceholder(name: artist.name),
-                        errorWidget: (_, __, ___) => _ArtistPlaceholder(name: artist.name),
-                      )
-                    : _ArtistPlaceholder(name: artist.name),
-              ),
-            ),
-            const SizedBox(height: AppTheme.spacingS),
-            // Name
-            Text(
-              artist.name,
-              style: AppTheme.bodySmall,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
+      leading: Container(
+        width: 50, height: 50,
+        decoration: BoxDecoration(shape: BoxShape.circle, color: AppTheme.surfaceColor),
+        child: ClipOval(
+          child: artist.imageUrl != null
+              ? CachedNetworkImage(imageUrl: artist.imageUrl!, fit: BoxFit.cover)
+              : Center(child: Text(artist.name.isNotEmpty ? artist.name[0].toUpperCase() : '?', style: AppTheme.titleLarge)),
         ),
       ),
+      title: Text(artist.name, style: AppTheme.bodyLarge),
+      trailing: const Icon(Icons.more_vert, color: AppTheme.secondaryColor),
     );
   }
 }
 
-class _GenreCard extends StatelessWidget {
-  final String genre;
+class _TrackResultTile extends StatelessWidget {
+  final Track track;
   final VoidCallback onTap;
 
-  const _GenreCard({
-    required this.genre,
-    required this.onTap,
-  });
+  const _TrackResultTile({required this.track, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      onTap: onTap,
+      leading: ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: track.coverArtUrl != null
+            ? CachedNetworkImage(imageUrl: track.coverArtUrl!, width: 50, height: 50, fit: BoxFit.cover)
+            : Container(width: 50, height: 50, color: AppTheme.surfaceColor, child: const Icon(Icons.music_note, color: AppTheme.secondaryColor)),
+      ),
+      title: Text(track.title, style: AppTheme.bodyLarge, maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: Text('Track by ${track.artist}', style: AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor), maxLines: 1),
+      trailing: const Icon(Icons.more_vert, color: AppTheme.secondaryColor),
+    );
+  }
+}
+
+class _AlbumCard extends StatelessWidget {
+  final Album album;
+  final VoidCallback onTap;
+
+  const _AlbumCard({required this.album, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppTheme.spacingL,
-          vertical: AppTheme.spacingM,
-        ),
-        decoration: BoxDecoration(
-          color: AppTheme.surfaceLight,
-          borderRadius: BorderRadius.circular(AppTheme.radiusM),
-        ),
-        child: Text(
-          genre,
-          style: AppTheme.bodyMedium.copyWith(
-            color: AppTheme.primaryColor,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ImagePlaceholder extends StatelessWidget {
-  final String text;
-
-  const _ImagePlaceholder({required this.text});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: AppTheme.surfaceLight,
-      child: Center(
-        child: Icon(
-          Icons.music_note,
-          color: AppTheme.secondaryColor.withOpacity(0.5),
-          size: 32,
-        ),
-      ),
-    );
-  }
-}
-
-class _ArtistPlaceholder extends StatelessWidget {
-  final String name;
-
-  const _ArtistPlaceholder({required this.name});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: AppTheme.primaryColor.withOpacity(0.2),
-      child: Center(
-        child: Text(
-          name.isNotEmpty ? name[0].toUpperCase() : '?',
-          style: AppTheme.headlineMedium.copyWith(
-            color: AppTheme.primaryColor,
-          ),
+        width: 120,
+        margin: const EdgeInsets.only(right: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: album.coverArtUrl != null
+                  ? CachedNetworkImage(imageUrl: album.coverArtUrl!, width: 120, height: 120, fit: BoxFit.cover)
+                  : Container(width: 120, height: 120, color: AppTheme.surfaceColor, child: const Icon(Icons.album, size: 40, color: AppTheme.secondaryColor)),
+            ),
+            const SizedBox(height: 8),
+            Text(album.title, style: AppTheme.bodySmall, maxLines: 1, overflow: TextOverflow.ellipsis),
+            Text(album.artist, style: AppTheme.labelSmall.copyWith(color: AppTheme.secondaryColor), maxLines: 1),
+          ],
         ),
       ),
     );

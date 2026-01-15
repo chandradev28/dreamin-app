@@ -125,12 +125,31 @@ class TidalService {
         );
       });
 
-      final data = response.data as Map<String, dynamic>;
-      // Artists come from top-hits search
-      final items = data['data']?['artists'] as List<dynamic>? ??
-                    data['artists']?['items'] as List<dynamic>? ?? [];
+      final data = response.data;
+      List<dynamic> items = [];
       
-      return items.take(limit).map((a) => Artist.fromTidalJson(a as Map<String, dynamic>)).toList();
+      // Handle various response formats
+      if (data is Map<String, dynamic>) {
+        // Try different paths where artists might be
+        if (data['data'] is Map && data['data']['artists'] is List) {
+          items = data['data']['artists'] as List;
+        } else if (data['artists'] is Map && data['artists']['items'] is List) {
+          items = data['artists']['items'] as List;
+        } else if (data['artists'] is List) {
+          items = data['artists'] as List;
+        } else if (data['items'] is List) {
+          items = data['items'] as List;
+        }
+      } else if (data is List) {
+        items = data;
+      }
+      
+      return items.take(limit).map((a) {
+        if (a is Map<String, dynamic>) {
+          return Artist.fromTidalJson(a);
+        }
+        return Artist(id: '', name: 'Unknown', source: MusicSource.tidal);
+      }).where((a) => a.id.isNotEmpty).toList();
     } catch (e) {
       throw TidalApiException('Artist search failed: $e');
     }
