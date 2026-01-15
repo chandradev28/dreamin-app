@@ -136,18 +136,46 @@ class TidalService {
     }
   }
 
+  /// Search for playlists (TIDAL curated playlists like "Songs of the Year")
+  Future<List<Playlist>> searchPlaylists(String query, {int limit = 25}) async {
+    try {
+      final response = await _executeWithFallback((baseUrl) {
+        return _dio.get(
+          '$baseUrl${TidalEndpoints.searchPath}',
+          queryParameters: {'p': query},  // 'p' for playlist search
+        );
+      });
+
+      final data = response.data as Map<String, dynamic>;
+      final items = data['data']?['playlists']?['items'] as List<dynamic>? ?? [];
+      
+      return items.take(limit).map((p) => Playlist.fromTidalJson(p as Map<String, dynamic>)).toList();
+    } catch (e) {
+      throw TidalApiException('Playlist search failed: $e');
+    }
+  }
+
+  /// Get "Songs of the Year" playlists
+  Future<List<Playlist>> getSongsOfTheYearPlaylists({int limit = 10}) async {
+    return searchPlaylists('songs of the year', limit: limit);
+  }
+
   /// Combined search (returns all types)
   Future<SearchResult> search(String query, {int limit = 20}) async {
     try {
-      // Search tracks first (main search)
-      final tracks = await searchTracks(query, limit: limit);
+      // Search all types in parallel
+      final results = await Future.wait([
+        searchTracks(query, limit: limit),
+        searchAlbums(query, limit: limit),
+        searchArtists(query, limit: limit),
+        searchPlaylists(query, limit: limit),
+      ]);
       
-      // For albums and artists, we could do parallel searches
-      // but for now just return tracks
       return SearchResult(
-        tracks: tracks,
-        albums: [],
-        artists: [],
+        tracks: results[0] as List<Track>,
+        albums: results[1] as List<Album>,
+        artists: results[2] as List<Artist>,
+        playlists: results[3] as List<Playlist>,
         source: MusicSource.tidal,
       );
     } catch (e) {

@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/responsive.dart';
 import '../../providers/providers.dart';
-import '../../widgets/widgets.dart';
 import '../../models/models.dart';
 import '../album/album_detail_screen.dart';
 import '../playlist/playlist_detail_screen.dart';
-import '../artist/artist_detail_screen.dart';
 
-/// Home Screen - Echo-style with multiple sections
+/// Home Screen - TIDAL Style Homepage
+/// Sections: Songs of the Year, Recommended new tracks (bento), Popular playlists, New albums, Albums you'll enjoy
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
@@ -32,7 +32,7 @@ class HomeScreen extends ConsumerWidget {
               backgroundColor: AppTheme.backgroundColor,
               toolbarHeight: responsive.value(mobile: 56.0, tablet: 64.0),
               title: Text(
-                'Dreamin',
+                'Home',
                 style: responsive.value(
                   mobile: AppTheme.headlineMedium,
                   tablet: AppTheme.headlineLarge,
@@ -40,11 +40,7 @@ class HomeScreen extends ConsumerWidget {
               ),
               actions: [
                 IconButton(
-                  icon: const Icon(Icons.notifications_outlined),
-                  onPressed: () {},
-                ),
-                IconButton(
-                  icon: const Icon(Icons.settings_outlined),
+                  icon: const Icon(Icons.cast_outlined),
                   onPressed: () {},
                 ),
                 SizedBox(width: responsive.value(mobile: 8.0, tablet: 16.0)),
@@ -68,62 +64,42 @@ class HomeScreen extends ConsumerWidget {
                 ),
               )
             else ...[
-              // 1. FOR YOU - Recommendations (Main featured section)
-              if (homeData.recommendations.isNotEmpty)
+              // ============================================================
+              // SECTION 1: SONGS OF THE YEAR
+              // ============================================================
+              if (homeData.songsOfTheYear.isNotEmpty) ...[
                 SliverToBoxAdapter(
-                  child: ForYouSection(
-                    tracks: homeData.recommendations,
-                    onTrackTap: (track, index) {
-                      ref.read(playerProvider.notifier).playQueue(
-                        homeData.recommendations,
-                        startIndex: index,
-                      );
-                    },
-                  ),
-                ),
-
-              // 2. CONTINUE STREAMING - Recently Played Artists (circular avatars)
-              if (homeData.recentlyPlayedArtists.isNotEmpty) ...[
-                const SliverToBoxAdapter(
-                  child: SectionHeader(
-                    title: 'Continue streaming',
+                  child: _TidalSectionHeader(
+                    title: 'Songs of the Year',
+                    onSeeAll: () {},
                   ),
                 ),
                 SliverToBoxAdapter(
-                  child: _ArtistCircleList(
-                    artists: homeData.recentlyPlayedArtists,
-                    onArtistTap: (artist) {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => ArtistDetailScreen(
-                            artistId: artist.id,
-                            artist: artist,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ],
-
-              // 3. MIXES INSPIRED BY - Tracks based on listening history
-              if (homeData.mixesTracks.isNotEmpty) ...[
-                const SliverToBoxAdapter(
-                  child: SectionHeader(
-                    title: 'Mixes inspired by...',
-                  ),
-                ),
-                SliverToBoxAdapter(
-                  child: HorizontalScrollList(
-                    items: homeData.mixesTracks,
-                    itemWidth: responsive.albumCardWidth,
-                    itemBuilder: (track, width) => TrackCard(
-                      track: track,
-                      width: width,
-                      onTap: () {
-                        ref.read(playerProvider.notifier).playQueue(
-                          homeData.mixesTracks,
-                          startIndex: homeData.mixesTracks.indexOf(track),
+                  child: SizedBox(
+                    height: responsive.value(mobile: 220.0, tablet: 280.0),
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
+                      itemCount: homeData.songsOfTheYear.length.clamp(0, 10),
+                      itemBuilder: (context, index) {
+                        final playlist = homeData.songsOfTheYear[index];
+                        // Extract year from title (e.g., "2000! Songs of the Year" -> "2000")
+                        final yearMatch = RegExp(r'^(\d{4})').firstMatch(playlist.title);
+                        final year = yearMatch?.group(1) ?? '';
+                        return _SongsOfTheYearCard(
+                          playlist: playlist,
+                          year: year,
+                          width: responsive.value(mobile: 160.0, tablet: 200.0),
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => PlaylistDetailScreen(
+                                  playlistId: playlist.id,
+                                  playlist: playlist,
+                                ),
+                              ),
+                            );
+                          },
                         );
                       },
                     ),
@@ -131,28 +107,103 @@ class HomeScreen extends ConsumerWidget {
                 ),
               ],
 
-              // 4. NEW RELEASES FOR YOU
+              // ============================================================
+              // SECTION 2: RECOMMENDED NEW TRACKS (Bento Box)
+              // ============================================================
+              if (homeData.trendingTracks.isNotEmpty) ...[
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      responsive.horizontalPadding,
+                      responsive.sectionSpacing,
+                      responsive.horizontalPadding,
+                      0,
+                    ),
+                    child: _RecommendedTracksBentoBox(
+                      tracks: homeData.trendingTracks.take(5).toList(),
+                      onTrackTap: (track, index) {
+                        ref.read(playerProvider.notifier).playQueue(
+                          homeData.trendingTracks,
+                          startIndex: index,
+                        );
+                      },
+                      onSeeAll: () {},
+                    ),
+                  ),
+                ),
+              ],
+
+              // ============================================================
+              // SECTION 3: POPULAR PLAYLISTS ON TIDAL
+              // ============================================================
+              if (homeData.popularPlaylists.isNotEmpty) ...[
+                SliverToBoxAdapter(
+                  child: _TidalSectionHeader(
+                    title: 'Popular playlists on TIDAL',
+                    onSeeAll: () {},
+                  ),
+                ),
+                SliverToBoxAdapter(
+                  child: SizedBox(
+                    height: responsive.value(mobile: 200.0, tablet: 260.0),
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
+                      itemCount: homeData.popularPlaylists.length.clamp(0, 10),
+                      itemBuilder: (context, index) {
+                        final playlist = homeData.popularPlaylists[index];
+                        return _PlaylistCard(
+                          playlist: playlist,
+                          width: responsive.value(mobile: 150.0, tablet: 180.0),
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => PlaylistDetailScreen(
+                                  playlistId: playlist.id,
+                                  playlist: playlist,
+                                ),
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ],
+
+              // ============================================================
+              // SECTION 4: SUGGESTED NEW ALBUMS FOR YOU
+              // ============================================================
               if (homeData.newAlbums.isNotEmpty) ...[
-                const SliverToBoxAdapter(
-                  child: SectionHeader(
-                    title: 'New releases for you',
+                SliverToBoxAdapter(
+                  child: _TidalSectionHeader(
+                    title: 'Suggested new albums for you',
+                    onSeeAll: () {},
                   ),
                 ),
                 SliverToBoxAdapter(
-                  child: HorizontalScrollList(
-                    items: homeData.newAlbums,
-                    itemWidth: responsive.albumCardWidth,
-                    itemBuilder: (album, width) => AlbumCard(
-                      album: album,
-                      width: width,
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => AlbumDetailScreen(
-                              albumId: album.id,
-                              album: album,
-                            ),
-                          ),
+                  child: SizedBox(
+                    height: responsive.value(mobile: 220.0, tablet: 280.0),
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
+                      itemCount: homeData.newAlbums.length.clamp(0, 10),
+                      itemBuilder: (context, index) {
+                        final album = homeData.newAlbums[index];
+                        return _AlbumCard(
+                          album: album,
+                          width: responsive.value(mobile: 150.0, tablet: 180.0),
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => AlbumDetailScreen(
+                                  albumId: album.id,
+                                  album: album,
+                                ),
+                              ),
+                            );
+                          },
                         );
                       },
                     ),
@@ -160,105 +211,50 @@ class HomeScreen extends ConsumerWidget {
                 ),
               ],
 
-              // 5. SINCE YOU LIKE [ARTIST] - Similar artists
-              if (homeData.similarArtists.isNotEmpty && 
-                  homeData.similarToArtistName != null) ...[
+              // ============================================================
+              // SECTION 5: ALBUMS YOU'LL ENJOY
+              // ============================================================
+              if (homeData.albumsYouLlEnjoy.isNotEmpty) ...[
                 SliverToBoxAdapter(
-                  child: SectionHeader(
-                    title: 'Since you like ${homeData.similarToArtistName}',
+                  child: _TidalSectionHeader(
+                    title: "Albums you'll enjoy",
+                    onSeeAll: () {},
                   ),
                 ),
                 SliverToBoxAdapter(
-                  child: _ArtistCircleList(
-                    artists: homeData.similarArtists,
-                    onArtistTap: (artist) {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => ArtistDetailScreen(
-                            artistId: artist.id,
-                            artist: artist,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ],
-
-              // 6. RECENTLY YOU'VE BEEN LOVING - Favorites
-              if (homeData.lovedTracks.isNotEmpty) ...[
-                const SliverToBoxAdapter(
-                  child: SectionHeader(
-                    title: "Recently you've been loving...",
-                  ),
-                ),
-                SliverToBoxAdapter(
-                  child: HorizontalScrollList(
-                    items: homeData.lovedTracks,
-                    itemWidth: responsive.albumCardWidth,
-                    itemBuilder: (track, width) => TrackCard(
-                      track: track,
-                      width: width,
-                      onTap: () {
-                        ref.read(playerProvider.notifier).playQueue(
-                          homeData.lovedTracks,
-                          startIndex: homeData.lovedTracks.indexOf(track),
+                  child: SizedBox(
+                    height: responsive.value(mobile: 220.0, tablet: 280.0),
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
+                      itemCount: homeData.albumsYouLlEnjoy.length.clamp(0, 10),
+                      itemBuilder: (context, index) {
+                        final album = homeData.albumsYouLlEnjoy[index];
+                        return _AlbumCard(
+                          album: album,
+                          width: responsive.value(mobile: 150.0, tablet: 180.0),
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => AlbumDetailScreen(
+                                  albumId: album.id,
+                                  album: album,
+                                ),
+                              ),
+                            );
+                          },
                         );
                       },
                     ),
-                  ),
-                ),
-              ],
-
-              // 7. PLAYLISTS YOU'LL LOVE
-              if (homeData.playlistsForYou.isNotEmpty) ...[
-                const SliverToBoxAdapter(
-                  child: SectionHeader(
-                    title: "Playlists you'll love",
-                  ),
-                ),
-                SliverToBoxAdapter(
-                  child: HorizontalScrollList(
-                    items: homeData.playlistsForYou,
-                    itemWidth: responsive.playlistCardWidth,
-                    itemBuilder: (playlist, width) => PlaylistCard(
-                      playlist: playlist,
-                      width: width,
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => PlaylistDetailScreen(
-                              playlistId: playlist.id,
-                              playlist: playlist,
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-              ],
-
-              // 8. YOUR TOP GENRES
-              if (homeData.topGenres.isNotEmpty) ...[
-                const SliverToBoxAdapter(
-                  child: SectionHeader(
-                    title: 'Your top genres',
-                  ),
-                ),
-                SliverToBoxAdapter(
-                  child: _GenreChipsGrid(
-                    genres: homeData.topGenres,
-                    onGenreTap: (genre) {
-                      // Navigate to genre search
-                    },
                   ),
                 ),
               ],
 
               // Bottom spacing for mini player
               SliverToBoxAdapter(
-                child: SizedBox(height: responsive.miniPlayerHeight + responsive.bottomNavHeight + 20),
+                child: SizedBox(
+                  height: responsive.miniPlayerHeight + responsive.bottomNavHeight + 40,
+                ),
               ),
             ],
           ],
@@ -268,147 +264,568 @@ class HomeScreen extends ConsumerWidget {
   }
 }
 
-/// Circular artist avatars (Echo-style)
-class _ArtistCircleList extends StatelessWidget {
-  final List<Artist> artists;
-  final Function(Artist) onArtistTap;
+// ============================================================================
+// TIDAL-STYLE WIDGETS
+// ============================================================================
 
-  const _ArtistCircleList({
-    required this.artists,
-    required this.onArtistTap,
+/// TIDAL Section Header with arrow button
+class _TidalSectionHeader extends StatelessWidget {
+  final String title;
+  final VoidCallback? onSeeAll;
+
+  const _TidalSectionHeader({
+    required this.title,
+    this.onSeeAll,
   });
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 130,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacingM),
-        itemCount: artists.length,
-        itemBuilder: (context, index) {
-          final artist = artists[index];
-          return Padding(
-            padding: const EdgeInsets.only(right: AppTheme.spacingM),
-            child: GestureDetector(
-              onTap: () => onArtistTap(artist),
-              child: SizedBox(
-                width: 90,
-                child: Column(
-                  children: [
-                    // Circular avatar
-                    Container(
-                      width: 80,
-                      height: 80,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: AppTheme.surfaceColor,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.3),
-                            blurRadius: 8,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: ClipOval(
-                        child: artist.imageUrl != null
-                            ? Image.network(
-                                artist.imageUrl!,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => _ArtistPlaceholder(name: artist.name),
-                              )
-                            : _ArtistPlaceholder(name: artist.name),
-                      ),
-                    ),
-                    const SizedBox(height: AppTheme.spacingS),
-                    // Artist name
-                    Text(
-                      artist.name,
-                      style: AppTheme.bodySmall,
-                      textAlign: TextAlign.center,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
+    final responsive = Responsive(context);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        responsive.horizontalPadding,
+        responsive.sectionSpacing,
+        responsive.horizontalPadding,
+        12,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: AppTheme.titleLarge.copyWith(
+                fontWeight: FontWeight.bold,
               ),
             ),
-          );
-        },
+          ),
+          if (onSeeAll != null)
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppTheme.surfaceLight,
+              ),
+              child: IconButton(
+                icon: const Icon(Icons.arrow_forward, size: 18),
+                onPressed: onSeeAll,
+                color: Colors.white,
+                padding: EdgeInsets.zero,
+              ),
+            ),
+        ],
       ),
     );
   }
 }
 
-/// Artist placeholder avatar
-class _ArtistPlaceholder extends StatelessWidget {
-  final String name;
+/// Songs of the Year card (large with year number overlay)
+class _SongsOfTheYearCard extends StatelessWidget {
+  final Playlist playlist;
+  final String year;
+  final double width;
+  final VoidCallback onTap;
 
-  const _ArtistPlaceholder({required this.name});
+  const _SongsOfTheYearCard({
+    required this.playlist,
+    required this.year,
+    required this.width,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: AppTheme.primaryColor.withOpacity(0.2),
-      child: Center(
-        child: Text(
-          name.isNotEmpty ? name[0].toUpperCase() : '?',
-          style: AppTheme.headlineMedium.copyWith(
-            color: AppTheme.primaryColor,
-          ),
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: width,
+        margin: const EdgeInsets.only(right: AppTheme.spacingM),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Card with year overlay
+            Container(
+              width: width,
+              height: width,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(AppTheme.radiusM),
+                color: AppTheme.surfaceColor,
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Stack(
+                children: [
+                  // Cover image
+                  if (playlist.coverArtUrl != null)
+                    CachedNetworkImage(
+                      imageUrl: playlist.coverArtUrl!,
+                      width: width,
+                      height: width,
+                      fit: BoxFit.cover,
+                      placeholder: (_, __) => Container(
+                        color: AppTheme.surfaceLight,
+                        child: const Center(child: Icon(Icons.queue_music, size: 40)),
+                      ),
+                      errorWidget: (_, __, ___) => Container(
+                        color: AppTheme.surfaceLight,
+                        child: const Center(child: Icon(Icons.queue_music, size: 40)),
+                      ),
+                    )
+                  else
+                    Container(
+                      color: AppTheme.surfaceLight,
+                      child: const Center(child: Icon(Icons.queue_music, size: 40)),
+                    ),
+                  // Year overlay (top left)
+                  if (year.isNotEmpty)
+                    Positioned(
+                      top: 8,
+                      left: 8,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            year,
+                            style: AppTheme.headlineLarge.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                              shadows: [
+                                Shadow(
+                                  color: Colors.black.withOpacity(0.7),
+                                  blurRadius: 8,
+                                ),
+                              ],
+                            ),
+                          ),
+                          Text(
+                            'Songs of the Year',
+                            style: AppTheme.labelSmall.copyWith(
+                              color: Colors.white.withOpacity(0.9),
+                              shadows: [
+                                Shadow(
+                                  color: Colors.black.withOpacity(0.7),
+                                  blurRadius: 4,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  // TIDAL badge (top right)
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.4),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: const Icon(
+                        Icons.music_note,
+                        size: 16,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            // Title
+            Text(
+              playlist.title,
+              style: AppTheme.bodyMedium.copyWith(fontWeight: FontWeight.w600),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            Text(
+              'by TIDAL',
+              style: AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-/// Genre chips grid (Echo-style)
-class _GenreChipsGrid extends StatelessWidget {
-  final List<String> genres;
-  final Function(String) onGenreTap;
+/// Recommended Tracks Bento Box (TIDAL style with gradient)
+class _RecommendedTracksBentoBox extends StatelessWidget {
+  final List<Track> tracks;
+  final void Function(Track track, int index) onTrackTap;
+  final VoidCallback? onSeeAll;
 
-  const _GenreChipsGrid({
-    required this.genres,
-    required this.onGenreTap,
+  const _RecommendedTracksBentoBox({
+    required this.tracks,
+    required this.onTrackTap,
+    this.onSeeAll,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacingM),
-      child: Wrap(
-        spacing: AppTheme.spacingS,
-        runSpacing: AppTheme.spacingS,
-        children: genres.map((genre) {
-          return GestureDetector(
-            onTap: () => onGenreTap(genre),
-            child: Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppTheme.spacingM,
-                vertical: AppTheme.spacingS,
-              ),
-              decoration: BoxDecoration(
-                color: AppTheme.surfaceColor,
-                borderRadius: BorderRadius.circular(AppTheme.radiusM),
-                border: Border.all(
-                  color: AppTheme.primaryColor.withOpacity(0.3),
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AppTheme.radiusL),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            const Color(0xFFD4A574), // Gold/tan color like TIDAL
+            const Color(0xFF8B7355),
+            AppTheme.surfaceColor,
+          ],
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Recommended new tracks',
+                  style: AppTheme.titleLarge.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
                 ),
               ),
-              child: Text(
-                genre,
-                style: AppTheme.bodyMedium.copyWith(
-                  color: AppTheme.textPrimary,
+              if (onSeeAll != null)
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white.withOpacity(0.2),
+                  ),
+                  child: IconButton(
+                    icon: const Icon(Icons.arrow_forward, size: 18),
+                    onPressed: onSeeAll,
+                    color: Colors.white,
+                    padding: EdgeInsets.zero,
+                  ),
                 ),
-              ),
-            ),
-          );
-        }).toList(),
+            ],
+          ),
+          const SizedBox(height: 16),
+          // Track list
+          ...tracks.asMap().entries.map((entry) {
+            final index = entry.key;
+            final track = entry.value;
+            return _BentoTrackTile(
+              track: track,
+              onTap: () => onTrackTap(track, index),
+            );
+          }),
+        ],
       ),
     );
   }
 }
 
+/// Track tile for bento box
+class _BentoTrackTile extends StatelessWidget {
+  final Track track;
+  final VoidCallback onTap;
+
+  const _BentoTrackTile({
+    required this.track,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Row(
+          children: [
+            // Album art
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: track.coverArtUrl != null
+                  ? CachedNetworkImage(
+                      imageUrl: track.coverArtUrl!,
+                      width: 48,
+                      height: 48,
+                      fit: BoxFit.cover,
+                      placeholder: (_, __) => Container(
+                        width: 48,
+                        height: 48,
+                        color: AppTheme.surfaceLight,
+                      ),
+                      errorWidget: (_, __, ___) => Container(
+                        width: 48,
+                        height: 48,
+                        color: AppTheme.surfaceLight,
+                        child: const Icon(Icons.music_note, size: 24),
+                      ),
+                    )
+                  : Container(
+                      width: 48,
+                      height: 48,
+                      color: AppTheme.surfaceLight,
+                      child: const Icon(Icons.music_note, size: 24),
+                    ),
+            ),
+            const SizedBox(width: 12),
+            // Track info
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          track.title,
+                          style: AppTheme.bodyMedium.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (track.isExplicit) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.3),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                          child: const Text(
+                            'E',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  Text(
+                    track.artist,
+                    style: AppTheme.bodySmall.copyWith(
+                      color: Colors.white.withOpacity(0.7),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            // More button
+            IconButton(
+              icon: const Icon(Icons.more_horiz),
+              onPressed: () {},
+              color: Colors.white.withOpacity(0.7),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Playlist Card
+class _PlaylistCard extends StatelessWidget {
+  final Playlist playlist;
+  final double width;
+  final VoidCallback onTap;
+
+  const _PlaylistCard({
+    required this.playlist,
+    required this.width,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: width,
+        margin: const EdgeInsets.only(right: AppTheme.spacingM),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Cover
+            Container(
+              width: width,
+              height: width,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(AppTheme.radiusM),
+                color: AppTheme.surfaceColor,
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Stack(
+                children: [
+                  if (playlist.coverArtUrl != null)
+                    CachedNetworkImage(
+                      imageUrl: playlist.coverArtUrl!,
+                      width: width,
+                      height: width,
+                      fit: BoxFit.cover,
+                      placeholder: (_, __) => Container(
+                        color: AppTheme.surfaceLight,
+                        child: const Center(child: Icon(Icons.queue_music, size: 40)),
+                      ),
+                      errorWidget: (_, __, ___) => Container(
+                        color: AppTheme.surfaceLight,
+                        child: const Center(child: Icon(Icons.queue_music, size: 40)),
+                      ),
+                    )
+                  else
+                    Container(
+                      color: AppTheme.surfaceLight,
+                      child: const Center(child: Icon(Icons.queue_music, size: 40)),
+                    ),
+                  // TIDAL badge
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.4),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: const Icon(
+                        Icons.music_note,
+                        size: 16,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            // Title
+            Text(
+              playlist.title,
+              style: AppTheme.bodyMedium.copyWith(fontWeight: FontWeight.w600),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            Text(
+              'by TIDAL',
+              style: AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Album Card
+class _AlbumCard extends StatelessWidget {
+  final Album album;
+  final double width;
+  final VoidCallback onTap;
+
+  const _AlbumCard({
+    required this.album,
+    required this.width,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: width,
+        margin: const EdgeInsets.only(right: AppTheme.spacingM),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Cover
+            Container(
+              width: width,
+              height: width,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(AppTheme.radiusM),
+                color: AppTheme.surfaceColor,
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Stack(
+                children: [
+                  if (album.coverArtUrl != null)
+                    CachedNetworkImage(
+                      imageUrl: album.coverArtUrl!,
+                      width: width,
+                      height: width,
+                      fit: BoxFit.cover,
+                      placeholder: (_, __) => Container(
+                        color: AppTheme.surfaceLight,
+                        child: const Center(child: Icon(Icons.album, size: 40)),
+                      ),
+                      errorWidget: (_, __, ___) => Container(
+                        color: AppTheme.surfaceLight,
+                        child: const Center(child: Icon(Icons.album, size: 40)),
+                      ),
+                    )
+                  else
+                    Container(
+                      color: AppTheme.surfaceLight,
+                      child: const Center(child: Icon(Icons.album, size: 40)),
+                    ),
+                  // Explicit badge if applicable
+                  if (album.isExplicit)
+                    Positioned(
+                      bottom: 8,
+                      left: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.7),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                        child: const Text(
+                          'E',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            // Title
+            Text(
+              album.title,
+              style: AppTheme.bodyMedium.copyWith(fontWeight: FontWeight.w600),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            Text(
+              album.artist,
+              style: AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Error Widget
 class _ErrorWidget extends StatelessWidget {
   final String message;
   final VoidCallback onRetry;
@@ -420,33 +837,35 @@ class _ErrorWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final responsive = Responsive(context);
-    
     return Center(
       child: Padding(
-        padding: EdgeInsets.all(responsive.horizontalPadding),
+        padding: const EdgeInsets.all(32.0),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
               Icons.error_outline,
-              size: responsive.value(mobile: 64.0, tablet: 80.0),
+              size: 64,
               color: AppTheme.errorColor,
             ),
-            SizedBox(height: responsive.sectionSpacing),
+            const SizedBox(height: 16),
             Text(
               'Something went wrong',
               style: AppTheme.titleLarge,
             ),
-            const SizedBox(height: AppTheme.spacingS),
+            const SizedBox(height: 8),
             Text(
               message,
-              style: AppTheme.bodyMedium,
+              style: AppTheme.bodyMedium.copyWith(color: AppTheme.secondaryColor),
               textAlign: TextAlign.center,
             ),
-            SizedBox(height: responsive.sectionSpacing),
+            const SizedBox(height: 24),
             ElevatedButton(
               onPressed: onRetry,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primaryColor,
+                foregroundColor: Colors.white,
+              ),
               child: const Text('Retry'),
             ),
           ],
