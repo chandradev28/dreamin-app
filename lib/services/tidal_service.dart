@@ -103,12 +103,15 @@ class TidalService {
         items = data;
       }
       
-      return items.take(limit).map((t) {
+      final result = <Track>[];
+      for (final t in items.take(limit)) {
         if (t is Map<String, dynamic>) {
-          return Track.fromTidalJson(t);
+          try {
+            result.add(Track.fromTidalJson(t));
+          } catch (_) {}
         }
-        return Track(id: '', title: 'Unknown', artist: '', source: MusicSource.tidal);
-      }).where((t) => t.id.isNotEmpty).toList();
+      }
+      return result;
     } catch (e) {
       throw TidalApiException('Track search failed: $e');
     }
@@ -144,12 +147,15 @@ class TidalService {
         items = data;
       }
       
-      return items.take(limit).map((a) {
+      final result = <Album>[];
+      for (final a in items.take(limit)) {
         if (a is Map<String, dynamic>) {
-          return Album.fromTidalJson(a);
+          try {
+            result.add(Album.fromTidalJson(a));
+          } catch (_) {}
         }
-        return Album(id: '', title: 'Unknown', artist: '', source: MusicSource.tidal);
-      }).where((a) => a.id.isNotEmpty).toList();
+      }
+      return result;
     } catch (e) {
       throw TidalApiException('Album search failed: $e');
     }
@@ -184,12 +190,15 @@ class TidalService {
         items = data;
       }
       
-      return items.take(limit).map((a) {
+      final result = <Artist>[];
+      for (final a in items.take(limit)) {
         if (a is Map<String, dynamic>) {
-          return Artist.fromTidalJson(a);
+          try {
+            result.add(Artist.fromTidalJson(a));
+          } catch (_) {}
         }
-        return Artist(id: '', name: 'Unknown', source: MusicSource.tidal);
-      }).where((a) => a.id.isNotEmpty).toList();
+      }
+      return result;
     } catch (e) {
       throw TidalApiException('Artist search failed: $e');
     }
@@ -224,12 +233,15 @@ class TidalService {
         items = data;
       }
       
-      return items.take(limit).map((p) {
+      final result = <Playlist>[];
+      for (final p in items.take(limit)) {
         if (p is Map<String, dynamic>) {
-          return Playlist.fromTidalJson(p);
+          try {
+            result.add(Playlist.fromTidalJson(p));
+          } catch (_) {}
         }
-        return Playlist(id: '', title: 'Unknown', trackCount: 0, source: MusicSource.tidal);
-      }).where((p) => p.id.isNotEmpty).toList();
+      }
+      return result;
     } catch (e) {
       throw TidalApiException('Playlist search failed: $e');
     }
