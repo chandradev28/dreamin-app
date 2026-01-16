@@ -7,6 +7,8 @@ import '../../providers/providers.dart';
 import '../../models/models.dart';
 import '../../widgets/widgets.dart';
 import '../album/album_detail_screen.dart';
+import '../album/view_all_screen.dart';
+import 'top_tracks_view_all_screen.dart';
 
 /// Artist Detail Screen - Echo/Deezer Style
 /// Shows: Circular image, Name, Bio, Top Tracks, Albums, Related Playlists
@@ -392,7 +394,7 @@ class ArtistDetailScreen extends ConsumerWidget {
                 ),
                 child: Row(
                   children: [
-                    Text('Top', style: AppTheme.titleLarge),
+                    Text('Top Tracks', style: AppTheme.titleLarge),
                     const Spacer(),
                     // Shuffle button
                     Container(
@@ -411,8 +413,30 @@ class ArtistDetailScreen extends ConsumerWidget {
                         color: AppTheme.primaryColor,
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Icon(Icons.arrow_forward, color: AppTheme.secondaryColor),
+                    const SizedBox(width: 12),
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => TopTracksViewAllScreen(
+                              title: 'Top Tracks',
+                              tracks: artistDetail.topTracks.take(20).toList(),
+                              artistName: artistDetail.name,
+                            ),
+                          ),
+                        );
+                      },
+                      child: Text(
+                        'VIEW ALL',
+                        style: TextStyle(
+                          color: AppTheme.secondaryColor,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -492,7 +516,28 @@ class ArtistDetailScreen extends ConsumerWidget {
                   children: [
                     Text('Albums', style: AppTheme.titleLarge),
                     const Spacer(),
-                    Icon(Icons.arrow_forward, color: AppTheme.secondaryColor),
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => ViewAllScreen(
+                              title: 'Albums by ${artistDetail.name}',
+                              albums: artistDetail.albums,
+                            ),
+                          ),
+                        );
+                      },
+                      child: Text(
+                        'VIEW ALL',
+                        style: TextStyle(
+                          color: AppTheme.secondaryColor,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -503,9 +548,229 @@ class ArtistDetailScreen extends ConsumerWidget {
                 child: ListView.builder(
                   scrollDirection: Axis.horizontal,
                   padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
-                  itemCount: artistDetail.albums.length,
+                  itemCount: artistDetail.albums.where((a) => a.albumType == AlbumType.album).length.clamp(0, 6),
                   itemBuilder: (context, index) {
-                    final album = artistDetail.albums[index];
+                    final albums = artistDetail.albums.where((a) => a.albumType == AlbumType.album).toList();
+                    final album = albums[index];
+                    return _AlbumCard(
+                      album: album,
+                      width: responsive.value(mobile: 120.0, tablet: 150.0),
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => AlbumDetailScreen(
+                              albumId: album.id,
+                              album: album,
+                            ),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ),
+          ],
+
+          // EP & SINGLES SECTION
+          if (artistDetail.albums.any((a) => a.albumType == AlbumType.ep || a.albumType == AlbumType.single)) ...[
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  responsive.horizontalPadding,
+                  24,
+                  responsive.horizontalPadding,
+                  12,
+                ),
+                child: Row(
+                  children: [
+                    Text('EP & Singles', style: AppTheme.titleLarge),
+                    const Spacer(),
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => ViewAllScreen(
+                              title: 'EP & Singles',
+                              albums: artistDetail.albums.where((a) => 
+                                a.albumType == AlbumType.ep || a.albumType == AlbumType.single).toList(),
+                            ),
+                          ),
+                        );
+                      },
+                      child: Text(
+                        'VIEW ALL',
+                        style: TextStyle(
+                          color: AppTheme.secondaryColor,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: SizedBox(
+                height: responsive.value(mobile: 180.0, tablet: 220.0),
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
+                  itemCount: artistDetail.albums.where((a) => 
+                    a.albumType == AlbumType.ep || a.albumType == AlbumType.single).length.clamp(0, 6),
+                  itemBuilder: (context, index) {
+                    final albums = artistDetail.albums.where((a) => 
+                      a.albumType == AlbumType.ep || a.albumType == AlbumType.single).toList();
+                    final album = albums[index];
+                    return _AlbumCard(
+                      album: album,
+                      width: responsive.value(mobile: 120.0, tablet: 150.0),
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => AlbumDetailScreen(
+                              albumId: album.id,
+                              album: album,
+                            ),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ),
+          ],
+
+          // COMPILATIONS SECTION
+          if (artistDetail.albums.any((a) => a.albumType == AlbumType.compilation)) ...[
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  responsive.horizontalPadding,
+                  24,
+                  responsive.horizontalPadding,
+                  12,
+                ),
+                child: Row(
+                  children: [
+                    Text('Compilations', style: AppTheme.titleLarge),
+                    const Spacer(),
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => ViewAllScreen(
+                              title: 'Compilations',
+                              albums: artistDetail.albums.where((a) => 
+                                a.albumType == AlbumType.compilation).toList(),
+                            ),
+                          ),
+                        );
+                      },
+                      child: Text(
+                        'VIEW ALL',
+                        style: TextStyle(
+                          color: AppTheme.secondaryColor,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: SizedBox(
+                height: responsive.value(mobile: 180.0, tablet: 220.0),
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
+                  itemCount: artistDetail.albums.where((a) => 
+                    a.albumType == AlbumType.compilation).length.clamp(0, 6),
+                  itemBuilder: (context, index) {
+                    final albums = artistDetail.albums.where((a) => 
+                      a.albumType == AlbumType.compilation).toList();
+                    final album = albums[index];
+                    return _AlbumCard(
+                      album: album,
+                      width: responsive.value(mobile: 120.0, tablet: 150.0),
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => AlbumDetailScreen(
+                              albumId: album.id,
+                              album: album,
+                            ),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ),
+          ],
+
+          // LIVE ALBUMS SECTION
+          if (artistDetail.albums.any((a) => a.albumType == AlbumType.live)) ...[
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  responsive.horizontalPadding,
+                  24,
+                  responsive.horizontalPadding,
+                  12,
+                ),
+                child: Row(
+                  children: [
+                    Text('Live Albums', style: AppTheme.titleLarge),
+                    const Spacer(),
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => ViewAllScreen(
+                              title: 'Live Albums',
+                              albums: artistDetail.albums.where((a) => 
+                                a.albumType == AlbumType.live).toList(),
+                            ),
+                          ),
+                        );
+                      },
+                      child: Text(
+                        'VIEW ALL',
+                        style: TextStyle(
+                          color: AppTheme.secondaryColor,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: SizedBox(
+                height: responsive.value(mobile: 180.0, tablet: 220.0),
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
+                  itemCount: artistDetail.albums.where((a) => 
+                    a.albumType == AlbumType.live).length.clamp(0, 6),
+                  itemBuilder: (context, index) {
+                    final albums = artistDetail.albums.where((a) => 
+                      a.albumType == AlbumType.live).toList();
+                    final album = albums[index];
                     return _AlbumCard(
                       album: album,
                       width: responsive.value(mobile: 120.0, tablet: 150.0),

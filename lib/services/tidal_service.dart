@@ -288,8 +288,57 @@ class TidalService {
       });
 
       final data = response.data as Map<String, dynamic>;
-      final albumData = data['data'] as Map<String, dynamic>? ?? data;
-      final tracksData = albumData['items'] as List<dynamic>? ?? [];
+      
+      // Try multiple paths where album data might be
+      Map<String, dynamic> albumData = {};
+      if (data['data'] is Map) {
+        albumData = data['data'] as Map<String, dynamic>;
+      } else if (data['album'] is Map) {
+        albumData = data['album'] as Map<String, dynamic>;
+      } else if (data['title'] != null) {
+        // Album data is directly in response
+        albumData = data;
+      } else {
+        albumData = data;
+      }
+      
+      // Try multiple paths where tracks might be
+      List<dynamic> rawTracks = [];
+      if (data['items'] is List) {
+        rawTracks = data['items'] as List;
+      } else if (data['tracks'] is List) {
+        rawTracks = data['tracks'] as List;
+      } else if (data['tracks'] is Map && data['tracks']['items'] is List) {
+        rawTracks = data['tracks']['items'] as List;
+      } else if (albumData['items'] is List) {
+        rawTracks = albumData['items'] as List;
+      } else if (albumData['tracks'] is List) {
+        rawTracks = albumData['tracks'] as List;
+      }
+      
+      // Process tracks - handle both direct track objects and wrapped items
+      final List<Map<String, dynamic>> tracksData = [];
+      for (final item in rawTracks) {
+        if (item is Map<String, dynamic>) {
+          // Check if track data is nested inside 'item' wrapper
+          if (item['item'] is Map) {
+            tracksData.add(item['item'] as Map<String, dynamic>);
+          } else if (item['track'] is Map) {
+            tracksData.add(item['track'] as Map<String, dynamic>);
+          } else if (item['title'] != null) {
+            // Direct track object
+            tracksData.add(item);
+          } else if (item['id'] != null && item['title'] == null) {
+            // Might be partial track data - try to use it
+            tracksData.add(item);
+          }
+        }
+      }
+      
+      // If album data doesn't have id, try to extract from response
+      if (albumData['id'] == null) {
+        albumData['id'] = int.tryParse(albumId);
+      }
 
       return AlbumDetail.fromTidalJson(albumData, tracksData);
     } catch (e) {
@@ -362,8 +411,53 @@ class TidalService {
       });
 
       final data = response.data as Map<String, dynamic>;
-      final playlistData = data['playlist'] as Map<String, dynamic>? ?? data;
-      final tracksData = data['items'] as List<dynamic>? ?? [];
+      
+      // Try multiple paths for playlist data
+      Map<String, dynamic> playlistData = {};
+      if (data['playlist'] is Map) {
+        playlistData = data['playlist'] as Map<String, dynamic>;
+      } else if (data['data'] is Map) {
+        playlistData = data['data'] as Map<String, dynamic>;
+      } else if (data['title'] != null) {
+        playlistData = data;
+      } else {
+        playlistData = data;
+      }
+      
+      // Try multiple paths for tracks
+      List<dynamic> rawTracks = [];
+      if (data['items'] is List) {
+        rawTracks = data['items'] as List;
+      } else if (data['tracks'] is List) {
+        rawTracks = data['tracks'] as List;
+      } else if (data['tracks'] is Map && data['tracks']['items'] is List) {
+        rawTracks = data['tracks']['items'] as List;
+      } else if (playlistData['items'] is List) {
+        rawTracks = playlistData['items'] as List;
+      } else if (playlistData['tracks'] is List) {
+        rawTracks = playlistData['tracks'] as List;
+      }
+      
+      // Process tracks - handle nested wrappers
+      final List<Map<String, dynamic>> tracksData = [];
+      for (final item in rawTracks) {
+        if (item is Map<String, dynamic>) {
+          if (item['item'] is Map) {
+            tracksData.add(item['item'] as Map<String, dynamic>);
+          } else if (item['track'] is Map) {
+            tracksData.add(item['track'] as Map<String, dynamic>);
+          } else if (item['title'] != null) {
+            tracksData.add(item);
+          } else if (item['id'] != null) {
+            tracksData.add(item);
+          }
+        }
+      }
+      
+      // Ensure playlist has id
+      if (playlistData['uuid'] == null && playlistData['id'] == null) {
+        playlistData['uuid'] = playlistId;
+      }
 
       return PlaylistDetail.fromTidalJson(playlistData, tracksData);
     } catch (e) {

@@ -2,6 +2,15 @@ import 'package:equatable/equatable.dart';
 import 'music_source.dart';
 import 'track.dart';
 
+/// Album Type - distinguishes between different release types
+enum AlbumType {
+  album,
+  ep,
+  single,
+  compilation,
+  live,
+}
+
 class Album extends Equatable {
   final String id;
   final String title;
@@ -14,6 +23,7 @@ class Album extends Equatable {
   final AudioQuality? quality;
   final Duration? duration;
   final bool isExplicit;
+  final AlbumType albumType;
 
   const Album({
     required this.id,
@@ -27,6 +37,7 @@ class Album extends Equatable {
     this.quality,
     this.duration,
     this.isExplicit = false,
+    this.albumType = AlbumType.album,
   });
 
   String get formattedDuration {
@@ -64,6 +75,19 @@ class Album extends Equatable {
       }
     }
 
+    // Parse album type from API response
+    AlbumType albumType = AlbumType.album;
+    final typeStr = (json['type'] as String? ?? '').toLowerCase();
+    if (typeStr.contains('ep') || typeStr == 'ep') {
+      albumType = AlbumType.ep;
+    } else if (typeStr.contains('single') || typeStr == 'single') {
+      albumType = AlbumType.single;
+    } else if (typeStr.contains('compilation') || typeStr.contains('greatest') || typeStr.contains('best')) {
+      albumType = AlbumType.compilation;
+    } else if (typeStr.contains('live') || (json['title'] as String? ?? '').toLowerCase().contains('live')) {
+      albumType = AlbumType.live;
+    }
+
     return Album(
       id: json['id']?.toString() ?? '',
       title: json['title'] as String? ?? 'Unknown Album',
@@ -80,11 +104,12 @@ class Album extends Equatable {
           ? Duration(seconds: json['duration'] as int)
           : null,
       isExplicit: json['explicit'] as bool? ?? false,
+      albumType: albumType,
     );
   }
 
   @override
-  List<Object?> get props => [id, source];
+  List<Object?> get props => [id, source, albumType];
 }
 
 class AlbumDetail extends Album {

@@ -9,6 +9,7 @@ import '../../models/models.dart';
 import '../album/album_detail_screen.dart';
 import '../playlist/playlist_detail_screen.dart';
 import '../artist/artist_detail_screen.dart';
+import 'search_all_results_screen.dart';
 
 /// Search Screen - TIDAL Style
 /// Browse: Genres, Moods, Decades
@@ -242,6 +243,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
     // Build suggestions from results
     final suggestions = _buildSuggestions(result);
+    final query = _searchController.text;
 
     return ListView(
       padding: EdgeInsets.only(bottom: responsive.miniPlayerHeight + responsive.bottomNavHeight + 20),
@@ -249,25 +251,107 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         // Text Suggestions (with search icon) - like TIDAL
         ...suggestions.take(4).map((s) => _SuggestionTile(
           suggestion: s,
-          query: _searchController.text,
+          query: query,
           onTap: () => _onSuggestionTap(s),
         )),
         
-        // Results with images
-        ...result.artists.take(4).map((artist) => _ArtistResultTile(
-          artist: artist,
-          onTap: () => Navigator.push(context, MaterialPageRoute(
-            builder: (_) => ArtistDetailScreen(artistId: artist.id, artist: artist),
-          )),
-        )),
-        
-        ...result.tracks.take(4).map((track) => _TrackResultTile(
-          track: track,
-          onTap: () => ref.read(playerProvider.notifier).playQueue(
-            result.tracks, 
-            startIndex: result.tracks.indexOf(track),
+        // ARTIST AT TOP (circular image) - tapping opens artist page
+        if (result.artists.isNotEmpty) ...[
+          _ArtistResultTile(
+            artist: result.artists.first,
+            onTap: () => Navigator.push(context, MaterialPageRoute(
+              builder: (_) => ArtistDetailScreen(artistId: result.artists.first.id, artist: result.artists.first),
+            )),
           ),
-        )),
+        ],
+        
+        // ALBUMS SECTION (horizontal scroll)
+        if (result.albums.isNotEmpty) ...[
+          Padding(
+            padding: EdgeInsets.fromLTRB(responsive.horizontalPadding, 20, responsive.horizontalPadding, 8),
+            child: Text('Albums', style: AppTheme.titleMedium),
+          ),
+          SizedBox(
+            height: responsive.value(mobile: 180.0, tablet: 220.0),
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
+              itemCount: result.albums.take(6).length,
+              itemBuilder: (context, index) {
+                final album = result.albums[index];
+                return Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: _AlbumCard(
+                    album: album,
+                    onTap: () => Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => AlbumDetailScreen(albumId: album.id, album: album),
+                    )),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+        
+        // TRACKS SECTION
+        if (result.tracks.isNotEmpty) ...[
+          Padding(
+            padding: EdgeInsets.fromLTRB(responsive.horizontalPadding, 20, responsive.horizontalPadding, 8),
+            child: Text('Tracks', style: AppTheme.titleMedium),
+          ),
+          ...result.tracks.take(4).map((track) => _TrackResultTile(
+            track: track,
+            onTap: () => ref.read(playerProvider.notifier).playQueue(
+              result.tracks, 
+              startIndex: result.tracks.indexOf(track),
+            ),
+          )),
+        ],
+        
+        // PLAYLISTS SECTION
+        if (result.playlists.isNotEmpty) ...[
+          Padding(
+            padding: EdgeInsets.fromLTRB(responsive.horizontalPadding, 20, responsive.horizontalPadding, 8),
+            child: Text('Playlists', style: AppTheme.titleMedium),
+          ),
+          ...result.playlists.take(4).map((playlist) => _PlaylistResultTile(
+            playlist: playlist,
+            onTap: () => Navigator.push(context, MaterialPageRoute(
+              builder: (_) => PlaylistDetailScreen(playlistId: playlist.id, playlist: playlist),
+            )),
+          )),
+        ],
+        
+        // VIEW ALL RESULTS BUTTON
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding, vertical: 24),
+          child: GestureDetector(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => SearchAllResultsScreen(
+                  query: query,
+                  result: result,
+                ),
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  'View all results for ',
+                  style: AppTheme.bodyMedium.copyWith(color: AppTheme.secondaryColor),
+                ),
+                Text(
+                  query,
+                  style: AppTheme.bodyMedium.copyWith(color: Colors.white, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(width: 8),
+                Icon(Icons.arrow_forward, color: AppTheme.secondaryColor, size: 18),
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -459,6 +543,36 @@ class _AlbumCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _PlaylistResultTile extends StatelessWidget {
+  final Playlist playlist;
+  final VoidCallback onTap;
+
+  const _PlaylistResultTile({required this.playlist, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      onTap: onTap,
+      leading: ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: playlist.coverArtUrl != null
+            ? CachedNetworkImage(imageUrl: playlist.coverArtUrl!, width: 50, height: 50, fit: BoxFit.cover)
+            : Container(width: 50, height: 50, color: AppTheme.surfaceColor, child: const Icon(Icons.playlist_play, color: AppTheme.secondaryColor)),
+      ),
+      title: Text(playlist.title, style: AppTheme.bodyLarge, maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('by ${playlist.creatorName ?? "TIDAL"}', style: AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor), maxLines: 1),
+          Text('${playlist.trackCount} TRACKS', style: AppTheme.labelSmall.copyWith(color: AppTheme.tertiaryColor, letterSpacing: 0.5)),
+        ],
+      ),
+      isThreeLine: true,
+      trailing: const Icon(Icons.more_vert, color: AppTheme.secondaryColor),
     );
   }
 }

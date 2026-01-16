@@ -6,6 +6,7 @@ import '../../core/utils/responsive.dart';
 import '../../providers/providers.dart';
 import '../../models/models.dart';
 import '../artist/artist_detail_screen.dart';
+import 'view_all_screen.dart';
 
 /// Album Detail Screen - TIDAL Style
 /// Shows: Album header, Play/Shuffle, Track list, More Albums by Artist, Related Albums, Related Artists
@@ -249,7 +250,18 @@ class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
 
         // More Albums by Artist
         if (_moreAlbumsByArtist.isNotEmpty) ...[
-          _SectionHeader(title: 'More Albums by ${albumDetail.artist}'),
+          _SectionHeader(
+            title: 'More Albums by ${albumDetail.artist}',
+            onViewAll: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => ViewAllScreen(
+                  title: 'More Albums by ${albumDetail.artist}',
+                  albums: _moreAlbumsByArtist,
+                ),
+              ),
+            ),
+          ),
           SliverToBoxAdapter(
             child: _HorizontalAlbumList(
               albums: _moreAlbumsByArtist,
@@ -260,7 +272,18 @@ class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
 
         // Related Albums
         if (_relatedAlbums.isNotEmpty) ...[
-          _SectionHeader(title: 'Related Albums'),
+          _SectionHeader(
+            title: 'Related Albums',
+            onViewAll: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => ViewAllScreen(
+                  title: 'Related Albums',
+                  albums: _relatedAlbums,
+                ),
+              ),
+            ),
+          ),
           SliverToBoxAdapter(
             child: _HorizontalAlbumList(
               albums: _relatedAlbums,
@@ -271,7 +294,18 @@ class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
 
         // Related Artists
         if (_relatedArtists.isNotEmpty) ...[
-          _SectionHeader(title: 'Related Artists'),
+          _SectionHeader(
+            title: 'Related Artists',
+            onViewAll: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => ViewAllScreen(
+                  title: 'Related Artists',
+                  artists: _relatedArtists,
+                ),
+              ),
+            ),
+          ),
           SliverToBoxAdapter(
             child: _HorizontalArtistList(
               artists: _relatedArtists,
@@ -585,13 +619,14 @@ class _TrackListItem extends StatelessWidget {
 }
 
 // ============================================================================
-// SECTION HEADER
+// SECTION HEADER WITH VIEW ALL
 // ============================================================================
 
 class _SectionHeader extends StatelessWidget {
   final String title;
+  final VoidCallback? onViewAll;
 
-  const _SectionHeader({required this.title});
+  const _SectionHeader({required this.title, this.onViewAll});
 
   @override
   Widget build(BuildContext context) {
@@ -603,7 +638,19 @@ class _SectionHeader extends StatelessWidget {
             Expanded(
               child: Text(title, style: AppTheme.titleLarge, maxLines: 1, overflow: TextOverflow.ellipsis),
             ),
-            Icon(Icons.arrow_forward, color: AppTheme.secondaryColor, size: 20),
+            if (onViewAll != null)
+              GestureDetector(
+                onTap: onViewAll,
+                child: Text(
+                  'VIEW ALL',
+                  style: TextStyle(
+                    color: AppTheme.secondaryColor,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
           ],
         ),
       ),
