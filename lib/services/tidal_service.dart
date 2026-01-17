@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 import 'package:dio/dio.dart';
 import '../core/constants/api_constants.dart';
 import '../models/models.dart';
@@ -20,15 +21,20 @@ enum TidalQuality {
 
 /// TIDAL API Service - ACTIVE
 /// Uses hifi-api format with working endpoints
+/// Load balanced with random starting endpoint
 class TidalService {
   final Dio _dio;
-  int _currentEndpointIndex = 0;
+  int _currentEndpointIndex;
   final Map<int, int> _endpointFailureCount = {};
+  static final Random _random = Random();
   
   /// Default to Master quality, falls back to HiFi
   TidalQuality preferredQuality = TidalQuality.master;
 
-  TidalService() : _dio = Dio() {
+  TidalService() : 
+    _dio = Dio(),
+    // Random starting endpoint for load balancing
+    _currentEndpointIndex = _random.nextInt(TidalEndpoints.endpoints.length) {
     _dio.options.connectTimeout = const Duration(seconds: 15);
     _dio.options.receiveTimeout = const Duration(seconds: 30);
     _dio.options.headers = {

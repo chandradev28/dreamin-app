@@ -11,9 +11,8 @@ import '../playlist/playlist_detail_screen.dart';
 import '../artist/artist_detail_screen.dart';
 import 'search_all_results_screen.dart';
 
-/// Search Screen - TIDAL Style
-/// Browse: Genres, Moods, Decades
-/// Search: Text suggestions + mixed results
+/// Search Screen - Clean TIDAL Style Layout
+/// Fixed: No repeated sections, proper artist images, clean mixed results
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
 
@@ -63,11 +62,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     _searchController.text = category;
     _onSearchChanged(category);
     FocusScope.of(context).unfocus();
-  }
-
-  void _onSuggestionTap(String suggestion) {
-    _searchController.text = suggestion;
-    _onSearchChanged(suggestion);
   }
 
   @override
@@ -195,7 +189,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   // ===========================================================================
-  // SEARCH RESULTS WITH SUGGESTIONS
+  // SEARCH RESULTS - Clean TIDAL Style (like the reference image)
   // ===========================================================================
 
   Widget _buildSearchResults(SearchState searchState, Responsive responsive) {
@@ -241,136 +235,252 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       );
     }
 
-    // Build suggestions from results
-    final suggestions = _buildSuggestions(result);
     final query = _searchController.text;
 
+    // Build a SINGLE, clean mixed results list (like Tidal app)
     return ListView(
       padding: EdgeInsets.only(bottom: responsive.miniPlayerHeight + responsive.bottomNavHeight + 20),
       children: [
-        // Text Suggestions (with search icon) - like TIDAL
-        ...suggestions.take(4).map((s) => _SuggestionTile(
-          suggestion: s,
-          query: query,
-          onTap: () => _onSuggestionTap(s),
-        )),
+        // Search suggestions at top
+        ..._buildSearchSuggestions(result, query),
         
-        // ARTIST AT TOP (circular image) - tapping opens artist page
-        if (result.artists.isNotEmpty) ...[
-          _ArtistResultTile(
-            artist: result.artists.first,
-            onTap: () => Navigator.push(context, MaterialPageRoute(
-              builder: (_) => ArtistDetailScreen(artistId: result.artists.first.id, artist: result.artists.first),
-            )),
-          ),
-        ],
-        
-        // ALBUMS SECTION (horizontal scroll)
-        if (result.albums.isNotEmpty) ...[
-          Padding(
-            padding: EdgeInsets.fromLTRB(responsive.horizontalPadding, 20, responsive.horizontalPadding, 8),
-            child: Text('Albums', style: AppTheme.titleMedium),
-          ),
-          SizedBox(
-            height: responsive.value(mobile: 180.0, tablet: 220.0),
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
-              itemCount: result.albums.take(6).length,
-              itemBuilder: (context, index) {
-                final album = result.albums[index];
-                return Padding(
-                  padding: const EdgeInsets.only(right: 12),
-                  child: _AlbumCard(
-                    album: album,
-                    onTap: () => Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => AlbumDetailScreen(albumId: album.id, album: album),
-                    )),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-        
-        // TRACKS SECTION
-        if (result.tracks.isNotEmpty) ...[
-          Padding(
-            padding: EdgeInsets.fromLTRB(responsive.horizontalPadding, 20, responsive.horizontalPadding, 8),
-            child: Text('Tracks', style: AppTheme.titleMedium),
-          ),
-          ...result.tracks.take(4).map((track) => _TrackResultTile(
-            track: track,
-            onTap: () => ref.read(playerProvider.notifier).playQueue(
-              result.tracks, 
-              startIndex: result.tracks.indexOf(track),
-            ),
-          )),
-        ],
-        
-        // PLAYLISTS SECTION
-        if (result.playlists.isNotEmpty) ...[
-          Padding(
-            padding: EdgeInsets.fromLTRB(responsive.horizontalPadding, 20, responsive.horizontalPadding, 8),
-            child: Text('Playlists', style: AppTheme.titleMedium),
-          ),
-          ...result.playlists.take(4).map((playlist) => _PlaylistResultTile(
-            playlist: playlist,
-            onTap: () => Navigator.push(context, MaterialPageRoute(
-              builder: (_) => PlaylistDetailScreen(playlistId: playlist.id, playlist: playlist),
-            )),
-          )),
-        ],
-        
-        // VIEW ALL RESULTS BUTTON
-        Padding(
-          padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding, vertical: 24),
-          child: GestureDetector(
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => SearchAllResultsScreen(
-                  query: query,
-                  result: result,
-                ),
-              ),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  'View all results for ',
-                  style: AppTheme.bodyMedium.copyWith(color: AppTheme.secondaryColor),
-                ),
-                Text(
-                  query,
-                  style: AppTheme.bodyMedium.copyWith(color: Colors.white, fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(width: 8),
-                Icon(Icons.arrow_forward, color: AppTheme.secondaryColor, size: 18),
-              ],
-            ),
-          ),
-        ),
+        // Mixed results: Artist card, then albums, then tracks, then playlists
+        ..._buildMixedResults(result, responsive, query),
       ],
     );
   }
 
-  List<String> _buildSuggestions(SearchResult result) {
+  /// Build search suggestions (like Tidal's "acdc thunderstruck", "accept", etc.)
+  List<Widget> _buildSearchSuggestions(SearchResult result, String query) {
     final suggestions = <String>{};
-    final query = _searchController.text.toLowerCase();
     
-    for (final artist in result.artists.take(4)) {
+    // Add artist names as suggestions
+    for (final artist in result.artists.take(2)) {
       suggestions.add(artist.name.toLowerCase());
     }
     
-    for (final track in result.tracks.take(4)) {
-      if (track.title.toLowerCase().contains(query)) {
-        suggestions.add('${track.artist.toLowerCase()} ${track.title.toLowerCase()}');
+    // Add "artist + track" combinations
+    for (final track in result.tracks.take(2)) {
+      final suggestion = '${track.artist.toLowerCase()} ${track.title.toLowerCase()}';
+      if (suggestion.contains(query.toLowerCase())) {
+        suggestions.add(suggestion);
       }
     }
-    
-    return suggestions.toList();
+
+    return suggestions.take(4).map((s) => ListTile(
+      dense: true,
+      leading: const Icon(Icons.search, color: AppTheme.secondaryColor, size: 20),
+      title: _buildHighlightedText(s, query),
+      onTap: () {
+        _searchController.text = s;
+        _onSearchChanged(s);
+      },
+    )).toList();
+  }
+
+  /// Build mixed results in proper order: Artist -> Albums -> Tracks -> Playlists
+  List<Widget> _buildMixedResults(SearchResult result, Responsive responsive, String query) {
+    final widgets = <Widget>[];
+
+    // 1. ARTIST at top (large card with circular image)
+    if (result.artists.isNotEmpty) {
+      final artist = result.artists.first;
+      widgets.add(_buildArtistCard(artist));
+    }
+
+    // 2. ALBUMS (horizontal scroll)
+    if (result.albums.isNotEmpty) {
+      // Deduplicate albums by ID
+      final uniqueAlbums = <String, Album>{};
+      for (final album in result.albums) {
+        uniqueAlbums[album.id] = album;
+      }
+      final albums = uniqueAlbums.values.take(6).toList();
+      
+      widgets.add(Padding(
+        padding: EdgeInsets.fromLTRB(responsive.horizontalPadding, 20, responsive.horizontalPadding, 8),
+        child: Text('Albums', style: AppTheme.titleMedium),
+      ));
+      widgets.add(SizedBox(
+        height: responsive.value(mobile: 180.0, tablet: 220.0),
+        child: ListView.builder(
+          scrollDirection: Axis.horizontal,
+          padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
+          itemCount: albums.length,
+          itemBuilder: (context, index) {
+            final album = albums[index];
+            return Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: _AlbumCard(
+                album: album,
+                onTap: () => Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => AlbumDetailScreen(albumId: album.id, album: album),
+                )),
+              ),
+            );
+          },
+        ),
+      ));
+    }
+
+    // 3. TRACKS (list)
+    if (result.tracks.isNotEmpty) {
+      // Deduplicate tracks by ID
+      final uniqueTracks = <String, Track>{};
+      for (final track in result.tracks) {
+        uniqueTracks[track.id] = track;
+      }
+      final tracks = uniqueTracks.values.take(6).toList();
+      
+      widgets.add(Padding(
+        padding: EdgeInsets.fromLTRB(responsive.horizontalPadding, 20, responsive.horizontalPadding, 8),
+        child: Text('Tracks', style: AppTheme.titleMedium),
+      ));
+      widgets.addAll(tracks.map((track) => _buildTrackTile(track, result.tracks)));
+    }
+
+    // 4. PLAYLISTS (list) - only once!
+    if (result.playlists.isNotEmpty) {
+      // Deduplicate playlists by ID
+      final uniquePlaylists = <String, Playlist>{};
+      for (final playlist in result.playlists) {
+        uniquePlaylists[playlist.id] = playlist;
+      }
+      final playlists = uniquePlaylists.values.take(4).toList();
+      
+      widgets.add(Padding(
+        padding: EdgeInsets.fromLTRB(responsive.horizontalPadding, 20, responsive.horizontalPadding, 8),
+        child: Text('Playlists', style: AppTheme.titleMedium),
+      ));
+      widgets.addAll(playlists.map((playlist) => _buildPlaylistTile(playlist)));
+    }
+
+    // 5. VIEW ALL button (only once at the end)
+    widgets.add(Padding(
+      padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding, vertical: 24),
+      child: GestureDetector(
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => SearchAllResultsScreen(query: query, result: result),
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text('View all results for ', style: AppTheme.bodyMedium.copyWith(color: AppTheme.secondaryColor)),
+            Text(query, style: AppTheme.bodyMedium.copyWith(color: Colors.white, fontWeight: FontWeight.w600)),
+            const SizedBox(width: 8),
+            const Icon(Icons.arrow_forward, color: AppTheme.secondaryColor, size: 18),
+          ],
+        ),
+      ),
+    ));
+
+    return widgets;
+  }
+
+  Widget _buildArtistCard(Artist artist) {
+    return ListTile(
+      onTap: () => Navigator.push(context, MaterialPageRoute(
+        builder: (_) => ArtistDetailScreen(artistId: artist.id, artist: artist),
+      )),
+      leading: Container(
+        width: 56, height: 56,
+        decoration: BoxDecoration(shape: BoxShape.circle, color: AppTheme.surfaceColor),
+        child: ClipOval(
+          child: artist.imageUrl != null && artist.imageUrl!.isNotEmpty
+              ? CachedNetworkImage(
+                  imageUrl: artist.imageUrl!,
+                  fit: BoxFit.cover,
+                  width: 56,
+                  height: 56,
+                  placeholder: (_, __) => _buildArtistInitial(artist.name),
+                  errorWidget: (_, __, ___) => _buildArtistInitial(artist.name),
+                )
+              : _buildArtistInitial(artist.name),
+        ),
+      ),
+      title: Text(artist.name, style: AppTheme.titleMedium),
+      trailing: const Icon(Icons.more_vert, color: AppTheme.secondaryColor),
+    );
+  }
+
+  Widget _buildArtistInitial(String name) {
+    return Container(
+      width: 56, height: 56,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          colors: [AppTheme.primaryColor.withOpacity(0.7), AppTheme.surfaceColor],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: Center(
+        child: Text(
+          name.isNotEmpty ? name[0].toUpperCase() : '?',
+          style: AppTheme.headlineSmall.copyWith(color: Colors.white),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTrackTile(Track track, List<Track> allTracks) {
+    return ListTile(
+      onTap: () => ref.read(playerProvider.notifier).playQueue(allTracks, startIndex: allTracks.indexOf(track)),
+      leading: ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: track.coverArtUrl != null
+            ? CachedNetworkImage(imageUrl: track.coverArtUrl!, width: 50, height: 50, fit: BoxFit.cover)
+            : Container(width: 50, height: 50, color: AppTheme.surfaceColor, child: const Icon(Icons.music_note, color: AppTheme.secondaryColor)),
+      ),
+      title: Text(track.title, style: AppTheme.bodyLarge, maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: Text('Track by ${track.artist}', style: AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor), maxLines: 1),
+      trailing: const Icon(Icons.more_vert, color: AppTheme.secondaryColor),
+    );
+  }
+
+  Widget _buildPlaylistTile(Playlist playlist) {
+    return ListTile(
+      onTap: () => Navigator.push(context, MaterialPageRoute(
+        builder: (_) => PlaylistDetailScreen(playlistId: playlist.id, playlist: playlist),
+      )),
+      leading: ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: playlist.coverArtUrl != null
+            ? CachedNetworkImage(imageUrl: playlist.coverArtUrl!, width: 50, height: 50, fit: BoxFit.cover)
+            : Container(width: 50, height: 50, color: AppTheme.surfaceColor, child: const Icon(Icons.playlist_play, color: AppTheme.secondaryColor)),
+      ),
+      title: Text(playlist.title, style: AppTheme.bodyLarge, maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: Text('by ${playlist.creatorName ?? "TIDAL"} • ${playlist.trackCount} tracks', 
+        style: AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor), maxLines: 1),
+      trailing: const Icon(Icons.more_vert, color: AppTheme.secondaryColor),
+    );
+  }
+
+  Widget _buildHighlightedText(String text, String query) {
+    final queryLower = query.toLowerCase();
+    final textLower = text.toLowerCase();
+    final index = textLower.indexOf(queryLower);
+
+    if (index == -1 || query.isEmpty) {
+      return Text(text, style: AppTheme.bodyMedium);
+    }
+
+    return RichText(
+      text: TextSpan(
+        style: AppTheme.bodyMedium.copyWith(color: AppTheme.secondaryColor),
+        children: [
+          TextSpan(text: text.substring(0, index)),
+          TextSpan(
+            text: text.substring(index, index + query.length),
+            style: AppTheme.bodyMedium.copyWith(color: Colors.white, fontWeight: FontWeight.bold),
+          ),
+          TextSpan(text: text.substring(index + query.length)),
+        ],
+      ),
+    );
   }
 }
 
@@ -424,97 +534,6 @@ class _CategoryChip extends StatelessWidget {
   }
 }
 
-/// Search Suggestion Tile - shows search icon + highlighted text
-class _SuggestionTile extends StatelessWidget {
-  final String suggestion;
-  final String query;
-  final VoidCallback onTap;
-
-  const _SuggestionTile({required this.suggestion, required this.query, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      onTap: onTap,
-      leading: const Icon(Icons.search, color: AppTheme.secondaryColor, size: 20),
-      title: _buildHighlightedText(suggestion, query),
-      dense: true,
-    );
-  }
-
-  Widget _buildHighlightedText(String text, String query) {
-    final queryLower = query.toLowerCase();
-    final textLower = text.toLowerCase();
-    final index = textLower.indexOf(queryLower);
-
-    if (index == -1 || query.isEmpty) {
-      return Text(text, style: AppTheme.bodyMedium);
-    }
-
-    return RichText(
-      text: TextSpan(
-        style: AppTheme.bodyMedium.copyWith(color: AppTheme.secondaryColor),
-        children: [
-          TextSpan(text: text.substring(0, index)),
-          TextSpan(
-            text: text.substring(index, index + query.length),
-            style: AppTheme.bodyMedium.copyWith(color: AppTheme.primaryColor, fontWeight: FontWeight.bold),
-          ),
-          TextSpan(text: text.substring(index + query.length)),
-        ],
-      ),
-    );
-  }
-}
-
-class _ArtistResultTile extends StatelessWidget {
-  final Artist artist;
-  final VoidCallback onTap;
-
-  const _ArtistResultTile({required this.artist, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      onTap: onTap,
-      leading: Container(
-        width: 50, height: 50,
-        decoration: BoxDecoration(shape: BoxShape.circle, color: AppTheme.surfaceColor),
-        child: ClipOval(
-          child: artist.imageUrl != null
-              ? CachedNetworkImage(imageUrl: artist.imageUrl!, fit: BoxFit.cover)
-              : Center(child: Text(artist.name.isNotEmpty ? artist.name[0].toUpperCase() : '?', style: AppTheme.titleLarge)),
-        ),
-      ),
-      title: Text(artist.name, style: AppTheme.bodyLarge),
-      trailing: const Icon(Icons.more_vert, color: AppTheme.secondaryColor),
-    );
-  }
-}
-
-class _TrackResultTile extends StatelessWidget {
-  final Track track;
-  final VoidCallback onTap;
-
-  const _TrackResultTile({required this.track, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      onTap: onTap,
-      leading: ClipRRect(
-        borderRadius: BorderRadius.circular(4),
-        child: track.coverArtUrl != null
-            ? CachedNetworkImage(imageUrl: track.coverArtUrl!, width: 50, height: 50, fit: BoxFit.cover)
-            : Container(width: 50, height: 50, color: AppTheme.surfaceColor, child: const Icon(Icons.music_note, color: AppTheme.secondaryColor)),
-      ),
-      title: Text(track.title, style: AppTheme.bodyLarge, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Text('Track by ${track.artist}', style: AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor), maxLines: 1),
-      trailing: const Icon(Icons.more_vert, color: AppTheme.secondaryColor),
-    );
-  }
-}
-
 class _AlbumCard extends StatelessWidget {
   final Album album;
   final VoidCallback onTap;
@@ -539,40 +558,10 @@ class _AlbumCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(album.title, style: AppTheme.bodySmall, maxLines: 1, overflow: TextOverflow.ellipsis),
-            Text(album.artist, style: AppTheme.labelSmall.copyWith(color: AppTheme.secondaryColor), maxLines: 1),
+            Text('Album by ${album.artist}', style: AppTheme.labelSmall.copyWith(color: AppTheme.secondaryColor), maxLines: 1),
           ],
         ),
       ),
-    );
-  }
-}
-
-class _PlaylistResultTile extends StatelessWidget {
-  final Playlist playlist;
-  final VoidCallback onTap;
-
-  const _PlaylistResultTile({required this.playlist, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      onTap: onTap,
-      leading: ClipRRect(
-        borderRadius: BorderRadius.circular(4),
-        child: playlist.coverArtUrl != null
-            ? CachedNetworkImage(imageUrl: playlist.coverArtUrl!, width: 50, height: 50, fit: BoxFit.cover)
-            : Container(width: 50, height: 50, color: AppTheme.surfaceColor, child: const Icon(Icons.playlist_play, color: AppTheme.secondaryColor)),
-      ),
-      title: Text(playlist.title, style: AppTheme.bodyLarge, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('by ${playlist.creatorName ?? "TIDAL"}', style: AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor), maxLines: 1),
-          Text('${playlist.trackCount} TRACKS', style: AppTheme.labelSmall.copyWith(color: AppTheme.tertiaryColor, letterSpacing: 0.5)),
-        ],
-      ),
-      isThreeLine: true,
-      trailing: const Icon(Icons.more_vert, color: AppTheme.secondaryColor),
     );
   }
 }

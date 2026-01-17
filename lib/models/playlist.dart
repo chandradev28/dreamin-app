@@ -50,9 +50,10 @@ class Playlist extends Equatable {
   }
 
   factory Playlist.fromTidalJson(Map<String, dynamic> json) {
-    // Try multiple image fields the API might return
-    String? image = json['image'] as String? 
-        ?? json['squareImage'] as String?
+    // IMPORTANT: Use squareImage first (better for square cover display)
+    // then fall back to image, then picture
+    String? image = json['squareImage'] as String? 
+        ?? json['image'] as String?
         ?? json['picture'] as String?;
     
     String? coverUrl;
