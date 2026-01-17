@@ -7,6 +7,7 @@ import '../../providers/providers.dart';
 import '../../models/models.dart';
 import '../album/album_detail_screen.dart';
 import '../playlist/playlist_detail_screen.dart';
+import 'see_all_screen.dart';
 
 /// Home Screen - TIDAL Style Homepage
 /// Sections: Songs of the Year, Recommended new tracks (bento), Popular playlists, New albums, Albums you'll enjoy
@@ -71,7 +72,13 @@ class HomeScreen extends ConsumerWidget {
                 SliverToBoxAdapter(
                   child: _TidalSectionHeader(
                     title: 'Songs of the Year',
-                    onSeeAll: () {},
+                    onSeeAll: () => Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => SeeAllScreen(
+                        title: 'Songs of the Year',
+                        items: homeData.songsOfTheYear,
+                        type: SeeAllType.playlist,
+                      ),
+                    )),
                   ),
                 ),
                 SliverToBoxAdapter(
@@ -127,7 +134,13 @@ class HomeScreen extends ConsumerWidget {
                           startIndex: index,
                         );
                       },
-                      onSeeAll: () {},
+                      onSeeAll: () => Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => SeeAllScreen(
+                          title: 'Recommended new tracks',
+                          items: homeData.trendingTracks,
+                          type: SeeAllType.track,
+                        ),
+                      )),
                     ),
                   ),
                 ),
@@ -140,7 +153,13 @@ class HomeScreen extends ConsumerWidget {
                 SliverToBoxAdapter(
                   child: _TidalSectionHeader(
                     title: 'Popular playlists on TIDAL',
-                    onSeeAll: () {},
+                    onSeeAll: () => Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => SeeAllScreen(
+                        title: 'Popular playlists on TIDAL',
+                        items: homeData.popularPlaylists,
+                        type: SeeAllType.playlist,
+                      ),
+                    )),
                   ),
                 ),
                 SliverToBoxAdapter(
@@ -179,7 +198,13 @@ class HomeScreen extends ConsumerWidget {
                 SliverToBoxAdapter(
                   child: _TidalSectionHeader(
                     title: 'Suggested new albums for you',
-                    onSeeAll: () {},
+                    onSeeAll: () => Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => SeeAllScreen(
+                        title: 'Suggested new albums for you',
+                        items: homeData.newAlbums,
+                        type: SeeAllType.album,
+                      ),
+                    )),
                   ),
                 ),
                 SliverToBoxAdapter(
@@ -218,7 +243,13 @@ class HomeScreen extends ConsumerWidget {
                 SliverToBoxAdapter(
                   child: _TidalSectionHeader(
                     title: "Albums you'll enjoy",
-                    onSeeAll: () {},
+                    onSeeAll: () => Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => SeeAllScreen(
+                        title: "Albums you'll enjoy",
+                        items: homeData.albumsYouLlEnjoy,
+                        type: SeeAllType.album,
+                      ),
+                    )),
                   ),
                 ),
                 SliverToBoxAdapter(
@@ -250,10 +281,10 @@ class HomeScreen extends ConsumerWidget {
                 ),
               ],
 
-              // Bottom spacing for mini player
+              // Bottom spacing for mini player (minimal)
               SliverToBoxAdapter(
                 child: SizedBox(
-                  height: responsive.miniPlayerHeight + responsive.bottomNavHeight + 40,
+                  height: responsive.miniPlayerHeight + 16,
                 ),
               ),
             ],
