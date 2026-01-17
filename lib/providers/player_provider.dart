@@ -146,6 +146,23 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
         state = state.copyWith(duration: duration);
       }
     });
+
+    // Handle playback errors
+    _audioPlayer.playbackEventStream.listen(
+      (event) {},
+      onError: (Object e, StackTrace stackTrace) {
+        print('Audio Player Error: $e');
+        // Auto-skip to next on error
+        if (state.queue.isNotEmpty && state.queueIndex < state.queue.length - 1) {
+          skipNext();
+        } else {
+          state = state.copyWith(
+            status: PlaybackStatus.error,
+            error: 'Playback failed. Please try again.',
+          );
+        }
+      },
+    );
   }
 
   PlaybackStatus _handleCompletion() {
@@ -210,15 +227,28 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     );
 
     try {
+      print('🎵 Playing: ${track.title} (ID: ${track.id})');
+      
       // Get stream info (includes quality metadata)
       final streamInfo = await _tidalService.getStreamInfo(track.id);
+      print('🔗 Stream URL: ${streamInfo.url.substring(0, 50.clamp(0, streamInfo.url.length))}...');
+      print('📊 Quality: ${streamInfo.quality}, BitDepth: ${streamInfo.bitDepth}, SampleRate: ${streamInfo.sampleRate}');
+      
+      if (streamInfo.url.isEmpty) {
+        throw Exception('Empty stream URL received');
+      }
+      
       await _audioPlayer.setUrl(streamInfo.url);
+      print('✅ URL set successfully');
+      
       await _audioPlayer.play();
+      print('▶️ Play started');
       _playStartTime = DateTime.now();
       
       // Update state with current quality
       state = state.copyWith(currentQuality: streamInfo.quality);
     } catch (e) {
+      print('❌ Play error: $e');
       // If there are more tracks in queue, auto-skip to next
       if (state.queue.isNotEmpty && state.queueIndex < state.queue.length - 1) {
         // Brief delay before skipping to show error

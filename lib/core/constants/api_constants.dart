@@ -2,6 +2,8 @@
 class TidalEndpoints {
   /// Primary endpoints with fallback support - WORKING ENDPOINTS
   static const List<String> endpoints = [
+    'https://triton.squid.wtf',       // Fastest - from Freedify
+    'https://hifi.401658.xyz',        // Hi-Res - from Freedify
     'https://hund.qqdl.site',
     'https://katze.qqdl.site',
     'https://maus.qqdl.site',
