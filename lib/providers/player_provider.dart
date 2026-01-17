@@ -109,7 +109,9 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   final Ref _ref;
   List<Track> _originalQueue = [];
   DateTime? _playStartTime;
+  int _consecutiveFailures = 0; // Track consecutive play failures
   static const _minimumPlayDuration = Duration(seconds: 30);
+  static const _maxConsecutiveFailures = 3; // Stop skipping after 3 failures
 
   PlayerNotifier(this._tidalService, this._database, this._ref)
       : _audioPlayer = AudioPlayer(),
@@ -245,22 +247,32 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       print('▶️ Play started');
       _playStartTime = DateTime.now();
       
+      // Reset consecutive failures on successful play
+      _consecutiveFailures = 0;
+      
       // Update state with current quality
       state = state.copyWith(currentQuality: streamInfo.quality);
     } catch (e) {
       print('❌ Play error: $e');
-      // If there are more tracks in queue, auto-skip to next
-      if (state.queue.isNotEmpty && state.queueIndex < state.queue.length - 1) {
-        // Brief delay before skipping to show error
-        await Future.delayed(const Duration(milliseconds: 500));
+      _consecutiveFailures++;
+      
+      // Check if we should try next track or stop
+      final hasMoreTracks = state.queue.isNotEmpty && state.queueIndex < state.queue.length - 1;
+      final shouldSkip = hasMoreTracks && _consecutiveFailures < _maxConsecutiveFailures;
+      
+      if (shouldSkip) {
+        print('⏭️ Skipping to next (failure ${_consecutiveFailures}/$_maxConsecutiveFailures)');
+        await Future.delayed(const Duration(milliseconds: 300));
         skipNext();
         return;
       }
       
-      // No more tracks - show error
+      // Too many failures or no more tracks - show error and stop
+      print('🛑 Stopping playback after $_consecutiveFailures consecutive failures');
+      _consecutiveFailures = 0; // Reset for next attempt
       state = state.copyWith(
         status: PlaybackStatus.error,
-        error: 'Unable to play "${track.title}". Try another track.',
+        error: 'Unable to play music. Check your connection and try again.',
       );
     }
   }

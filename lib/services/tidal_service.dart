@@ -541,11 +541,17 @@ class TidalService {
     final requestedQuality = quality ?? preferredQuality;
     
     try {
+      // Strip any prefix (like "deezer_") and parse to int
+      final numericId = int.tryParse(trackId.replaceAll(RegExp(r'[^0-9]'), ''));
+      if (numericId == null || numericId == 0) {
+        throw TidalApiException('Invalid track ID: $trackId');
+      }
+      
       final response = await _executeWithFallback((baseUrl) {
         return _dio.get(
           '$baseUrl${TidalEndpoints.trackPath}',
           queryParameters: {
-            'id': int.parse(trackId),
+            'id': numericId,
             'quality': requestedQuality.apiValue,
           },
         );
