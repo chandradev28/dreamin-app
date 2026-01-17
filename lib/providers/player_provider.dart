@@ -26,6 +26,7 @@ class PlayerState {
   final int queueIndex;
   final String? queueSource; // Playlist/album name for 'Playing From'
   final String? error;
+  final String? currentQuality; // 'HI_RES_LOSSLESS', 'LOSSLESS', 'HIGH', etc.
 
   const PlayerState({
     this.currentTrack,
@@ -40,6 +41,7 @@ class PlayerState {
     this.queueIndex = 0,
     this.queueSource,
     this.error,
+    this.currentQuality,
   });
 
   bool get isPlaying => status == PlaybackStatus.playing;
@@ -49,6 +51,17 @@ class PlayerState {
   bool get hasTrack => currentTrack != null;
   bool get hasQueue => queue.isNotEmpty;
   bool get shuffleEnabled => isShuffleOn;
+  
+  /// Get quality label for display: MAX (24-bit), HIGH (16-bit), etc.
+  String get qualityLabel {
+    switch (currentQuality) {
+      case 'HI_RES_LOSSLESS': return 'MAX';
+      case 'LOSSLESS': return 'HIGH';
+      case 'HIGH': return 'AAC';
+      case 'LOW': return 'LOW';
+      default: return 'HIGH';
+    }
+  }
 
   double get progress {
     if (duration.inMilliseconds == 0) return 0;
@@ -68,6 +81,7 @@ class PlayerState {
     int? queueIndex,
     String? queueSource,
     String? error,
+    String? currentQuality,
   }) {
     return PlayerState(
       currentTrack: currentTrack ?? this.currentTrack,
@@ -82,6 +96,7 @@ class PlayerState {
       queueIndex: queueIndex ?? this.queueIndex,
       queueSource: queueSource ?? this.queueSource,
       error: error,
+      currentQuality: currentQuality ?? this.currentQuality,
     );
   }
 }
@@ -191,17 +206,31 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       currentTrack: track,
       status: PlaybackStatus.loading,
       position: Duration.zero,
+      error: null,
     );
 
     try {
-      final streamUrl = await _tidalService.getStreamUrl(track.id);
-      await _audioPlayer.setUrl(streamUrl);
+      // Get stream info (includes quality metadata)
+      final streamInfo = await _tidalService.getStreamInfo(track.id);
+      await _audioPlayer.setUrl(streamInfo.url);
       await _audioPlayer.play();
       _playStartTime = DateTime.now();
+      
+      // Update state with current quality
+      state = state.copyWith(currentQuality: streamInfo.quality);
     } catch (e) {
+      // If there are more tracks in queue, auto-skip to next
+      if (state.queue.isNotEmpty && state.queueIndex < state.queue.length - 1) {
+        // Brief delay before skipping to show error
+        await Future.delayed(const Duration(milliseconds: 500));
+        skipNext();
+        return;
+      }
+      
+      // No more tracks - show error
       state = state.copyWith(
         status: PlaybackStatus.error,
-        error: e.toString(),
+        error: 'Unable to play "${track.title}". Try another track.',
       );
     }
   }

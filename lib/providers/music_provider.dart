@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import '../data/database.dart';
 import '../services/tidal_service.dart';
 import '../services/lastfm_service.dart';
+import '../services/deezer_service.dart';
 import '../services/recommendation_service.dart';
 import '../models/models.dart';
 
@@ -32,6 +33,11 @@ final recommendationServiceProvider = Provider<RecommendationService>((ref) {
   final database = ref.watch(databaseProvider);
   final tidalService = ref.watch(tidalServiceProvider);
   return RecommendationService(database, tidalService);
+});
+
+/// Deezer Service Provider (for ISRC fallback)
+final deezerServiceProvider = Provider<DeezerService>((ref) {
+  return DeezerService();
 });
 
 /// Search State
@@ -160,11 +166,13 @@ class HomeDataState {
 }
 
 /// Home Data Notifier - Hybrid TIDAL + Last.fm content loading
+/// With Deezer ISRC fallback for better matching
 class HomeDataNotifier extends StateNotifier<HomeDataState> {
   final TidalService _tidalService;
   final LastFmService _lastFmService;
+  final DeezerService _deezerService;
 
-  HomeDataNotifier(this._tidalService, this._lastFmService) : super(const HomeDataState()) {
+  HomeDataNotifier(this._tidalService, this._lastFmService, this._deezerService) : super(const HomeDataState()) {
     loadData();
   }
 
@@ -203,41 +211,55 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
       final List<Album> albumsYouLlEnjoy = [];
       final List<Artist> recentArtists = [];
 
-      // Convert Last.fm chart tracks to TIDAL by searching
-      for (final lfmTrack in lastFmTracks.take(8)) {
+      // Randomize which tracks we search for (don't always take first 8)
+      final shuffledTracks = List<LastFmTrack>.from(lastFmTracks)..shuffle();
+      for (final lfmTrack in shuffledTracks.take(8)) {
         try {
-          final results = await _tidalService.searchTracks(
-            '${lfmTrack.artist} ${lfmTrack.name}', 
-            limit: 1
-          );
+          final query = '${lfmTrack.artist} ${lfmTrack.name}';
+          var results = await _tidalService.searchTracks(query, limit: 1);
+          
+          // FALLBACK: If Tidal search returns empty, try Deezer ISRC matching
+          if (results.isEmpty) {
+            final deezerTrack = await _deezerService.searchTrackForIsrc(query);
+            if (deezerTrack?.isrc != null) {
+              final isrcMatch = await _tidalService.searchTrackByIsrc(deezerTrack!.isrc!);
+              if (isrcMatch != null) {
+                results = [isrcMatch];
+              }
+            }
+          }
+          
           if (results.isNotEmpty) {
             trendingTracks.add(results.first);
           }
         } catch (_) {}
       }
 
-      // Get albums from chart artists
-      for (final lfmArtist in lastFmArtists.take(5)) {
+      // Randomize artists for "Suggested new albums" (shuffle before taking)
+      final shuffledArtists = List<LastFmArtist>.from(lastFmArtists)..shuffle();
+      for (final lfmArtist in shuffledArtists.take(5)) {
         try {
           final results = await _tidalService.searchAlbums(lfmArtist.name, limit: 2);
           newAlbums.addAll(results);
         } catch (_) {}
       }
 
-      // Get more albums by tag/genre
-      if (topTags.isNotEmpty) {
-        final randomTag = topTags[DateTime.now().second % topTags.length];
-        final tagAlbums = await _lastFmService.getTopAlbumsByTag(randomTag, limit: 8);
-        for (final lfmAlbum in tagAlbums.take(5)) {
-          try {
-            final results = await _tidalService.searchAlbums(
-              '${lfmAlbum.artist} ${lfmAlbum.name}', 
-              limit: 1
-            );
-            if (results.isNotEmpty) {
-              albumsYouLlEnjoy.add(results.first);
-            }
-          } catch (_) {}
+      // Use multiple random tags for "Albums you'll enjoy" (more variety)
+      if (topTags.length >= 3) {
+        final shuffledTags = List<String>.from(topTags)..shuffle();
+        for (final tag in shuffledTags.take(3)) {
+          final tagAlbums = await _lastFmService.getTopAlbumsByTag(tag, limit: 5);
+          for (final lfmAlbum in tagAlbums.take(2)) {
+            try {
+              final results = await _tidalService.searchAlbums(
+                '${lfmAlbum.artist} ${lfmAlbum.name}', 
+                limit: 1
+              );
+              if (results.isNotEmpty) {
+                albumsYouLlEnjoy.add(results.first);
+              }
+            } catch (_) {}
+          }
         }
       }
 
@@ -251,21 +273,30 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
         } catch (_) {}
       }
 
-      // Fallback: if Last.fm didn't give us enough, use direct TIDAL search
+      // Fallback: if Last.fm didn't give us enough, use varied search terms
       if (trendingTracks.length < 5) {
-        final moreTracks = await _tidalService.searchTracks('trending 2024', limit: 8)
+        // Use current month for freshness
+        final months = ['january', 'february', 'march', 'april', 'may', 'june', 
+                        'july', 'august', 'september', 'october', 'november', 'december'];
+        final currentMonth = months[DateTime.now().month - 1];
+        final moreTracks = await _tidalService.searchTracks('trending $currentMonth 2024', limit: 8)
             .catchError((_) => <Track>[]);
         trendingTracks.addAll(moreTracks);
       }
 
       if (newAlbums.length < 5) {
-        final moreAlbums = await _tidalService.searchAlbums('new album 2024', limit: 10)
+        // Search for recent releases with variety
+        final searchTerms = ['new release 2025', 'album 2024', 'latest music'];
+        final searchTerm = searchTerms[DateTime.now().second % searchTerms.length];
+        final moreAlbums = await _tidalService.searchAlbums(searchTerm, limit: 10)
             .catchError((_) => <Album>[]);
         newAlbums.addAll(moreAlbums);
       }
 
       if (albumsYouLlEnjoy.length < 5) {
-        final moreAlbums = await _tidalService.searchAlbums('best albums', limit: 10)
+        final genres = ['pop', 'rock', 'hip hop', 'r&b', 'indie', 'electronic'];
+        final genre = genres[DateTime.now().minute % genres.length];
+        final moreAlbums = await _tidalService.searchAlbums('best $genre albums', limit: 10)
             .catchError((_) => <Album>[]);
         albumsYouLlEnjoy.addAll(moreAlbums);
       }
@@ -340,11 +371,12 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
   }
 }
 
-/// Home Data Provider (with Last.fm integration)
+/// Home Data Provider (with Last.fm integration + Deezer fallback)
 final homeDataProvider = StateNotifierProvider<HomeDataNotifier, HomeDataState>((ref) {
   final tidalService = ref.watch(tidalServiceProvider);
   final lastFmService = ref.watch(lastFmServiceProvider);
-  return HomeDataNotifier(tidalService, lastFmService);
+  final deezerService = ref.watch(deezerServiceProvider);
+  return HomeDataNotifier(tidalService, lastFmService, deezerService);
 });
 
 // ============================================================================

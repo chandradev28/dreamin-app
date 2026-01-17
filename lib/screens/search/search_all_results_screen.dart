@@ -80,12 +80,15 @@ class _SearchAllResultsScreenState extends ConsumerState<SearchAllResultsScreen>
         bottom: TabBar(
           controller: _tabController,
           isScrollable: true,
+          tabAlignment: TabAlignment.start,
+          padding: EdgeInsets.zero,
           labelColor: Colors.white,
           unselectedLabelColor: AppTheme.secondaryColor,
           indicatorColor: Colors.white,
           indicatorSize: TabBarIndicatorSize.label,
           labelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
           unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
+          labelPadding: const EdgeInsets.symmetric(horizontal: 16),
           tabs: const [
             Tab(text: 'Top results'),
             Tab(text: 'Albums'),
@@ -110,7 +113,7 @@ class _SearchAllResultsScreenState extends ConsumerState<SearchAllResultsScreen>
   Widget _buildTopResultsTab(Responsive responsive) {
     return ListView(
       padding: EdgeInsets.only(
-        top: 16,
+        top: 8,
         bottom: responsive.miniPlayerHeight + responsive.bottomNavHeight + 20,
       ),
       children: [

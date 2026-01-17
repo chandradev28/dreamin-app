@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/responsive.dart';
 import '../../providers/providers.dart';
 import '../../models/models.dart';
 import '../artist/artist_detail_screen.dart';
+import '../scaffold_with_mini_player.dart';
 import 'view_all_screen.dart';
 
 /// Album Detail Screen - TIDAL Style
@@ -29,6 +31,7 @@ class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
   List<Album> _relatedAlbums = [];
   List<Artist> _relatedArtists = [];
   bool _isLoadingExtras = false;
+  bool _hasLoadedExtras = false; // Prevent duplicate loads
 
   @override
   void initState() {
@@ -36,41 +39,86 @@ class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
   }
 
   Future<void> _loadExtraContent(AlbumDetail albumDetail) async {
-    if (_isLoadingExtras) return;
+    if (_isLoadingExtras || _hasLoadedExtras) return;
     setState(() => _isLoadingExtras = true);
 
     final tidalService = ref.read(tidalServiceProvider);
+    final lastFmService = ref.read(lastFmServiceProvider);
 
     try {
-      // Load all extra content in parallel
-      final results = await Future.wait([
-        // More albums by this artist
-        tidalService.getArtist(albumDetail.artistId).then((artist) => artist.albums).catchError((_) => <Album>[]),
-        // Related albums (search by artist name or genre)
-        tidalService.searchAlbums(albumDetail.artist, limit: 10).catchError((_) => <Album>[]),
-        // Related artists (search similar)
-        tidalService.searchArtists(albumDetail.artist, limit: 10).catchError((_) => <Artist>[]),
-      ]);
+      // 1. Load more albums by this artist from Tidal
+      List<Album> moreAlbums = [];
+      try {
+        final artist = await tidalService.getArtist(albumDetail.artistId);
+        moreAlbums = artist.albums.where((a) => a.id != albumDetail.id).take(6).toList();
+      } catch (_) {}
+
+      // 2. Get related artists from Last.fm (genuine related artists!)
+      List<Artist> relatedArtists = [];
+      List<Album> relatedAlbums = [];
+      
+      try {
+        final lastFmSimilar = await lastFmService.getSimilarArtists(albumDetail.artist, limit: 10);
+        
+        // For each related artist: get their Tidal profile AND their top album
+        for (final lfmArtist in lastFmSimilar.take(8)) {
+          try {
+            // Search Tidal for this artist to get proper ID and image
+            final tidalArtists = await tidalService.searchArtists(lfmArtist.name, limit: 1);
+            if (tidalArtists.isNotEmpty) {
+              final artist = tidalArtists.first;
+              relatedArtists.add(artist);
+              
+              // Get one album from this related artist for "Related Albums"
+              if (relatedAlbums.length < 6) {
+                try {
+                  final artistDetail = await tidalService.getArtist(artist.id);
+                  if (artistDetail.albums.isNotEmpty) {
+                    relatedAlbums.add(artistDetail.albums.first);
+                  }
+                } catch (_) {}
+              }
+            }
+          } catch (_) {}
+        }
+      } catch (_) {}
+
+      // 3. Fallback to Tidal search if Last.fm failed
+      if (relatedArtists.isEmpty) {
+        try {
+          final searchedArtists = await tidalService.searchArtists(albumDetail.artist, limit: 10);
+          relatedArtists = searchedArtists.where((a) => a.id != albumDetail.artistId).take(8).toList();
+        } catch (_) {}
+      }
+      
+      if (relatedAlbums.isEmpty) {
+        try {
+          final searchedAlbums = await tidalService.searchAlbums(albumDetail.artist, limit: 10);
+          relatedAlbums = searchedAlbums.where((a) => a.id != albumDetail.id && a.artistId != albumDetail.artistId).take(6).toList();
+        } catch (_) {}
+      }
 
       if (mounted) {
         setState(() {
-          _moreAlbumsByArtist = (results[0] as List<Album>).where((a) => a.id != albumDetail.id).take(6).toList();
-          _relatedAlbums = (results[1] as List<Album>).where((a) => a.id != albumDetail.id && a.artistId != albumDetail.artistId).take(6).toList();
-          _relatedArtists = (results[2] as List<Artist>).where((a) => a.id != albumDetail.artistId).take(8).toList();
+          _moreAlbumsByArtist = moreAlbums;
+          _relatedAlbums = relatedAlbums;
+          _relatedArtists = relatedArtists;
           _isLoadingExtras = false;
+          _hasLoadedExtras = true;
         });
       }
     } catch (e) {
-      if (mounted) setState(() => _isLoadingExtras = false);
+      if (mounted) setState(() { _isLoadingExtras = false; _hasLoadedExtras = true; });
     }
   }
+
 
   @override
   Widget build(BuildContext context) {
     final albumDetailAsync = ref.watch(albumDetailProvider(widget.albumId));
     final responsive = Responsive(context);
 
-    return Scaffold(
+    return ScaffoldWithMiniPlayer(
       backgroundColor: AppTheme.backgroundColor,
       body: albumDetailAsync.when(
         loading: () => _buildLoadingState(context, responsive),
@@ -79,8 +127,8 @@ class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
           if (albumDetail == null) {
             return _buildErrorState(context, 'Album not found', responsive);
           }
-          // Load extra content when album loads
-          if (!_isLoadingExtras && _moreAlbumsByArtist.isEmpty && _relatedAlbums.isEmpty) {
+          // Load extra content when album loads (only once)
+          if (!_hasLoadedExtras && !_isLoadingExtras) {
             WidgetsBinding.instance.addPostFrameCallback((_) => _loadExtraContent(albumDetail));
           }
           return _buildContent(context, ref, albumDetail, responsive);
@@ -552,18 +600,33 @@ class _TrackListItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // TIDAL-style track list styling
+    final titleStyle = GoogleFonts.inter(
+      fontSize: 15,
+      fontWeight: FontWeight.w400,
+      color: isPlaying ? AppTheme.accentColor : AppTheme.primaryColor,
+    );
+    final subtitleStyle = GoogleFonts.inter(
+      fontSize: 13,
+      fontWeight: FontWeight.w400,
+      color: AppTheme.secondaryColor,
+    );
+    final numberStyle = GoogleFonts.inter(
+      fontSize: 14,
+      fontWeight: FontWeight.w400,
+      color: AppTheme.tertiaryColor,
+    );
+
     return ListTile(
       onTap: onTap,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+      minVerticalPadding: 8,
       leading: SizedBox(
-        width: 32,
+        width: 28,
         child: Center(
           child: isPlaying
-              ? Icon(Icons.equalizer, color: AppTheme.accentColor, size: 20)
-              : Text(
-                  '$index',
-                  style: AppTheme.bodyMedium.copyWith(color: AppTheme.secondaryColor),
-                ),
+              ? Icon(Icons.equalizer, color: AppTheme.accentColor, size: 18)
+              : Text('$index', style: numberStyle),
         ),
       ),
       title: Row(
@@ -571,9 +634,7 @@ class _TrackListItem extends StatelessWidget {
           Expanded(
             child: Text(
               track.title,
-              style: isPlaying
-                  ? AppTheme.bodyLarge.copyWith(color: AppTheme.accentColor)
-                  : AppTheme.bodyLarge,
+              style: titleStyle,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -586,14 +647,14 @@ class _TrackListItem extends StatelessWidget {
                 color: AppTheme.secondaryColor.withOpacity(0.3),
                 borderRadius: BorderRadius.circular(2),
               ),
-              child: Text('E', style: AppTheme.labelSmall.copyWith(fontSize: 10, color: AppTheme.primaryColor)),
+              child: Text('E', style: AppTheme.labelSmall.copyWith(fontSize: 9, color: AppTheme.primaryColor)),
             ),
           ],
         ],
       ),
       subtitle: Text(
         track.artist,
-        style: AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor),
+        style: subtitleStyle,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),

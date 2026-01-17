@@ -7,55 +7,193 @@ import '../../models/models.dart';
 import '../../providers/providers.dart';
 import '../album/album_detail_screen.dart';
 import '../playlist/playlist_detail_screen.dart';
+import '../scaffold_with_mini_player.dart';
 
-/// Generic "See All" Screen - TIDAL Style
-/// Shows a list view of playlists or albums (max 30 items)
-class SeeAllScreen extends StatelessWidget {
+/// See All Screen - Loads 30 results from API
+/// For playlists: Pass searchQuery to search for playlists
+/// For albums: Pass searchQuery to search for albums  
+/// For tracks: Pass searchQuery to search for tracks
+class SeeAllScreen extends ConsumerStatefulWidget {
   final String title;
-  final List<dynamic> items; // Can be List<Playlist> or List<Album>
+  final String searchQuery;
   final SeeAllType type;
+  
+  // Optional: pass initial items to show while loading
+  final List<dynamic>? initialItems;
 
   const SeeAllScreen({
     super.key,
     required this.title,
-    required this.items,
+    required this.searchQuery,
     required this.type,
+    this.initialItems,
   });
+
+  @override
+  ConsumerState<SeeAllScreen> createState() => _SeeAllScreenState();
+}
+
+class _SeeAllScreenState extends ConsumerState<SeeAllScreen> {
+  List<dynamic> _items = [];
+  bool _isLoading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    // Show initial items immediately if available
+    if (widget.initialItems != null && widget.initialItems!.isNotEmpty) {
+      _items = widget.initialItems!;
+    }
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final tidalService = ref.read(tidalServiceProvider);
+      
+      switch (widget.type) {
+        case SeeAllType.playlist:
+          final results = await tidalService.searchPlaylists(widget.searchQuery, limit: 30);
+          if (mounted) {
+            setState(() {
+              _items = results;
+              _isLoading = false;
+            });
+          }
+          break;
+          
+        case SeeAllType.album:
+          final results = await tidalService.searchAlbums(widget.searchQuery, limit: 30);
+          if (mounted) {
+            setState(() {
+              _items = results;
+              _isLoading = false;
+            });
+          }
+          break;
+          
+        case SeeAllType.track:
+          final results = await tidalService.searchTracks(widget.searchQuery, limit: 30);
+          if (mounted) {
+            setState(() {
+              _items = results;
+              _isLoading = false;
+            });
+          }
+          break;
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _isLoading = false;
+        });
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final responsive = Responsive(context);
-    final limitedItems = items.take(30).toList();
 
-    return Scaffold(
+    return ScaffoldWithMiniPlayer(
       backgroundColor: AppTheme.backgroundColor,
-      appBar: AppBar(
-        backgroundColor: AppTheme.backgroundColor,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
+      body: SafeArea(
+        child: Column(
+          children: [
+            // App Bar
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back, color: Colors.white),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      widget.title,
+                      style: AppTheme.titleLarge.copyWith(fontWeight: FontWeight.bold),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            
+            // Content
+            Expanded(
+              child: _buildContent(responsive),
+            ),
+          ],
         ),
-        title: Text(
-          title,
-          style: AppTheme.titleLarge.copyWith(fontWeight: FontWeight.bold),
-        ),
-        centerTitle: true,
       ),
-      body: ListView.builder(
+    );
+  }
+
+  Widget _buildContent(Responsive responsive) {
+    if (_isLoading && _items.isEmpty) {
+      return const Center(
+        child: CircularProgressIndicator(color: AppTheme.primaryColor),
+      );
+    }
+
+    if (_error != null && _items.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.error_outline, size: 48, color: AppTheme.errorColor),
+            const SizedBox(height: 16),
+            Text('Failed to load', style: AppTheme.bodyLarge),
+            const SizedBox(height: 8),
+            ElevatedButton(
+              onPressed: _loadData,
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_items.isEmpty) {
+      return Center(
+        child: Text('No results found', style: AppTheme.bodyLarge),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadData,
+      color: AppTheme.primaryColor,
+      child: ListView.builder(
         padding: EdgeInsets.only(
           top: 8,
-          bottom: responsive.miniPlayerHeight + responsive.bottomNavHeight + 20,
+          bottom: responsive.miniPlayerHeight + 20,
         ),
-        itemCount: limitedItems.length,
+        itemCount: _items.length + (_isLoading ? 1 : 0),
         itemBuilder: (context, index) {
-          final item = limitedItems[index];
-          if (type == SeeAllType.playlist && item is Playlist) {
+          if (index >= _items.length) {
+            return const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(child: CircularProgressIndicator(color: AppTheme.primaryColor)),
+            );
+          }
+
+          final item = _items[index];
+          if (widget.type == SeeAllType.playlist && item is Playlist) {
             return _PlaylistListTile(playlist: item);
-          } else if (type == SeeAllType.album && item is Album) {
+          } else if (widget.type == SeeAllType.album && item is Album) {
             return _AlbumListTile(album: item);
-          } else if (type == SeeAllType.track && item is Track) {
-            return _TrackListTile(track: item, tracks: limitedItems.cast<Track>(), index: index);
+          } else if (widget.type == SeeAllType.track && item is Track) {
+            return _TrackListTile(track: item, tracks: _items.cast<Track>(), index: index);
           }
           return const SizedBox.shrink();
         },

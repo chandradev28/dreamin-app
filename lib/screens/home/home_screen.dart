@@ -75,8 +75,9 @@ class HomeScreen extends ConsumerWidget {
                     onSeeAll: () => Navigator.push(context, MaterialPageRoute(
                       builder: (_) => SeeAllScreen(
                         title: 'Songs of the Year',
-                        items: homeData.songsOfTheYear,
+                        searchQuery: 'songs of the year',
                         type: SeeAllType.playlist,
+                        initialItems: homeData.songsOfTheYear,
                       ),
                     )),
                   ),
@@ -137,8 +138,9 @@ class HomeScreen extends ConsumerWidget {
                       onSeeAll: () => Navigator.push(context, MaterialPageRoute(
                         builder: (_) => SeeAllScreen(
                           title: 'Recommended new tracks',
-                          items: homeData.trendingTracks,
+                          searchQuery: 'trending ${DateTime.now().year}',
                           type: SeeAllType.track,
+                          initialItems: homeData.trendingTracks,
                         ),
                       )),
                     ),
@@ -156,8 +158,9 @@ class HomeScreen extends ConsumerWidget {
                     onSeeAll: () => Navigator.push(context, MaterialPageRoute(
                       builder: (_) => SeeAllScreen(
                         title: 'Popular playlists on TIDAL',
-                        items: homeData.popularPlaylists,
+                        searchQuery: 'top hits',
                         type: SeeAllType.playlist,
+                        initialItems: homeData.popularPlaylists,
                       ),
                     )),
                   ),
@@ -201,8 +204,9 @@ class HomeScreen extends ConsumerWidget {
                     onSeeAll: () => Navigator.push(context, MaterialPageRoute(
                       builder: (_) => SeeAllScreen(
                         title: 'Suggested new albums for you',
-                        items: homeData.newAlbums,
+                        searchQuery: 'new album ${DateTime.now().year}',
                         type: SeeAllType.album,
+                        initialItems: homeData.newAlbums,
                       ),
                     )),
                   ),
@@ -246,8 +250,9 @@ class HomeScreen extends ConsumerWidget {
                     onSeeAll: () => Navigator.push(context, MaterialPageRoute(
                       builder: (_) => SeeAllScreen(
                         title: "Albums you'll enjoy",
-                        items: homeData.albumsYouLlEnjoy,
+                        searchQuery: 'best albums',
                         type: SeeAllType.album,
+                        initialItems: homeData.albumsYouLlEnjoy,
                       ),
                     )),
                   ),

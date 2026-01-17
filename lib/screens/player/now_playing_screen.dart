@@ -356,7 +356,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                   color: Colors.white.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(4),
                 ),
-                child: Text('HIGH', style: AppTheme.labelSmall.copyWith(color: Colors.white, fontSize: 10)),
+                child: Text(playerState.qualityLabel, style: AppTheme.labelSmall.copyWith(color: Colors.white, fontSize: 10)),
               ),
               Text(_formatDuration(duration), style: AppTheme.labelSmall.copyWith(color: Colors.white70)),
             ],

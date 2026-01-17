@@ -72,3 +72,15 @@ class QobuzEndpoints {
   static const String quality24bit = 'HI_RES_24';
   static const String quality16bit = 'HI_RES';
 }
+
+/// Deezer Private API - Used for ISRC fallback matching
+class DeezerEndpoints {
+  /// Private Deezer metadata proxy
+  static const String baseUrl = 'https://deezer-api-orpin.vercel.app';
+  
+  /// Endpoints
+  static const String searchPath = '/search';
+  static const String trackPath = '/track';
+  static const String albumPath = '/album';
+  static const String artistPath = '/artist';
+}

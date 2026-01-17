@@ -8,6 +8,7 @@ import '../../models/models.dart';
 import '../../widgets/widgets.dart';
 import '../album/album_detail_screen.dart';
 import '../album/view_all_screen.dart';
+import '../scaffold_with_mini_player.dart';
 import 'top_tracks_view_all_screen.dart';
 
 /// Artist Detail Screen - Echo/Deezer Style
@@ -27,7 +28,7 @@ class ArtistDetailScreen extends ConsumerWidget {
     final artistDetailAsync = ref.watch(artistDetailProvider(artistId));
     final responsive = Responsive(context);
 
-    return Scaffold(
+    return ScaffoldWithMiniPlayer(
       backgroundColor: AppTheme.backgroundColor,
       body: artistDetailAsync.when(
         loading: () => _buildLoadingState(context, responsive),

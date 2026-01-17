@@ -6,6 +6,7 @@ import '../../core/utils/responsive.dart';
 import '../../providers/providers.dart';
 import '../../models/models.dart';
 import '../../widgets/widgets.dart';
+import '../scaffold_with_mini_player.dart';
 
 /// Playlist Detail Screen - Shows playlist info and track list
 class PlaylistDetailScreen extends ConsumerWidget {
@@ -23,7 +24,7 @@ class PlaylistDetailScreen extends ConsumerWidget {
     final playlistDetailAsync = ref.watch(playlistDetailProvider(playlistId));
     final responsive = Responsive(context);
 
-    return Scaffold(
+    return ScaffoldWithMiniPlayer(
       backgroundColor: AppTheme.backgroundColor,
       body: playlistDetailAsync.when(
         loading: () => _buildLoadingState(context, responsive),

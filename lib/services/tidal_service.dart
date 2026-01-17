@@ -123,6 +123,50 @@ class TidalService {
     }
   }
 
+  /// Search for tracks by ISRC (more precise matching)
+  /// Used as fallback when regular search doesn't find exact match
+  Future<Track?> searchTrackByIsrc(String isrc) async {
+    try {
+      // Search using ISRC as query - Tidal will return exact match if found
+      final response = await _executeWithFallback((baseUrl) {
+        return _dio.get(
+          '$baseUrl${TidalEndpoints.searchPath}',
+          queryParameters: {'s': isrc},
+        );
+      });
+
+      final data = response.data;
+      List<dynamic> items = [];
+      
+      if (data is Map<String, dynamic>) {
+        if (data['data'] is Map && data['data']['items'] is List) {
+          items = data['data']['items'] as List;
+        } else if (data['items'] is List) {
+          items = data['items'] as List;
+        }
+      }
+
+      // Look for track with matching ISRC
+      for (final item in items) {
+        if (item is Map<String, dynamic>) {
+          final trackIsrc = item['isrc'] as String?;
+          if (trackIsrc != null && trackIsrc.toUpperCase() == isrc.toUpperCase()) {
+            return Track.fromTidalJson(item);
+          }
+        }
+      }
+
+      // If no exact ISRC match, return first result (still a good match)
+      if (items.isNotEmpty && items.first is Map<String, dynamic>) {
+        return Track.fromTidalJson(items.first as Map<String, dynamic>);
+      }
+
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
   /// Search for albums
   Future<List<Album>> searchAlbums(String query, {int limit = 20}) async {
     try {
@@ -492,6 +536,7 @@ class TidalService {
   }
 
   /// Get stream URL for a track - ALWAYS HIGHEST QUALITY
+  /// Tries: Master -> HiFi -> High -> Standard
   Future<StreamInfo> getStreamInfo(String trackId, {TidalQuality? quality}) async {
     final requestedQuality = quality ?? preferredQuality;
     
@@ -507,19 +552,38 @@ class TidalService {
       });
 
       final data = response.data as Map<String, dynamic>;
-      return StreamInfo.fromJson(data);
-    } catch (e) {
-      // If Master quality fails, try HiFi
-      if (requestedQuality == TidalQuality.master) {
-        return getStreamInfo(trackId, quality: TidalQuality.hifi);
+      final streamInfo = StreamInfo.fromJson(data);
+      
+      // Validate URL is not empty
+      if (streamInfo.url.isEmpty) {
+        throw TidalApiException('Empty stream URL for quality: ${requestedQuality.apiValue}');
       }
-      throw TidalApiException('Failed to get stream: $e');
+      
+      return streamInfo;
+    } catch (e) {
+      // Try next lower quality level
+      final fallbackQuality = switch (requestedQuality) {
+        TidalQuality.master => TidalQuality.hifi,
+        TidalQuality.hifi => TidalQuality.high,
+        TidalQuality.high => TidalQuality.standard,
+        TidalQuality.standard => null,
+      };
+      
+      if (fallbackQuality != null) {
+        return getStreamInfo(trackId, quality: fallbackQuality);
+      }
+      
+      throw TidalApiException('Failed to get stream at any quality: $e');
     }
   }
 
   /// Get stream URL only (convenience method)
+  /// Validates URL is not empty
   Future<String> getStreamUrl(String trackId) async {
     final streamInfo = await getStreamInfo(trackId);
+    if (streamInfo.url.isEmpty) {
+      throw TidalApiException('No stream URL available for track: $trackId');
+    }
     return streamInfo.url;
   }
 
@@ -667,24 +731,69 @@ class StreamInfo {
     // hifi-api returns the stream data in 'data' field
     final streamData = json['data'] as Map<String, dynamic>? ?? json;
     
-    // The manifest is base64-encoded JSON containing the actual stream URL
+    // The manifest is base64-encoded (JSON or DASH XML)
     String streamUrl = '';
     final manifestBase64 = streamData['manifest'] as String?;
+    final manifestMimeType = streamData['manifestMimeType'] as String?;
     
     if (manifestBase64 != null && manifestBase64.isNotEmpty) {
       try {
         // Decode base64 manifest
-        final manifestJson = utf8.decode(base64Decode(manifestBase64));
-        final manifest = jsonDecode(manifestJson) as Map<String, dynamic>;
+        final manifestContent = utf8.decode(base64Decode(manifestBase64));
         
-        // Extract URL from urls array
-        final urls = manifest['urls'] as List<dynamic>?;
-        if (urls != null && urls.isNotEmpty) {
-          streamUrl = urls.first as String;
+        // Check if it's JSON format (vnd.tidal.bts) - LOSSLESS quality
+        if (manifestMimeType == 'application/vnd.tidal.bts' || 
+            manifestContent.startsWith('{')) {
+          try {
+            final manifest = jsonDecode(manifestContent) as Map<String, dynamic>;
+            final urls = manifest['urls'] as List<dynamic>?;
+            if (urls != null && urls.isNotEmpty) {
+              streamUrl = urls.first as String;
+            }
+          } catch (_) {}
         }
+        
+        // Handle DASH manifest (HI_RES_LOSSLESS format) - same as hifi.ts
+        if (streamUrl.isEmpty && 
+            (manifestMimeType == 'application/dash+xml' || 
+             manifestContent.contains('<MPD'))) {
+          
+          // Try initialization URL (full audio file)
+          final initMatch = RegExp(r'initialization="([^"]+)"').firstMatch(manifestContent);
+          if (initMatch != null) {
+            String initUrl = initMatch.group(1)!
+                .replaceAll('&amp;', '&')
+                .replaceAll('&lt;', '<')
+                .replaceAll('&gt;', '>');
+            if (initUrl.startsWith('http')) {
+              streamUrl = initUrl;
+            }
+          }
+          
+          // Try media template URL (segments)
+          if (streamUrl.isEmpty) {
+            final mediaMatch = RegExp(r'media="([^"]+)"').firstMatch(manifestContent);
+            if (mediaMatch != null) {
+              String mediaUrl = mediaMatch.group(1)!
+                  .replaceAll('&amp;', '&')
+                  .replaceAll(RegExp(r'\$Number\$'), '1');
+              if (mediaUrl.startsWith('http')) {
+                streamUrl = mediaUrl;
+              }
+            }
+          }
+          
+          // Last resort: find any HTTPS URL ending in .mp4 or .flac
+          if (streamUrl.isEmpty) {
+            final urlMatch = RegExp(r'https://[^"<\s]+\.(mp4|flac)[^"<\s]*').firstMatch(manifestContent);
+            if (urlMatch != null) {
+              streamUrl = urlMatch.group(0)!.replaceAll('&amp;', '&');
+            }
+          }
+        }
+        
       } catch (e) {
-        // If decoding fails, try using manifest directly
-        streamUrl = manifestBase64;
+        // If decoding fails completely, leave url empty
       }
     }
     
