@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:math';
 import 'package:dio/dio.dart';
 import '../core/constants/api_constants.dart';
 import '../models/models.dart';
@@ -26,17 +25,16 @@ class TidalService {
   final Dio _dio;
   int _currentEndpointIndex;
   final Map<int, int> _endpointFailureCount = {};
-  static final Random _random = Random();
   
-  /// Default to Master quality, falls back to HiFi
-  TidalQuality preferredQuality = TidalQuality.master;
+  /// Default to HiFi quality for reliability
+  TidalQuality preferredQuality = TidalQuality.hifi;
 
   TidalService() : 
     _dio = Dio(),
-    // Random starting endpoint for load balancing
-    _currentEndpointIndex = _random.nextInt(TidalEndpoints.endpoints.length) {
-    _dio.options.connectTimeout = const Duration(seconds: 15);
-    _dio.options.receiveTimeout = const Duration(seconds: 30);
+    // Start with first endpoint (triton.squid.wtf - fastest)
+    _currentEndpointIndex = 0 {
+    _dio.options.connectTimeout = const Duration(seconds: 10);
+    _dio.options.receiveTimeout = const Duration(seconds: 15);
     _dio.options.headers = {
       'Accept': 'application/json',
       'User-Agent': 'DreaminApp/1.0',
@@ -535,19 +533,23 @@ class TidalService {
     }
   }
 
-  /// Get stream URL for a track - ALWAYS HIGHEST QUALITY
-  /// Tries: Master -> HiFi -> High -> Standard
+  /// Get stream URL for a track - SIMPLIFIED VERSION
+  /// Uses LOSSLESS (16-bit FLAC) directly for reliability
   Future<StreamInfo> getStreamInfo(String trackId, {TidalQuality? quality}) async {
-    final requestedQuality = quality ?? preferredQuality;
+    // Parse track ID - ensure it's numeric
+    final numericId = int.tryParse(trackId.replaceAll(RegExp(r'[^0-9]'), ''));
+    if (numericId == null || numericId == 0) {
+      throw TidalApiException('Invalid track ID: $trackId');
+    }
+    
+    // Use LOSSLESS quality for reliability (most supported)
+    final requestedQuality = quality ?? TidalQuality.hifi;
+    
+    print('🎵 TidalService: Getting stream for track $numericId (quality: ${requestedQuality.apiValue})');
     
     try {
-      // Strip any prefix (like "deezer_") and parse to int
-      final numericId = int.tryParse(trackId.replaceAll(RegExp(r'[^0-9]'), ''));
-      if (numericId == null || numericId == 0) {
-        throw TidalApiException('Invalid track ID: $trackId');
-      }
-      
       final response = await _executeWithFallback((baseUrl) {
+        print('📡 Trying endpoint: $baseUrl');
         return _dio.get(
           '$baseUrl${TidalEndpoints.trackPath}',
           queryParameters: {
@@ -560,26 +562,17 @@ class TidalService {
       final data = response.data as Map<String, dynamic>;
       final streamInfo = StreamInfo.fromJson(data);
       
-      // Validate URL is not empty
+      // Validate URL
       if (streamInfo.url.isEmpty) {
-        throw TidalApiException('Empty stream URL for quality: ${requestedQuality.apiValue}');
+        print('❌ Empty stream URL received');
+        throw TidalApiException('Empty stream URL for track: $trackId');
       }
       
+      print('✅ Got stream URL: ${streamInfo.url.substring(0, 50.clamp(0, streamInfo.url.length))}...');
       return streamInfo;
     } catch (e) {
-      // Try next lower quality level
-      final fallbackQuality = switch (requestedQuality) {
-        TidalQuality.master => TidalQuality.hifi,
-        TidalQuality.hifi => TidalQuality.high,
-        TidalQuality.high => TidalQuality.standard,
-        TidalQuality.standard => null,
-      };
-      
-      if (fallbackQuality != null) {
-        return getStreamInfo(trackId, quality: fallbackQuality);
-      }
-      
-      throw TidalApiException('Failed to get stream at any quality: $e');
+      print('❌ Stream error: $e');
+      throw TidalApiException('Failed to get stream: $e');
     }
   }
 
