@@ -253,16 +253,23 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       // Update state with current quality
       state = state.copyWith(currentQuality: streamInfo.quality);
     } catch (e) {
-      print('❌ Play error: $e');
+      print('❌ Play error for "${track.title}": $e');
       _consecutiveFailures++;
+      
+      // Store the actual error so UI can show it
+      final errorMsg = e.toString().replaceAll('TidalApiException: ', '');
       
       // Check if we should try next track or stop
       final hasMoreTracks = state.queue.isNotEmpty && state.queueIndex < state.queue.length - 1;
       final shouldSkip = hasMoreTracks && _consecutiveFailures < _maxConsecutiveFailures;
       
       if (shouldSkip) {
-        print('⏭️ Skipping to next (failure ${_consecutiveFailures}/$_maxConsecutiveFailures)');
-        await Future.delayed(const Duration(milliseconds: 300));
+        print('⏭️ Skipping "${track.title}" - trying next (failure $_consecutiveFailures/$_maxConsecutiveFailures)');
+        // Update state to show which track failed (briefly)
+        state = state.copyWith(
+          error: 'Skipping "${track.title}" - not available',
+        );
+        await Future.delayed(const Duration(milliseconds: 500));
         skipNext();
         return;
       }
@@ -272,7 +279,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       _consecutiveFailures = 0; // Reset for next attempt
       state = state.copyWith(
         status: PlaybackStatus.error,
-        error: 'Unable to play music. Check your connection and try again.',
+        error: 'Track unavailable: "$errorMsg"',
       );
     }
   }

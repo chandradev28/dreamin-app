@@ -7,7 +7,7 @@ import 'player/now_playing_screen.dart';
 
 /// Scaffold wrapper that includes mini player at bottom
 /// Use this for screens that need to show mini player (detail screens, etc.)
-class ScaffoldWithMiniPlayer extends ConsumerWidget {
+class ScaffoldWithMiniPlayer extends ConsumerStatefulWidget {
   final Widget body;
   final PreferredSizeWidget? appBar;
   final Color? backgroundColor;
@@ -22,6 +22,13 @@ class ScaffoldWithMiniPlayer extends ConsumerWidget {
     this.extendBody = false,
     this.extendBodyBehindAppBar = false,
   });
+
+  @override
+  ConsumerState<ScaffoldWithMiniPlayer> createState() => _ScaffoldWithMiniPlayerState();
+}
+
+class _ScaffoldWithMiniPlayerState extends ConsumerState<ScaffoldWithMiniPlayer> {
+  String? _lastError;
 
   void _openNowPlaying(BuildContext context) {
     Navigator.of(context).push(
@@ -49,21 +56,44 @@ class ScaffoldWithMiniPlayer extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final playerState = ref.watch(playerProvider);
     final hasTrack = playerState.hasTrack;
 
+    // Show snackbar when error changes
+    if (playerState.error != null && playerState.error != _lastError) {
+      _lastError = playerState.error;
+      // Show snackbar after build
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(playerState.error!),
+              backgroundColor: AppTheme.errorColor,
+              duration: const Duration(seconds: 2),
+              behavior: SnackBarBehavior.floating,
+              margin: EdgeInsets.only(
+                bottom: hasTrack ? 80 : 16,
+                left: 16,
+                right: 16,
+              ),
+            ),
+          );
+        }
+      });
+    }
+
     return Scaffold(
-      backgroundColor: backgroundColor ?? AppTheme.backgroundColor,
-      extendBody: extendBody,
-      extendBodyBehindAppBar: extendBodyBehindAppBar,
-      appBar: appBar,
+      backgroundColor: widget.backgroundColor ?? AppTheme.backgroundColor,
+      extendBody: widget.extendBody,
+      extendBodyBehindAppBar: widget.extendBodyBehindAppBar,
+      appBar: widget.appBar,
       body: Stack(
         children: [
           // Main content - add bottom padding if mini player is showing
           Positioned.fill(
             bottom: hasTrack ? 64.0 : 0,
-            child: body,
+            child: widget.body,
           ),
 
           // Mini player at bottom
