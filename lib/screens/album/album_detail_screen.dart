@@ -6,6 +6,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/utils/responsive.dart';
 import '../../providers/providers.dart';
 import '../../models/models.dart';
+import '../../widgets/track_options_sheet.dart';
 import '../artist/artist_detail_screen.dart';
 import '../scaffold_with_mini_player.dart';
 import 'view_all_screen.dart';
@@ -241,19 +242,8 @@ class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
           ),
         ),
 
-        // Track List Header
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(responsive.horizontalPadding, 24, responsive.horizontalPadding, 8),
-            child: Row(
-              children: [
-                Text('Tracks', style: AppTheme.titleLarge),
-                const SizedBox(width: 8),
-                Text('${albumDetail.tracks.length}', style: AppTheme.bodyMedium.copyWith(color: AppTheme.secondaryColor)),
-              ],
-            ),
-          ),
-        ),
+        // Spacer before tracks
+        const SliverToBoxAdapter(child: SizedBox(height: 16)),
 
         // Track List
         SliverList(
@@ -266,12 +256,8 @@ class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
                 track: track,
                 index: index + 1,
                 isPlaying: isPlaying,
-                isFavorite: favState.isFavorite(track),
                 onTap: () {
                   ref.read(playerProvider.notifier).playQueue(albumDetail.tracks, startIndex: index);
-                },
-                onFavoriteTap: () {
-                  ref.read(favoritesProvider.notifier).toggleFavorite(track);
                 },
               );
             },
@@ -585,17 +571,13 @@ class _TrackListItem extends StatelessWidget {
   final Track track;
   final int index;
   final bool isPlaying;
-  final bool isFavorite;
   final VoidCallback onTap;
-  final VoidCallback onFavoriteTap;
 
   const _TrackListItem({
     required this.track,
     required this.index,
     required this.isPlaying,
-    required this.isFavorite,
     required this.onTap,
-    required this.onFavoriteTap,
   });
 
   @override
@@ -603,8 +585,8 @@ class _TrackListItem extends StatelessWidget {
     // TIDAL-style track list styling
     final titleStyle = GoogleFonts.inter(
       fontSize: 15,
-      fontWeight: FontWeight.w400,
-      color: isPlaying ? AppTheme.accentColor : AppTheme.primaryColor,
+      fontWeight: FontWeight.w500,
+      color: isPlaying ? AppTheme.accentColor : Colors.white,
     );
     final subtitleStyle = GoogleFonts.inter(
       fontSize: 13,
@@ -619,7 +601,7 @@ class _TrackListItem extends StatelessWidget {
 
     return ListTile(
       onTap: onTap,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       minVerticalPadding: 8,
       leading: SizedBox(
         width: 28,
@@ -647,7 +629,7 @@ class _TrackListItem extends StatelessWidget {
                 color: AppTheme.secondaryColor.withOpacity(0.3),
                 borderRadius: BorderRadius.circular(2),
               ),
-              child: Text('E', style: AppTheme.labelSmall.copyWith(fontSize: 9, color: AppTheme.primaryColor)),
+              child: Text('E', style: AppTheme.labelSmall.copyWith(fontSize: 9, color: Colors.white)),
             ),
           ],
         ],
@@ -658,22 +640,13 @@ class _TrackListItem extends StatelessWidget {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            icon: Icon(
-              isFavorite ? Icons.favorite : Icons.favorite_border,
-              size: 20,
-              color: isFavorite ? AppTheme.accentColor : AppTheme.secondaryColor,
-            ),
-            onPressed: onFavoriteTap,
-          ),
-          IconButton(
-            icon: const Icon(Icons.more_horiz, size: 20, color: AppTheme.secondaryColor),
-            onPressed: () {},
-          ),
-        ],
+      trailing: Builder(
+        builder: (context) => IconButton(
+          icon: const Icon(Icons.more_vert, size: 20, color: AppTheme.secondaryColor),
+          onPressed: () => TrackOptionsSheet.show(context, track),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
+        ),
       ),
     );
   }

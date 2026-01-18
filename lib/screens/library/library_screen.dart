@@ -4,7 +4,8 @@ import '../../core/theme/app_theme.dart';
 import '../../core/utils/responsive.dart';
 import '../../providers/providers.dart';
 
-/// Library Screen - Responsive with Real Data
+/// Library Screen - TIDAL Collection Style
+/// Clean list design with sections for Playlists, Albums, Tracks, Artists, etc.
 class LibraryScreen extends ConsumerWidget {
   const LibraryScreen({super.key});
 
@@ -19,64 +20,97 @@ class LibraryScreen extends ConsumerWidget {
       body: SafeArea(
         child: CustomScrollView(
           slivers: [
-            // Header
+            // Header - TIDAL Style
             SliverToBoxAdapter(
               child: Padding(
-                padding: EdgeInsets.all(responsive.horizontalPadding),
+                padding: EdgeInsets.fromLTRB(
+                  responsive.horizontalPadding,
+                  responsive.horizontalPadding,
+                  responsive.horizontalPadding,
+                  16,
+                ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
                       'Library',
-                      style: responsive.value(
-                        mobile: AppTheme.headlineMedium,
-                        tablet: AppTheme.headlineLarge,
+                      style: AppTheme.headlineLarge.copyWith(
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.add),
-                      iconSize: responsive.value(mobile: 24.0, tablet: 28.0),
-                      onPressed: () {
-                        // Create new playlist
-                        _showCreatePlaylistDialog(context, ref);
-                      },
+                    Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.settings_outlined),
+                          iconSize: 24,
+                          color: Colors.white,
+                          onPressed: () {
+                            // Settings
+                          },
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.search),
+                          iconSize: 24,
+                          color: Colors.white,
+                          onPressed: () {
+                            // Search library
+                          },
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
             ),
 
-            // Library Categories
+            // Library Categories - TIDAL Clean Style
             SliverToBoxAdapter(
               child: Column(
                 children: [
-                  _LibraryTile(
-                    icon: Icons.favorite,
-                    iconColor: AppTheme.accentColor,
-                    title: 'Favorites',
-                    subtitle: '${favoritesState.favorites.length} tracks',
-                    onTap: () {},
+                  // Playlists
+                  _TidalLibraryTile(
+                    icon: Icons.queue_music_outlined,
+                    title: 'Playlists',
+                    onTap: () {
+                      // Navigate to playlists
+                    },
                   ),
-                  _LibraryTile(
-                    icon: Icons.history,
-                    iconColor: AppTheme.tidalBadge,
-                    title: 'Recently Played',
-                    subtitle: '${historyState.history.length} tracks',
-                    onTap: () {},
+                  
+                  // Albums
+                  _TidalLibraryTile(
+                    icon: Icons.album_outlined,
+                    title: 'Albums',
+                    onTap: () {
+                      // Navigate to saved albums
+                    },
                   ),
-                  _LibraryTile(
-                    icon: Icons.trending_up,
-                    iconColor: AppTheme.successColor,
-                    title: 'Most Played',
-                    subtitle: 'Your top tracks',
-                    onTap: () {},
+                  
+                  // Tracks / Favorites
+                  _TidalLibraryTile(
+                    icon: Icons.music_note_outlined,
+                    title: 'Tracks',
+                    subtitle: '${favoritesState.favorites.length} liked songs',
+                    onTap: () {
+                      // Navigate to liked tracks
+                    },
                   ),
-                  _LibraryTile(
-                    icon: Icons.download,
-                    iconColor: AppTheme.qobuzBadge,
+                  
+                  // Artists
+                  _TidalLibraryTile(
+                    icon: Icons.person_outline,
+                    title: 'Artists',
+                    onTap: () {
+                      // Navigate to followed artists
+                    },
+                  ),
+                  
+                  // Downloads
+                  _TidalLibraryTile(
+                    icon: Icons.download_outlined,
                     title: 'Downloads',
-                    subtitle: 'Available offline',
-                    onTap: () {},
+                    onTap: () {
+                      // Navigate to downloads
+                    },
                   ),
                 ],
               ),
@@ -84,22 +118,47 @@ class LibraryScreen extends ConsumerWidget {
 
             // Divider
             SliverToBoxAdapter(
-              child: Divider(
-                height: responsive.sectionSpacing,
-                indent: responsive.horizontalPadding,
-                endIndent: responsive.horizontalPadding,
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Divider(
+                  height: 1,
+                  color: AppTheme.surfaceLight,
+                ),
               ),
             ),
 
-            // Recently Played Preview
+            // Recently Played Section
             if (historyState.history.isNotEmpty) ...[
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: responsive.horizontalPadding,
-                    vertical: responsive.value(mobile: 8.0, tablet: 12.0),
+                  padding: EdgeInsets.fromLTRB(
+                    responsive.horizontalPadding,
+                    16,
+                    responsive.horizontalPadding,
+                    12,
                   ),
-                  child: Text('Recently Played', style: AppTheme.headlineSmall),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Recently Played',
+                        style: AppTheme.titleLarge.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          // See all recently played
+                        },
+                        child: Text(
+                          'See all',
+                          style: AppTheme.bodyMedium.copyWith(
+                            color: AppTheme.primaryColor,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
               SliverList(
@@ -109,65 +168,67 @@ class LibraryScreen extends ConsumerWidget {
                     final track = historyState.history[index];
                     final playerState = ref.watch(playerProvider);
                     final favState = ref.watch(favoritesProvider);
-                    
-                    return Padding(
-                      padding: EdgeInsets.symmetric(
+                    final isPlaying = playerState.currentTrack?.id == track.id;
+
+                    return ListTile(
+                      contentPadding: EdgeInsets.symmetric(
                         horizontal: responsive.horizontalPadding,
+                        vertical: 4,
                       ),
-                      child: ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: Container(
-                          width: responsive.trackThumbnailSize,
-                          height: responsive.trackThumbnailSize,
-                          decoration: BoxDecoration(
-                            borderRadius: AppTheme.radiusSmall,
-                            color: AppTheme.surfaceLight,
-                            image: track.coverArtUrl != null
-                                ? DecorationImage(
-                                    image: NetworkImage(track.coverArtUrl!),
-                                    fit: BoxFit.cover,
-                                  )
-                                : null,
-                          ),
-                          child: track.coverArtUrl == null
-                              ? const Icon(Icons.music_note, color: AppTheme.secondaryColor)
+                      leading: Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(4),
+                          color: AppTheme.surfaceLight,
+                          image: track.coverArtUrl != null
+                              ? DecorationImage(
+                                  image: NetworkImage(track.coverArtUrl!),
+                                  fit: BoxFit.cover,
+                                )
                               : null,
                         ),
-                        title: Text(
-                          track.title,
-                          style: playerState.currentTrack?.id == track.id
-                              ? AppTheme.titleSmall.copyWith(color: AppTheme.accentColor)
-                              : AppTheme.titleSmall,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                        child: track.coverArtUrl == null
+                            ? const Icon(Icons.music_note, color: AppTheme.secondaryColor)
+                            : null,
+                      ),
+                      title: Text(
+                        track.title,
+                        style: AppTheme.bodyLarge.copyWith(
+                          color: isPlaying ? AppTheme.primaryColor : Colors.white,
+                          fontWeight: FontWeight.w500,
                         ),
-                        subtitle: Text(
-                          track.artist,
-                          style: AppTheme.bodySmall,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Text(
+                        track.artist,
+                        style: AppTheme.bodySmall.copyWith(
+                          color: AppTheme.secondaryColor,
                         ),
-                        trailing: IconButton(
-                          icon: Icon(
-                            favState.isFavorite(track)
-                                ? Icons.favorite
-                                : Icons.favorite_border,
-                            size: 20,
-                          ),
-                          color: favState.isFavorite(track)
-                              ? AppTheme.accentColor
-                              : AppTheme.secondaryColor,
-                          onPressed: () {
-                            ref.read(favoritesProvider.notifier).toggleFavorite(track);
-                          },
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      trailing: IconButton(
+                        icon: Icon(
+                          favState.isFavorite(track)
+                              ? Icons.favorite
+                              : Icons.favorite_border,
+                          size: 20,
                         ),
-                        onTap: () {
-                          ref.read(playerProvider.notifier).playQueue(
-                            historyState.history,
-                            startIndex: index,
-                          );
+                        color: favState.isFavorite(track)
+                            ? AppTheme.accentColor
+                            : AppTheme.secondaryColor,
+                        onPressed: () {
+                          ref.read(favoritesProvider.notifier).toggleFavorite(track);
                         },
                       ),
+                      onTap: () {
+                        ref.read(playerProvider.notifier).playQueue(
+                          historyState.history,
+                          startIndex: index,
+                        );
+                      },
                     );
                   },
                   childCount: historyState.history.length.clamp(0, 5),
@@ -175,7 +236,7 @@ class LibraryScreen extends ConsumerWidget {
               ),
             ],
 
-            // Bottom spacing
+            // Bottom spacing for mini player
             SliverToBoxAdapter(
               child: SizedBox(height: responsive.miniPlayerHeight + responsive.bottomNavHeight + 20),
             ),
@@ -184,96 +245,71 @@ class LibraryScreen extends ConsumerWidget {
       ),
     );
   }
-
-  void _showCreatePlaylistDialog(BuildContext context, WidgetRef ref) {
-    final controller = TextEditingController();
-    
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppTheme.surfaceColor,
-        title: const Text('Create Playlist'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          style: AppTheme.bodyLarge,
-          decoration: const InputDecoration(
-            hintText: 'Playlist name',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              if (controller.text.isNotEmpty) {
-                final database = ref.read(databaseProvider);
-                await database.createPlaylist(controller.text);
-                if (context.mounted) Navigator.pop(context);
-              }
-            },
-            child: const Text('Create'),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
-class _LibraryTile extends StatelessWidget {
+/// TIDAL-style Library List Tile
+/// Clean design with outline icons, no colored backgrounds
+class _TidalLibraryTile extends StatelessWidget {
   final IconData icon;
-  final Color iconColor;
   final String title;
-  final String subtitle;
+  final String? subtitle;
   final VoidCallback onTap;
 
-  const _LibraryTile({
+  const _TidalLibraryTile({
     required this.icon,
-    required this.iconColor,
     required this.title,
-    required this.subtitle,
+    this.subtitle,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final responsive = Responsive(context);
-    final iconSize = responsive.value(mobile: 48.0, tablet: 56.0);
 
-    return ListTile(
-      contentPadding: EdgeInsets.symmetric(
-        horizontal: responsive.horizontalPadding,
-        vertical: responsive.value(mobile: 4.0, tablet: 8.0),
-      ),
-      leading: Container(
-        width: iconSize,
-        height: iconSize,
-        decoration: BoxDecoration(
-          color: iconColor.withOpacity(0.15),
-          borderRadius: AppTheme.radiusMedium,
-        ),
-        child: Icon(
-          icon,
-          color: iconColor,
-          size: iconSize * 0.5,
-        ),
-      ),
-      title: Text(
-        title,
-        style: responsive.value(
-          mobile: AppTheme.titleMedium,
-          tablet: AppTheme.titleLarge,
-        ),
-      ),
-      subtitle: Text(subtitle, style: AppTheme.bodySmall),
-      trailing: Icon(
-        Icons.chevron_right,
-        color: AppTheme.secondaryColor,
-        size: responsive.value(mobile: 24.0, tablet: 28.0),
-      ),
+    return InkWell(
       onTap: onTap,
+      child: Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: responsive.horizontalPadding,
+          vertical: 14,
+        ),
+        child: Row(
+          children: [
+            // Icon
+            Icon(
+              icon,
+              color: Colors.white,
+              size: 24,
+            ),
+            const SizedBox(width: 20),
+            // Title and subtitle
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: AppTheme.bodyLarge.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  if (subtitle != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        subtitle!,
+                        style: AppTheme.bodySmall.copyWith(
+                          color: AppTheme.secondaryColor,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

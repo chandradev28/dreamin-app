@@ -3,6 +3,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../core/theme/app_theme.dart';
 import '../core/utils/responsive.dart';
 import '../models/models.dart';
+import 'track_options_sheet.dart';
 
 /// Album Card Widget - Responsive
 class AlbumCard extends StatelessWidget {
@@ -300,32 +301,14 @@ class TrackListTile extends StatelessWidget {
           ),
         ],
       ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            track.formattedDuration,
-            style: AppTheme.bodySmall,
-          ),
-          if (onFavoriteTap != null) ...[
-            const SizedBox(width: 4),
-            IconButton(
-              icon: Icon(
-                isFavorite ? Icons.favorite : Icons.favorite_border,
-                size: 20,
-              ),
-              onPressed: onFavoriteTap,
-              color: isFavorite ? AppTheme.accentColor : AppTheme.secondaryColor,
-            ),
-          ],
-          if (onMoreTap != null) ...[
-            IconButton(
-              icon: const Icon(Icons.more_vert, size: 20),
-              onPressed: onMoreTap,
-              color: AppTheme.secondaryColor,
-            ),
-          ],
-        ],
+      trailing: Builder(
+        builder: (context) => IconButton(
+          icon: const Icon(Icons.more_vert, size: 20),
+          onPressed: onMoreTap ?? () => TrackOptionsSheet.show(context, track),
+          color: AppTheme.secondaryColor,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
+        ),
       ),
     );
   }

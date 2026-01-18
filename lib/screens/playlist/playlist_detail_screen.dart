@@ -301,15 +301,11 @@ class PlaylistDetailScreen extends ConsumerWidget {
                 return TrackListTile(
                   track: track,
                   isPlaying: playerState.currentTrack?.id == track.id,
-                  isFavorite: favState.isFavorite(track),
                   onTap: () {
                     ref.read(playerProvider.notifier).playQueue(
                       playlistDetail.tracks,
                       startIndex: index,
                     );
-                  },
-                  onFavoriteTap: () {
-                    ref.read(favoritesProvider.notifier).toggleFavorite(track);
                   },
                 );
               },

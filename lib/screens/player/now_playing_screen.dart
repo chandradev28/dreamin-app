@@ -80,61 +80,69 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
       return _buildEmptyState(context, responsive);
     }
 
-    return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              _dominantColor.withOpacity(0.8),
-              _secondaryColor.withOpacity(0.6),
-              AppTheme.backgroundColor,
-            ],
-            stops: const [0.0, 0.4, 0.8],
+    return GestureDetector(
+      onVerticalDragEnd: (details) {
+        // If user swipes down fast enough, close the screen
+        if (details.velocity.pixelsPerSecond.dy > 300) {
+          Navigator.of(context).pop();
+        }
+      },
+      child: Scaffold(
+        body: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                _dominantColor.withOpacity(0.8),
+                _secondaryColor.withOpacity(0.6),
+                AppTheme.backgroundColor,
+              ],
+              stops: const [0.0, 0.4, 0.8],
+            ),
           ),
-        ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              // Header with drag handle and "Playing From"
-              _buildHeader(context, playerState, responsive),
-              
-              // Main content
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
-                  child: Column(
-                    children: [
-                      // Album Cover
-                      _buildAlbumCover(track, responsive),
-                      
-                      const SizedBox(height: 24),
-                      
-                      // Track Info with Actions
-                      _buildTrackInfo(track, responsive),
-                      
-                      const SizedBox(height: 24),
-                      
-                      // Progress Bar
-                      _buildProgressBar(playerState, responsive),
-                      
-                      const SizedBox(height: 16),
-                      
-                      // Playback Controls
-                      _buildPlaybackControls(playerState, responsive),
-                      
-                      const SizedBox(height: 24),
-                      
-                      // Bottom Actions (queue, quality, info)
-                      _buildBottomActions(responsive),
-                      
-                      const SizedBox(height: 20),
-                    ],
+          child: SafeArea(
+            child: Column(
+              children: [
+                // Header with drag handle and "Playing From"
+                _buildHeader(context, playerState, responsive),
+                
+                // Main content
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
+                    child: Column(
+                      children: [
+                        // Album Cover
+                        _buildAlbumCover(track, responsive),
+                        
+                        const SizedBox(height: 24),
+                        
+                        // Track Info with Actions
+                        _buildTrackInfo(track, responsive),
+                        
+                        const SizedBox(height: 24),
+                        
+                        // Progress Bar
+                        _buildProgressBar(playerState, responsive),
+                        
+                        const SizedBox(height: 16),
+                        
+                        // Playback Controls
+                        _buildPlaybackControls(playerState, responsive),
+                        
+                        const SizedBox(height: 24),
+                        
+                        // Bottom Actions (queue, quality, info)
+                        _buildBottomActions(responsive),
+                        
+                        const SizedBox(height: 20),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -183,16 +191,24 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
       padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding, vertical: 12),
       child: Column(
         children: [
-          // Drag handle
-          Container(
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.3),
-              borderRadius: BorderRadius.circular(2),
+          // Drag handle - tap to close
+          GestureDetector(
+            onTap: () => Navigator.of(context).pop(),
+            child: Container(
+              width: 60,
+              height: 24,
+              alignment: Alignment.center,
+              child: Container(
+                width: 40,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.4),
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 8),
           // Playing From row
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,

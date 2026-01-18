@@ -382,6 +382,32 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     await playAtIndex(prevIndex);
   }
 
+  /// Add track to end of queue
+  void addToQueue(Track track) {
+    if (state.queue.isEmpty) {
+      // No queue, just play the track
+      play(track);
+      return;
+    }
+    
+    final newQueue = List<Track>.from(state.queue)..add(track);
+    state = state.copyWith(queue: newQueue);
+  }
+
+  /// Add track to play next (after current track)
+  void addToQueueNext(Track track) {
+    if (state.queue.isEmpty) {
+      // No queue, just play the track
+      play(track);
+      return;
+    }
+    
+    final newQueue = List<Track>.from(state.queue);
+    final insertIndex = state.queueIndex + 1;
+    newQueue.insert(insertIndex.clamp(0, newQueue.length), track);
+    state = state.copyWith(queue: newQueue);
+  }
+
   /// Toggle shuffle mode
   void toggleShuffle() {
     if (state.isShuffleOn) {
@@ -441,22 +467,6 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     } else {
       await setVolume(0);
     }
-  }
-
-  /// Add track to queue
-  void addToQueue(Track track) {
-    state = state.copyWith(
-      queue: [...state.queue, track],
-    );
-    _originalQueue.add(track);
-  }
-
-  /// Play track next
-  void playNext(Track track) {
-    final queue = List<Track>.from(state.queue);
-    queue.insert(state.queueIndex + 1, track);
-    state = state.copyWith(queue: queue);
-    _originalQueue.insert(state.queueIndex + 1, track);
   }
 
   /// Remove track from queue
