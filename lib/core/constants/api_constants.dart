@@ -1,17 +1,21 @@
-/// TIDAL API endpoints with automatic fallback
+/// TIDAL API endpoints with intelligent failover
+/// Production-grade endpoint management with health tracking
 class TidalEndpoints {
-  /// Primary endpoints with fallback support - WORKING ENDPOINTS
+  /// All available endpoints - ordered by reliability
+  /// Primary endpoints (squid.wtf) first, then qqdl.site cluster, then others
   static const List<String> endpoints = [
-    'https://triton.squid.wtf',       // Fastest - from Freedify
-    'https://hifi.401658.xyz',        // Hi-Res - from Freedify
-    'https://hund.qqdl.site',
+    'https://triton.squid.wtf',         // Primary - fastest, most reliable
+    'https://tidal.kinoplus.online',    // Backup primary
+    'https://hund.qqdl.site',           // qqdl cluster
     'https://katze.qqdl.site',
     'https://maus.qqdl.site',
     'https://vogel.qqdl.site',
     'https://wolf.qqdl.site',
-    'https://tidal.kinoplus.online',
-    'https://tidal-api.binimum.org',
+    'https://tidal-api.binimum.org',    // Additional fallback
   ];
+  
+  /// Dead endpoints (do not include in rotation)
+  /// hifi.401658.xyz - redirects to GitHub, not an API
 
   // Core API paths (hifi-api format)
   static const String searchPath = '/search/';      // Use ?s= for tracks, ?a= for artists, ?al= for albums

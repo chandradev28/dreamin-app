@@ -18,62 +18,139 @@ enum TidalQuality {
   const TidalQuality(this.apiValue);
 }
 
-/// TIDAL API Service - ACTIVE
-/// Uses hifi-api format with working endpoints
-/// Load balanced with random starting endpoint
+
+/// TIDAL API Service - PRODUCTION GRADE
+/// Uses hifi-api format with intelligent endpoint failover
+/// Features: Health tracking, DNS failure detection, fast failover
 class TidalService {
   final Dio _dio;
   int _currentEndpointIndex;
+  
+  /// Per-endpoint health tracking
+  /// Key: endpoint index, Value: failure count
   final Map<int, int> _endpointFailureCount = {};
+  
+  /// Endpoints temporarily disabled due to DNS/connection failures
+  /// Key: endpoint index, Value: timestamp when it can be retried
+  final Map<int, DateTime> _endpointCooldown = {};
   
   /// Default to HiFi quality for reliability
   TidalQuality preferredQuality = TidalQuality.hifi;
 
   TidalService() : 
     _dio = Dio(),
-    // Start with first endpoint (triton.squid.wtf - fastest)
     _currentEndpointIndex = 0 {
-    _dio.options.connectTimeout = const Duration(seconds: 10);
-    _dio.options.receiveTimeout = const Duration(seconds: 15);
+    // Fast timeouts for quick failover (DNS failures detected in ~3s)
+    _dio.options.connectTimeout = const Duration(seconds: 3);
+    _dio.options.receiveTimeout = const Duration(seconds: 5);
     _dio.options.headers = {
       'Accept': 'application/json',
-      'User-Agent': 'DreaminApp/1.0',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
     };
   }
 
   String get _currentEndpoint => TidalEndpoints.endpoints[_currentEndpointIndex];
 
-  /// Try next endpoint in the fallback list
-  void _switchToNextEndpoint() {
-    _endpointFailureCount[_currentEndpointIndex] = 
-        (_endpointFailureCount[_currentEndpointIndex] ?? 0) + 1;
-    
-    _currentEndpointIndex = 
-        (_currentEndpointIndex + 1) % TidalEndpoints.endpoints.length;
+  /// Check if endpoint is available (not in cooldown)
+  bool _isEndpointAvailable(int index) {
+    final cooldownUntil = _endpointCooldown[index];
+    if (cooldownUntil == null) return true;
+    if (DateTime.now().isAfter(cooldownUntil)) {
+      _endpointCooldown.remove(index);
+      return true;
+    }
+    return false;
   }
 
-  /// Execute request with automatic fallback
+  /// Find next available endpoint
+  int _findNextAvailableEndpoint(int startIndex) {
+    final endpointCount = TidalEndpoints.endpoints.length;
+    for (int i = 0; i < endpointCount; i++) {
+      final index = (startIndex + i) % endpointCount;
+      if (_isEndpointAvailable(index)) {
+        return index;
+      }
+    }
+    // All endpoints in cooldown - clear cooldowns and start fresh
+    _endpointCooldown.clear();
+    return 0;
+  }
+
+  /// Mark endpoint as failed with cooldown
+  void _markEndpointFailed(int index, {bool isDnsFailure = false}) {
+    final failures = (_endpointFailureCount[index] ?? 0) + 1;
+    _endpointFailureCount[index] = failures;
+    
+    // DNS failures get longer cooldown (likely persistent issue)
+    final cooldownSeconds = isDnsFailure 
+        ? 60  // DNS failure: 60 seconds cooldown
+        : (failures * 5).clamp(5, 30);  // Other failures: 5-30 seconds
+    
+    _endpointCooldown[index] = DateTime.now().add(Duration(seconds: cooldownSeconds));
+    print('⚠️ Endpoint ${TidalEndpoints.endpoints[index]} failed (${isDnsFailure ? "DNS" : "connection"}) - cooldown ${cooldownSeconds}s');
+  }
+
+  /// Mark endpoint as successful - reset failure count
+  void _markEndpointSuccess(int index) {
+    _endpointFailureCount[index] = 0;
+    _endpointCooldown.remove(index);
+  }
+
+  /// Execute request with intelligent fallback
+  /// - DNS failures: immediate skip + long cooldown
+  /// - Connection errors: short cooldown
+  /// - Success: reset health
   Future<Response<T>> _executeWithFallback<T>(
     Future<Response<T>> Function(String baseUrl) request,
   ) async {
+    final endpointCount = TidalEndpoints.endpoints.length;
     int attempts = 0;
-    final maxAttempts = TidalEndpoints.endpoints.length;
     Exception? lastError;
+    String lastErrorType = '';
 
-    while (attempts < maxAttempts) {
+    while (attempts < endpointCount) {
+      // Find next available endpoint
+      _currentEndpointIndex = _findNextAvailableEndpoint(_currentEndpointIndex);
+      final endpoint = TidalEndpoints.endpoints[_currentEndpointIndex];
+      
       try {
-        final response = await request(_currentEndpoint);
+        print('📡 Trying endpoint: $endpoint');
+        final response = await request(endpoint);
+        _markEndpointSuccess(_currentEndpointIndex);
         return response;
+      } on DioException catch (e) {
+        lastError = e;
+        
+        // Detect DNS failures - immediate skip with long cooldown
+        if (e.type == DioExceptionType.unknown && 
+            e.message?.contains('Failed host lookup') == true) {
+          lastErrorType = 'DNS';
+          _markEndpointFailed(_currentEndpointIndex, isDnsFailure: true);
+        } 
+        // Connection timeout/refused
+        else if (e.type == DioExceptionType.connectionTimeout ||
+                 e.type == DioExceptionType.connectionError) {
+          lastErrorType = 'Connection';
+          _markEndpointFailed(_currentEndpointIndex, isDnsFailure: false);
+        }
+        // Other errors (bad response, etc.)
+        else {
+          lastErrorType = 'Response';
+          _markEndpointFailed(_currentEndpointIndex, isDnsFailure: false);
+        }
+        
+        attempts++;
+        _currentEndpointIndex = (_currentEndpointIndex + 1) % endpointCount;
       } catch (e) {
         lastError = e as Exception;
+        lastErrorType = 'Unknown';
+        _markEndpointFailed(_currentEndpointIndex, isDnsFailure: false);
         attempts++;
-        if (attempts < maxAttempts) {
-          _switchToNextEndpoint();
-        }
+        _currentEndpointIndex = (_currentEndpointIndex + 1) % endpointCount;
       }
     }
 
-    throw TidalApiException('All endpoints failed: $lastError');
+    throw TidalApiException('All endpoints failed ($lastErrorType): $lastError');
   }
 
   // ==================== SEARCH ====================
