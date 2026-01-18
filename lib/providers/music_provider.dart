@@ -3,7 +3,6 @@ import 'package:dio/dio.dart';
 import '../data/database.dart';
 import '../services/tidal_service.dart';
 import '../services/lastfm_service.dart';
-import '../services/deezer_service.dart';
 import '../services/recommendation_service.dart';
 import '../models/models.dart';
 
@@ -33,11 +32,6 @@ final recommendationServiceProvider = Provider<RecommendationService>((ref) {
   final database = ref.watch(databaseProvider);
   final tidalService = ref.watch(tidalServiceProvider);
   return RecommendationService(database, tidalService);
-});
-
-/// Deezer Service Provider (for ISRC fallback)
-final deezerServiceProvider = Provider<DeezerService>((ref) {
-  return DeezerService();
 });
 
 /// Search State
@@ -166,13 +160,11 @@ class HomeDataState {
 }
 
 /// Home Data Notifier - Hybrid TIDAL + Last.fm content loading
-/// With Deezer ISRC fallback for better matching
 class HomeDataNotifier extends StateNotifier<HomeDataState> {
   final TidalService _tidalService;
   final LastFmService _lastFmService;
-  final DeezerService _deezerService;
 
-  HomeDataNotifier(this._tidalService, this._lastFmService, this._deezerService) : super(const HomeDataState()) {
+  HomeDataNotifier(this._tidalService, this._lastFmService) : super(const HomeDataState()) {
     loadData();
   }
 
@@ -217,17 +209,6 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
         try {
           final query = '${lfmTrack.artist} ${lfmTrack.name}';
           var results = await _tidalService.searchTracks(query, limit: 1);
-          
-          // FALLBACK: If Tidal search returns empty, try Deezer ISRC matching
-          if (results.isEmpty) {
-            final deezerTrack = await _deezerService.searchTrackForIsrc(query);
-            if (deezerTrack?.isrc != null) {
-              final isrcMatch = await _tidalService.searchTrackByIsrc(deezerTrack!.isrc!);
-              if (isrcMatch != null) {
-                results = [isrcMatch];
-              }
-            }
-          }
           
           if (results.isNotEmpty) {
             trendingTracks.add(results.first);
@@ -371,12 +352,11 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
   }
 }
 
-/// Home Data Provider (with Last.fm integration + Deezer fallback)
+/// Home Data Provider (with Last.fm integration)
 final homeDataProvider = StateNotifierProvider<HomeDataNotifier, HomeDataState>((ref) {
   final tidalService = ref.watch(tidalServiceProvider);
   final lastFmService = ref.watch(lastFmServiceProvider);
-  final deezerService = ref.watch(deezerServiceProvider);
-  return HomeDataNotifier(tidalService, lastFmService, deezerService);
+  return HomeDataNotifier(tidalService, lastFmService);
 });
 
 // ============================================================================

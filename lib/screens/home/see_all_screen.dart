@@ -35,20 +35,26 @@ class SeeAllScreen extends ConsumerStatefulWidget {
 
 class _SeeAllScreenState extends ConsumerState<SeeAllScreen> {
   List<dynamic> _items = [];
-  bool _isLoading = true;
+  bool _isLoading = false;
   String? _error;
+  bool _hasLoadedMore = false;
 
   @override
   void initState() {
     super.initState();
     // Show initial items immediately if available
     if (widget.initialItems != null && widget.initialItems!.isNotEmpty) {
-      _items = widget.initialItems!;
+      _items = List.from(widget.initialItems!);
+      _isLoading = false;
+    } else {
+      // Only load from API if no initial items passed
+      _loadData();
     }
-    _loadData();
   }
 
   Future<void> _loadData() async {
+    if (_hasLoadedMore) return; // Already loaded more items
+    
     setState(() {
       _isLoading = true;
       _error = null;
@@ -56,37 +62,35 @@ class _SeeAllScreenState extends ConsumerState<SeeAllScreen> {
 
     try {
       final tidalService = ref.read(tidalServiceProvider);
+      List<dynamic> apiResults = [];
       
       switch (widget.type) {
         case SeeAllType.playlist:
-          final results = await tidalService.searchPlaylists(widget.searchQuery, limit: 30);
-          if (mounted) {
-            setState(() {
-              _items = results;
-              _isLoading = false;
-            });
-          }
+          apiResults = await tidalService.searchPlaylists(widget.searchQuery, limit: 30);
           break;
           
         case SeeAllType.album:
-          final results = await tidalService.searchAlbums(widget.searchQuery, limit: 30);
-          if (mounted) {
-            setState(() {
-              _items = results;
-              _isLoading = false;
-            });
-          }
+          apiResults = await tidalService.searchAlbums(widget.searchQuery, limit: 30);
           break;
           
         case SeeAllType.track:
-          final results = await tidalService.searchTracks(widget.searchQuery, limit: 30);
-          if (mounted) {
-            setState(() {
-              _items = results;
-              _isLoading = false;
-            });
-          }
+          apiResults = await tidalService.searchTracks(widget.searchQuery, limit: 30);
           break;
+      }
+      
+      if (mounted) {
+        setState(() {
+          // If we have initial items, keep them and only add NEW items from API
+          if (widget.initialItems != null && widget.initialItems!.isNotEmpty) {
+            final existingIds = _items.map((e) => _getItemId(e)).toSet();
+            final newItems = apiResults.where((item) => !existingIds.contains(_getItemId(item))).toList();
+            _items = [..._items, ...newItems.take(20)]; // Add up to 20 more unique items
+          } else {
+            _items = apiResults;
+          }
+          _isLoading = false;
+          _hasLoadedMore = true;
+        });
       }
     } catch (e) {
       if (mounted) {
@@ -96,6 +100,13 @@ class _SeeAllScreenState extends ConsumerState<SeeAllScreen> {
         });
       }
     }
+  }
+
+  String _getItemId(dynamic item) {
+    if (item is Playlist) return item.id;
+    if (item is Album) return item.id;
+    if (item is Track) return item.id;
+    return '';
   }
 
   @override
