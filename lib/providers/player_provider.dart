@@ -1,8 +1,10 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../models/models.dart';
 import '../services/tidal_service.dart';
+import '../services/recommendation_service.dart';
 import '../data/database.dart';
 import 'music_provider.dart';
 
@@ -112,11 +114,52 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   int _consecutiveFailures = 0; // Track consecutive play failures
   static const _minimumPlayDuration = Duration(seconds: 30);
   static const _maxConsecutiveFailures = 3; // Stop skipping after 3 failures
+  
+  // Volume normalization (Android loudness enhancer)
+  AndroidLoudnessEnhancer? _loudnessEnhancer;
+  static const _normalizationGainDb = 6.0; // Target gain in decibels
 
   PlayerNotifier(this._tidalService, this._database, this._ref)
       : _audioPlayer = AudioPlayer(),
         super(const PlayerState()) {
     _initListeners();
+    _initLoudnessEnhancer();
+  }
+  
+  /// Initialize loudness enhancer for volume normalization (Android only)
+  Future<void> _initLoudnessEnhancer() async {
+    try {
+      _loudnessEnhancer = AndroidLoudnessEnhancer();
+      await _loudnessEnhancer!.setTargetGain(_normalizationGainDb);
+      await _loudnessEnhancer!.setEnabled(false); // Start disabled, enable per setting
+      await _audioPlayer.setAudioSource(
+        AudioSource.uri(Uri.parse('asset:///assets/audio/silence.mp3')),
+        preload: false,
+      ).catchError((_) => null); // Ignore if no silence file
+      print('🔊 Volume normalization: Loudness enhancer initialized');
+    } catch (e) {
+      print('🔊 Volume normalization: Not available on this platform - $e');
+      _loudnessEnhancer = null;
+    }
+  }
+  
+  /// Check if volume normalization is enabled in settings
+  Future<bool> _isNormalizeVolumeEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('normalizeVolume') ?? false; // Default to false
+  }
+  
+  /// Apply volume normalization based on settings
+  Future<void> _applyVolumeNormalization() async {
+    if (_loudnessEnhancer == null) return;
+    
+    try {
+      final enabled = await _isNormalizeVolumeEnabled();
+      await _loudnessEnhancer!.setEnabled(enabled);
+      print('🔊 Volume normalization: ${enabled ? "ENABLED" : "DISABLED"}');
+    } catch (e) {
+      print('🔊 Volume normalization: Error applying setting - $e');
+    }
   }
 
   void _initListeners() {
@@ -184,7 +227,76 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       playAtIndex(0);
       return PlaybackStatus.loading;
     }
+    
+    // Queue ended - trigger autoplay if enabled
+    _triggerAutoplay();
+    
     return PlaybackStatus.paused;
+  }
+  
+  /// Check if autoplay is enabled in settings
+  Future<bool> _isAutoplayEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('autoplay') ?? true; // Default to true
+  }
+  
+  /// Trigger autoplay - fetch recommendations and add to queue
+  Future<void> _triggerAutoplay() async {
+    try {
+      // Check if autoplay is enabled
+      final autoplayEnabled = await _isAutoplayEnabled();
+      if (!autoplayEnabled) {
+        print('🎵 Autoplay: Disabled in settings');
+        return;
+      }
+      
+      // Don't trigger if queue is empty (nothing was playing)
+      if (state.queue.isEmpty) {
+        print('🎵 Autoplay: Queue is empty, skipping');
+        return;
+      }
+      
+      print('🎵 Autoplay: Queue ended, fetching recommendations...');
+      
+      // Get recommendation service via ref
+      final recommendationService = _ref.read(recommendationServiceProvider);
+      
+      // Fetch personalized recommendations
+      final recommendations = await recommendationService.getRecommendations(limit: 10);
+      
+      if (recommendations.isEmpty) {
+        print('🎵 Autoplay: No recommendations available');
+        return;
+      }
+      
+      // Filter out tracks already in queue to avoid duplicates
+      final existingIds = state.queue.map((t) => '${t.id}_${t.source.name}').toSet();
+      final newTracks = recommendations.where(
+        (t) => !existingIds.contains('${t.id}_${t.source.name}')
+      ).toList();
+      
+      if (newTracks.isEmpty) {
+        print('🎵 Autoplay: All recommendations already in queue');
+        return;
+      }
+      
+      print('🎵 Autoplay: Adding ${newTracks.length} recommended tracks to queue');
+      
+      // Add recommended tracks to queue
+      final newQueue = [...state.queue, ...newTracks];
+      _originalQueue = [..._originalQueue, ...newTracks];
+      
+      state = state.copyWith(
+        queue: newQueue,
+        queueSource: 'Autoplay Recommendations',
+      );
+      
+      // Start playing the first recommended track
+      playAtIndex(state.queueIndex + 1);
+      
+    } catch (e) {
+      print('🎵 Autoplay: Error fetching recommendations - $e');
+    }
   }
 
   Future<void> _recordPlayToHistory() async {
@@ -242,6 +354,9 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       
       await _audioPlayer.setUrl(streamInfo.url);
       print('✅ URL set successfully');
+      
+      // Apply volume normalization setting before playing
+      await _applyVolumeNormalization();
       
       await _audioPlayer.play();
       print('▶️ Play started');

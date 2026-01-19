@@ -351,6 +351,14 @@ class AppDatabase extends _$AppDatabase {
     return results.map((r) => r.artistName).toList();
   }
 
+  /// Get top artist data with full info (for artists screen)
+  Future<List<ArtistFrequencyEntry>> getTopArtistData({int limit = 50}) async {
+    return (select(artistFrequency)
+      ..orderBy([(t) => OrderingTerm.desc(t.playCount)])
+      ..limit(limit))
+      .get();
+  }
+
   Future<Map<String, int>> getListeningPatterns() async {
     // Get hour-based listening patterns
     final entries = await select(historyEntries).get();

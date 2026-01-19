@@ -114,6 +114,29 @@ class Track extends Equatable {
     );
   }
 
+  /// Parse from stored JSON (from toJson)
+  factory Track.fromJson(Map<String, dynamic> json) {
+    return Track(
+      id: json['id']?.toString() ?? '',
+      title: json['title'] as String? ?? 'Unknown Title',
+      artist: json['artist'] as String? ?? 'Unknown Artist',
+      artistId: json['artistId']?.toString() ?? '',
+      album: json['album'] as String? ?? 'Unknown Album',
+      albumId: json['albumId']?.toString() ?? '',
+      duration: Duration(seconds: json['duration'] as int? ?? 0),
+      trackNumber: json['trackNumber'] as int? ?? 1,
+      genre: json['genre'] as String?,
+      year: json['year'] as int?,
+      coverArtUrl: json['coverArtUrl'] as String?,
+      source: MusicSource.values.firstWhere(
+        (s) => s.name == json['source'],
+        orElse: () => MusicSource.tidal,
+      ),
+      quality: null,
+      isExplicit: json['isExplicit'] as bool? ?? false,
+    );
+  }
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,

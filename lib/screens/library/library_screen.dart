@@ -3,6 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/responsive.dart';
 import '../../providers/providers.dart';
+import 'library_playlists_screen.dart';
+import 'library_albums_screen.dart';
+import 'library_tracks_screen.dart';
+import 'library_artists_screen.dart';
+import 'library_downloads_screen.dart';
+import '../settings/settings_screen.dart';
 
 /// Library Screen - TIDAL Collection Style
 /// Clean list design with sections for Playlists, Albums, Tracks, Artists, etc.
@@ -45,7 +51,10 @@ class LibraryScreen extends ConsumerWidget {
                           iconSize: 24,
                           color: Colors.white,
                           onPressed: () {
-                            // Settings
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                            );
                           },
                         ),
                         IconButton(
@@ -72,7 +81,10 @@ class LibraryScreen extends ConsumerWidget {
                     icon: Icons.queue_music_outlined,
                     title: 'Playlists',
                     onTap: () {
-                      // Navigate to playlists
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const LibraryPlaylistsScreen()),
+                      );
                     },
                   ),
                   
@@ -81,7 +93,10 @@ class LibraryScreen extends ConsumerWidget {
                     icon: Icons.album_outlined,
                     title: 'Albums',
                     onTap: () {
-                      // Navigate to saved albums
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const LibraryAlbumsScreen()),
+                      );
                     },
                   ),
                   
@@ -91,7 +106,10 @@ class LibraryScreen extends ConsumerWidget {
                     title: 'Tracks',
                     subtitle: '${favoritesState.favorites.length} liked songs',
                     onTap: () {
-                      // Navigate to liked tracks
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const LibraryTracksScreen()),
+                      );
                     },
                   ),
                   
@@ -100,7 +118,10 @@ class LibraryScreen extends ConsumerWidget {
                     icon: Icons.person_outline,
                     title: 'Artists',
                     onTap: () {
-                      // Navigate to followed artists
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const LibraryArtistsScreen()),
+                      );
                     },
                   ),
                   
@@ -109,7 +130,10 @@ class LibraryScreen extends ConsumerWidget {
                     icon: Icons.download_outlined,
                     title: 'Downloads',
                     onTap: () {
-                      // Navigate to downloads
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const LibraryDownloadsScreen()),
+                      );
                     },
                   ),
                 ],
