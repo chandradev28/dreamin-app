@@ -5,6 +5,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/utils/responsive.dart';
 import '../../providers/providers.dart';
 import '../../models/models.dart';
+import '../../widgets/track_options_sheet.dart';
 import '../album/album_detail_screen.dart';
 import '../playlist/playlist_detail_screen.dart';
 import 'see_all_screen.dart';
@@ -661,7 +662,7 @@ class _BentoTrackTile extends StatelessWidget {
             // More button
             IconButton(
               icon: const Icon(Icons.more_horiz),
-              onPressed: () {},
+              onPressed: () => TrackOptionsSheet.show(context, track),
               color: Colors.white.withOpacity(0.7),
             ),
           ],

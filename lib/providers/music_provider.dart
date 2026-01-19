@@ -159,12 +159,21 @@ class HomeDataState {
   }
 }
 
-/// Home Data Notifier - Hybrid TIDAL + Last.fm content loading
+/// Home Data Notifier - Personalized content loading
+/// Uses LOCAL DATABASE for personalization when user has history
+/// Falls back to Last.fm/Tidal for new users
 class HomeDataNotifier extends StateNotifier<HomeDataState> {
   final TidalService _tidalService;
   final LastFmService _lastFmService;
+  final AppDatabase _database;
+  final RecommendationService _recommendationService;
 
-  HomeDataNotifier(this._tidalService, this._lastFmService) : super(const HomeDataState()) {
+  HomeDataNotifier(
+    this._tidalService, 
+    this._lastFmService,
+    this._database,
+    this._recommendationService,
+  ) : super(const HomeDataState()) {
     loadData();
   }
 
@@ -172,133 +181,222 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
     state = state.copyWith(isLoading: true, error: null);
 
     try {
-      // PHASE 1: Load TIDAL content + Last.fm chart data in parallel
-      final phase1Results = await Future.wait([
-        // 1. Songs of the Year playlists (TIDAL)
-        _tidalService.searchPlaylists('songs of the year', limit: 10)
-            .catchError((_) => <Playlist>[]),
-        // 2. Popular playlists (TIDAL)
-        _tidalService.searchPlaylists('top hits', limit: 10)
-            .catchError((_) => <Playlist>[]),
-        // 3. Get chart top tracks from Last.fm (for discovery)
-        _lastFmService.getChartTopTracks(limit: 20)
-            .catchError((_) => <LastFmTrack>[]),
-        // 4. Get chart top artists from Last.fm
-        _lastFmService.getChartTopArtists(limit: 10)
-            .catchError((_) => <LastFmArtist>[]),
-        // 5. Get top tags/genres from Last.fm
-        _lastFmService.getTopTags(limit: 20)
-            .catchError((_) => <String>[]),
-      ]);
+      // Check if user has enough listening history for personalization
+      final totalPlays = await _database.getTotalPlayCount();
+      final hasPersonalization = totalPlays >= 10;
+      
+      print('🎵 Home: User has $totalPlays plays. Personalization: $hasPersonalization');
 
-      final songsOfYear = phase1Results[0] as List<Playlist>;
-      final popular = phase1Results[1] as List<Playlist>;
-      final lastFmTracks = phase1Results[2] as List<LastFmTrack>;
-      final lastFmArtists = phase1Results[3] as List<LastFmArtist>;
-      final topTags = phase1Results[4] as List<String>;
-
-      // PHASE 2: Use Last.fm data to find actual playable content on TIDAL
-      final List<Track> trendingTracks = [];
-      final List<Album> newAlbums = [];
-      final List<Album> albumsYouLlEnjoy = [];
-      final List<Artist> recentArtists = [];
-
-      // Randomize which tracks we search for (don't always take first 8)
-      final shuffledTracks = List<LastFmTrack>.from(lastFmTracks)..shuffle();
-      for (final lfmTrack in shuffledTracks.take(8)) {
-        try {
-          final query = '${lfmTrack.artist} ${lfmTrack.name}';
-          var results = await _tidalService.searchTracks(query, limit: 1);
-          
-          if (results.isNotEmpty) {
-            trendingTracks.add(results.first);
-          }
-        } catch (_) {}
+      if (hasPersonalization) {
+        await _loadPersonalizedData();
+      } else {
+        await _loadDiscoveryData();
       }
+    } catch (e) {
+      print('❌ Home load error: $e');
+      state = state.copyWith(isLoading: false, error: e.toString());
+    }
+  }
 
-      // Randomize artists for "Suggested new albums" (shuffle before taking)
-      final shuffledArtists = List<LastFmArtist>.from(lastFmArtists)..shuffle();
-      for (final lfmArtist in shuffledArtists.take(5)) {
-        try {
-          final results = await _tidalService.searchAlbums(lfmArtist.name, limit: 2);
-          newAlbums.addAll(results);
-        } catch (_) {}
-      }
+  /// Load personalized content based on user's listening history
+  Future<void> _loadPersonalizedData() async {
+    // Get user preferences from local database
+    final topArtistNames = await _database.getTopArtistNames(limit: 10);
+    final topGenres = await _database.getTopGenres(limit: 5);
+    
+    print('📊 User prefs - Artists: ${topArtistNames.take(3)}, Genres: ${topGenres.take(3)}');
 
-      // Use multiple random tags for "Albums you'll enjoy" (more variety)
-      if (topTags.length >= 3) {
-        final shuffledTags = List<String>.from(topTags)..shuffle();
-        for (final tag in shuffledTags.take(3)) {
-          final tagAlbums = await _lastFmService.getTopAlbumsByTag(tag, limit: 5);
-          for (final lfmAlbum in tagAlbums.take(2)) {
-            try {
-              final results = await _tidalService.searchAlbums(
-                '${lfmAlbum.artist} ${lfmAlbum.name}', 
-                limit: 1
-              );
-              if (results.isNotEmpty) {
-                albumsYouLlEnjoy.add(results.first);
-              }
-            } catch (_) {}
-          }
+    // Use RecommendationService for recommended tracks
+    final personalizedTracks = await _recommendationService.getRecommendations(limit: 15);
+
+    // Build personalized album searches based on user's top artists
+    final List<Album> albumsForYou = [];
+    final List<Album> newAlbumsByFavorites = [];
+    
+    // Search for albums from user's favorite artists
+    for (final artistName in topArtistNames.take(5)) {
+      try {
+        final results = await _tidalService.searchAlbums(artistName, limit: 3);
+        if (results.isNotEmpty) {
+          albumsForYou.addAll(results.take(2));
+        }
+      } catch (_) {}
+    }
+
+    // Search for albums in user's favorite genres
+    for (final genre in topGenres.take(3)) {
+      try {
+        final results = await _tidalService.searchAlbums('$genre new 2024', limit: 4);
+        newAlbumsByFavorites.addAll(results);
+      } catch (_) {}
+    }
+
+    // Get playlists based on user's genres
+    final List<Playlist> songsOfYear = [];
+    final List<Playlist> playlistsForUser = [];
+    
+    try {
+      songsOfYear.addAll(
+        await _tidalService.searchPlaylists('songs of the year', limit: 10)
+      );
+    } catch (_) {}
+    
+    for (final genre in topGenres.take(2)) {
+      try {
+        final results = await _tidalService.searchPlaylists('$genre playlist', limit: 5);
+        playlistsForUser.addAll(results);
+      } catch (_) {}
+    }
+
+    // Display user's top genres nicely
+    final displayGenres = topGenres.isNotEmpty 
+        ? topGenres.map((g) => _capitalizeTag(g)).toList()
+        : const ['Pop', 'Rock', 'Hip Hop', 'R&B', 'Electronic', 'Jazz'];
+
+    state = state.copyWith(
+      isLoading: false,
+      songsOfTheYear: songsOfYear,
+      trendingTracks: personalizedTracks.take(10).toList(),
+      popularPlaylists: playlistsForUser.take(10).toList(),
+      newAlbums: albumsForYou.take(10).toList(),
+      albumsYouLlEnjoy: newAlbumsByFavorites.take(10).toList(),
+      recommendations: personalizedTracks.take(10).toList(),
+      playlistsForYou: songsOfYear,
+      topGenres: displayGenres,
+      recentlyPlayedArtists: const [],
+    );
+  }
+
+  /// Load discovery content for new users (no history)
+  Future<void> _loadDiscoveryData() async {
+    try {
+    // PHASE 1: Load TIDAL content + Last.fm chart data in parallel
+    final phase1Results = await Future.wait([
+      // 1. Songs of the Year playlists (TIDAL)
+      _tidalService.searchPlaylists('songs of the year', limit: 10)
+          .catchError((_) => <Playlist>[]),
+      // 2. Popular playlists (TIDAL)
+      _tidalService.searchPlaylists('top hits', limit: 10)
+          .catchError((_) => <Playlist>[]),
+      // 3. Get chart top tracks from Last.fm (for discovery)
+      _lastFmService.getChartTopTracks(limit: 20)
+          .catchError((_) => <LastFmTrack>[]),
+      // 4. Get chart top artists from Last.fm
+      _lastFmService.getChartTopArtists(limit: 10)
+          .catchError((_) => <LastFmArtist>[]),
+      // 5. Get top tags/genres from Last.fm
+      _lastFmService.getTopTags(limit: 20)
+          .catchError((_) => <String>[]),
+    ]);
+
+    final songsOfYear = phase1Results[0] as List<Playlist>;
+    final popular = phase1Results[1] as List<Playlist>;
+    final lastFmTracks = phase1Results[2] as List<LastFmTrack>;
+    final lastFmArtists = phase1Results[3] as List<LastFmArtist>;
+    final topTags = phase1Results[4] as List<String>;
+
+    // PHASE 2: Use Last.fm data to find actual playable content on TIDAL
+    final List<Track> trendingTracks = [];
+    final List<Album> newAlbums = [];
+    final List<Album> albumsYouLlEnjoy = [];
+    final List<Artist> recentArtists = [];
+
+    // Randomize which tracks we search for (don't always take first 8)
+    final shuffledTracks = List<LastFmTrack>.from(lastFmTracks)..shuffle();
+    for (final lfmTrack in shuffledTracks.take(8)) {
+      try {
+        final query = '${lfmTrack.artist} ${lfmTrack.name}';
+        var results = await _tidalService.searchTracks(query, limit: 1);
+        
+        if (results.isNotEmpty) {
+          trendingTracks.add(results.first);
+        }
+      } catch (_) {}
+    }
+
+    // Randomize artists for "Suggested new albums" (shuffle before taking)
+    final shuffledArtists = List<LastFmArtist>.from(lastFmArtists)..shuffle();
+    for (final lfmArtist in shuffledArtists.take(5)) {
+      try {
+        final results = await _tidalService.searchAlbums(lfmArtist.name, limit: 2);
+        newAlbums.addAll(results);
+      } catch (_) {}
+    }
+
+    // Use multiple random tags for "Albums you'll enjoy" (more variety)
+    if (topTags.length >= 3) {
+      final shuffledTags = List<String>.from(topTags)..shuffle();
+      for (final tag in shuffledTags.take(3)) {
+        final tagAlbums = await _lastFmService.getTopAlbumsByTag(tag, limit: 5);
+        for (final lfmAlbum in tagAlbums.take(2)) {
+          try {
+            final results = await _tidalService.searchAlbums(
+              '${lfmAlbum.artist} ${lfmAlbum.name}', 
+              limit: 1
+            );
+            if (results.isNotEmpty) {
+              albumsYouLlEnjoy.add(results.first);
+            }
+          } catch (_) {}
         }
       }
+    }
 
-      // Convert Last.fm artists to TIDAL artists
-      for (final lfmArtist in lastFmArtists.take(6)) {
-        try {
-          final results = await _tidalService.searchArtists(lfmArtist.name, limit: 1);
-          if (results.isNotEmpty) {
-            recentArtists.add(results.first);
-          }
-        } catch (_) {}
-      }
+    // Convert Last.fm artists to TIDAL artists
+    for (final lfmArtist in lastFmArtists.take(6)) {
+      try {
+        final results = await _tidalService.searchArtists(lfmArtist.name, limit: 1);
+        if (results.isNotEmpty) {
+          recentArtists.add(results.first);
+        }
+      } catch (_) {}
+    }
 
-      // Fallback: if Last.fm didn't give us enough, use varied search terms
-      if (trendingTracks.length < 5) {
-        // Use current month for freshness
-        final months = ['january', 'february', 'march', 'april', 'may', 'june', 
-                        'july', 'august', 'september', 'october', 'november', 'december'];
-        final currentMonth = months[DateTime.now().month - 1];
-        final moreTracks = await _tidalService.searchTracks('trending $currentMonth 2024', limit: 8)
-            .catchError((_) => <Track>[]);
-        trendingTracks.addAll(moreTracks);
-      }
+    // Fallback: if Last.fm didn't give us enough, use varied search terms
+    if (trendingTracks.length < 5) {
+      // Use current month for freshness
+      final months = ['january', 'february', 'march', 'april', 'may', 'june', 
+                      'july', 'august', 'september', 'october', 'november', 'december'];
+      final currentMonth = months[DateTime.now().month - 1];
+      final moreTracks = await _tidalService.searchTracks('trending $currentMonth 2024', limit: 8)
+          .catchError((_) => <Track>[]);
+      trendingTracks.addAll(moreTracks);
+    }
 
-      if (newAlbums.length < 5) {
-        // Search for recent releases with variety
-        final searchTerms = ['new release 2025', 'album 2024', 'latest music'];
-        final searchTerm = searchTerms[DateTime.now().second % searchTerms.length];
-        final moreAlbums = await _tidalService.searchAlbums(searchTerm, limit: 10)
-            .catchError((_) => <Album>[]);
-        newAlbums.addAll(moreAlbums);
-      }
+    if (newAlbums.length < 5) {
+      // Search for recent releases with variety
+      final searchTerms = ['new release 2025', 'album 2024', 'latest music'];
+      final searchTerm = searchTerms[DateTime.now().second % searchTerms.length];
+      final moreAlbums = await _tidalService.searchAlbums(searchTerm, limit: 10)
+          .catchError((_) => <Album>[]);
+      newAlbums.addAll(moreAlbums);
+    }
 
-      if (albumsYouLlEnjoy.length < 5) {
-        final genres = ['pop', 'rock', 'hip hop', 'r&b', 'indie', 'electronic'];
-        final genre = genres[DateTime.now().minute % genres.length];
-        final moreAlbums = await _tidalService.searchAlbums('best $genre albums', limit: 10)
-            .catchError((_) => <Album>[]);
-        albumsYouLlEnjoy.addAll(moreAlbums);
-      }
+    if (albumsYouLlEnjoy.length < 5) {
+      final genres = ['pop', 'rock', 'hip hop', 'r&b', 'indie', 'electronic'];
+      final genre = genres[DateTime.now().minute % genres.length];
+      final moreAlbums = await _tidalService.searchAlbums('best $genre albums', limit: 10)
+          .catchError((_) => <Album>[]);
+      albumsYouLlEnjoy.addAll(moreAlbums);
+    }
 
-      // Filter genres to show nice display names
-      final displayGenres = topTags.isNotEmpty 
-          ? topTags.take(10).map((t) => _capitalizeTag(t)).toList()
-          : const ['Pop', 'Rock', 'Hip Hop', 'R&B', 'Electronic', 'Jazz'];
+    // Filter genres to show nice display names
+    final displayGenres = topTags.isNotEmpty 
+        ? topTags.take(10).map((t) => _capitalizeTag(t)).toList()
+        : const ['Pop', 'Rock', 'Hip Hop', 'R&B', 'Electronic', 'Jazz'];
 
-      state = state.copyWith(
-        isLoading: false,
-        songsOfTheYear: songsOfYear,
-        trendingTracks: trendingTracks.take(10).toList(),
-        popularPlaylists: popular,
-        newAlbums: newAlbums.take(10).toList(),
-        albumsYouLlEnjoy: albumsYouLlEnjoy.take(10).toList(),
-        recommendations: trendingTracks.take(10).toList(),
-        playlistsForYou: songsOfYear,
-        topGenres: displayGenres,
-        recentlyPlayedArtists: recentArtists,
-      );
+    state = state.copyWith(
+      isLoading: false,
+      songsOfTheYear: songsOfYear,
+      trendingTracks: trendingTracks.take(10).toList(),
+      popularPlaylists: popular,
+      newAlbums: newAlbums.take(10).toList(),
+      albumsYouLlEnjoy: albumsYouLlEnjoy.take(10).toList(),
+      recommendations: trendingTracks.take(10).toList(),
+      playlistsForYou: songsOfYear,
+      topGenres: displayGenres,
+      recentlyPlayedArtists: recentArtists,
+    );
     } catch (e) {
       // Fallback to pure TIDAL if Last.fm fails
       await _loadTidalOnly();
@@ -352,11 +450,13 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
   }
 }
 
-/// Home Data Provider (with Last.fm integration)
+/// Home Data Provider (with personalization + Last.fm fallback)
 final homeDataProvider = StateNotifierProvider<HomeDataNotifier, HomeDataState>((ref) {
   final tidalService = ref.watch(tidalServiceProvider);
   final lastFmService = ref.watch(lastFmServiceProvider);
-  return HomeDataNotifier(tidalService, lastFmService);
+  final database = ref.watch(databaseProvider);
+  final recommendationService = ref.watch(recommendationServiceProvider);
+  return HomeDataNotifier(tidalService, lastFmService, database, recommendationService);
 });
 
 // ============================================================================

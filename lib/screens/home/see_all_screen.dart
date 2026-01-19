@@ -5,6 +5,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/utils/responsive.dart';
 import '../../models/models.dart';
 import '../../providers/providers.dart';
+import '../../widgets/track_options_sheet.dart';
 import '../album/album_detail_screen.dart';
 import '../playlist/playlist_detail_screen.dart';
 import '../scaffold_with_mini_player.dart';
@@ -453,7 +454,7 @@ class _TrackListTile extends ConsumerWidget {
       ),
       trailing: IconButton(
         icon: const Icon(Icons.more_horiz, color: AppTheme.secondaryColor),
-        onPressed: () {},
+        onPressed: () => TrackOptionsSheet.show(context, track),
       ),
     );
   }
