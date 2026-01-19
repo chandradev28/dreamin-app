@@ -6,6 +6,8 @@ import '../../core/theme/app_theme.dart';
 import '../../core/utils/responsive.dart';
 import '../../providers/providers.dart';
 import '../../models/models.dart';
+import '../../widgets/track_options_sheet.dart';
+import '../../widgets/album_options_sheet.dart';
 import '../album/album_detail_screen.dart';
 import '../playlist/playlist_detail_screen.dart';
 import '../artist/artist_detail_screen.dart';
@@ -437,7 +439,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       ),
       title: Text(track.title, style: AppTheme.bodyLarge, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text('Track by ${track.artist}', style: AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor), maxLines: 1),
-      trailing: const Icon(Icons.more_vert, color: AppTheme.secondaryColor),
+      trailing: GestureDetector(
+        onTap: () => TrackOptionsSheet.show(context, track),
+        child: const Icon(Icons.more_vert, color: AppTheme.secondaryColor),
+      ),
     );
   }
 
@@ -550,11 +555,31 @@ class _AlbumCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: album.coverArtUrl != null
-                  ? CachedNetworkImage(imageUrl: album.coverArtUrl!, width: 120, height: 120, fit: BoxFit.cover)
-                  : Container(width: 120, height: 120, color: AppTheme.surfaceColor, child: const Icon(Icons.album, size: 40, color: AppTheme.secondaryColor)),
+            Stack(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: album.coverArtUrl != null
+                      ? CachedNetworkImage(imageUrl: album.coverArtUrl!, width: 120, height: 120, fit: BoxFit.cover)
+                      : Container(width: 120, height: 120, color: AppTheme.surfaceColor, child: const Icon(Icons.album, size: 40, color: AppTheme.secondaryColor)),
+                ),
+                // 3-dot menu overlay
+                Positioned(
+                  top: 4,
+                  right: 4,
+                  child: GestureDetector(
+                    onTap: () => AlbumOptionsSheet.show(context, album),
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.5),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.more_vert, color: Colors.white, size: 16),
+                    ),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 8),
             Text(album.title, style: AppTheme.bodySmall, maxLines: 1, overflow: TextOverflow.ellipsis),

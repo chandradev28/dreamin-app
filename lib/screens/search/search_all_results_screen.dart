@@ -5,6 +5,8 @@ import '../../core/theme/app_theme.dart';
 import '../../core/utils/responsive.dart';
 import '../../providers/providers.dart';
 import '../../models/models.dart';
+import '../../widgets/track_options_sheet.dart';
+import '../../widgets/album_options_sheet.dart';
 import '../album/album_detail_screen.dart';
 import '../playlist/playlist_detail_screen.dart';
 import '../artist/artist_detail_screen.dart';
@@ -316,7 +318,10 @@ class _AlbumTile extends StatelessWidget {
         style: AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor),
         maxLines: 1,
       ),
-      trailing: const Icon(Icons.more_vert, color: AppTheme.secondaryColor),
+      trailing: GestureDetector(
+        onTap: () => AlbumOptionsSheet.show(context, album),
+        child: const Icon(Icons.more_vert, color: AppTheme.secondaryColor),
+      ),
     );
   }
 }
@@ -381,7 +386,10 @@ class _TrackTile extends StatelessWidget {
       ),
       title: Text(track.title, style: AppTheme.bodyLarge, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text('Track by ${track.artist}', style: AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor), maxLines: 1),
-      trailing: const Icon(Icons.more_vert, color: AppTheme.secondaryColor),
+      trailing: GestureDetector(
+        onTap: () => TrackOptionsSheet.show(context, track),
+        child: const Icon(Icons.more_vert, color: AppTheme.secondaryColor),
+      ),
     );
   }
 }
