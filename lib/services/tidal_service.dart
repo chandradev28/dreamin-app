@@ -476,10 +476,30 @@ class TidalService {
   /// Get artist details with albums and tracks
   Future<ArtistDetail> getArtist(String artistId) async {
     try {
+      // First get basic artist info with ?id= to get picture/cover
+      final artistResponse = await _executeWithFallback((baseUrl) {
+        return _dio.get(
+          '$baseUrl${TidalEndpoints.artistPath}',
+          queryParameters: {'id': int.parse(artistId)},
+        );
+      });
+
+      final artistResponseData = artistResponse.data as Map<String, dynamic>;
+      
+      // Extract artist data - API returns {artist: {...}, cover: {...}}
+      final artistData = artistResponseData['artist'] as Map<String, dynamic>? ?? {};
+      final coverData = artistResponseData['cover'] as Map<String, dynamic>?;
+      
+      // Add cover URL to artist data if available (direct URL is better)
+      if (coverData != null && coverData['750'] != null) {
+        artistData['coverUrl'] = coverData['750'];
+      }
+
+      // Now get full data with albums and tracks using ?f=
       final response = await _executeWithFallback((baseUrl) {
         return _dio.get(
           '$baseUrl${TidalEndpoints.artistPath}',
-          queryParameters: {'f': int.parse(artistId)},  // 'f' gives full data with albums/tracks
+          queryParameters: {'f': int.parse(artistId)},
         );
       });
 
@@ -487,19 +507,7 @@ class TidalService {
       final albumsData = data['albums']?['items'] as List<dynamic>? ?? [];
       final tracksData = data['tracks'] as List<dynamic>? ?? [];
 
-      // Construct artist from first track or album
-      String artistName = 'Unknown';
-      if (tracksData.isNotEmpty) {
-        final firstTrack = tracksData.first as Map<String, dynamic>;
-        final artist = firstTrack['artist'] as Map<String, dynamic>?;
-        artistName = artist?['name'] as String? ?? 'Unknown';
-      }
-      final artistData = <String, dynamic>{
-        'id': artistId,
-        'name': artistName,
-      };
-
-      return ArtistDetail.fromTidalJson(artistData, albumsData);
+      return ArtistDetail.fromTidalJson(artistData, albumsData, tracksJson: tracksData);
     } catch (e) {
       throw TidalApiException('Failed to get artist: $e');
     }
@@ -525,9 +533,11 @@ class TidalService {
 
   // ==================== PLAYLIST ====================
 
-  /// Get playlist details with tracks
+  /// Get playlist details with ALL tracks (handles pagination)
+  /// API returns max 100 tracks per request, so we paginate to fetch all
   Future<PlaylistDetail> getPlaylist(String playlistId) async {
     try {
+      // First request to get playlist metadata and first batch of tracks
       final response = await _executeWithFallback((baseUrl) {
         return _dio.get(
           '$baseUrl${TidalEndpoints.playlistPath}',
@@ -537,7 +547,7 @@ class TidalService {
 
       final data = response.data as Map<String, dynamic>;
       
-      // Try multiple paths for playlist data
+      // Extract playlist metadata
       Map<String, dynamic> playlistData = {};
       if (data['playlist'] is Map) {
         playlistData = data['playlist'] as Map<String, dynamic>;
@@ -549,33 +559,40 @@ class TidalService {
         playlistData = data;
       }
       
-      // Try multiple paths for tracks
-      List<dynamic> rawTracks = [];
-      if (data['items'] is List) {
-        rawTracks = data['items'] as List;
-      } else if (data['tracks'] is List) {
-        rawTracks = data['tracks'] as List;
-      } else if (data['tracks'] is Map && data['tracks']['items'] is List) {
-        rawTracks = data['tracks']['items'] as List;
-      } else if (playlistData['items'] is List) {
-        rawTracks = playlistData['items'] as List;
-      } else if (playlistData['tracks'] is List) {
-        rawTracks = playlistData['tracks'] as List;
-      }
+      // Get total track count from playlist metadata
+      final int totalTracks = playlistData['numberOfTracks'] as int? ?? 0;
       
-      // Process tracks - handle nested wrappers
-      final List<Map<String, dynamic>> tracksData = [];
-      for (final item in rawTracks) {
-        if (item is Map<String, dynamic>) {
-          if (item['item'] is Map) {
-            tracksData.add(item['item'] as Map<String, dynamic>);
-          } else if (item['track'] is Map) {
-            tracksData.add(item['track'] as Map<String, dynamic>);
-          } else if (item['title'] != null) {
-            tracksData.add(item);
-          } else if (item['id'] != null) {
-            tracksData.add(item);
-          }
+      // Collect all tracks with pagination
+      List<Map<String, dynamic>> allTracksData = [];
+      int offset = 0;
+      const int pageSize = 100; // API returns max 100 per request
+      
+      // Process first batch
+      allTracksData.addAll(_extractTracksFromResponse(data, playlistData));
+      
+      // Fetch remaining pages if needed
+      while (allTracksData.length < totalTracks && offset + pageSize < totalTracks) {
+        offset += pageSize;
+        
+        try {
+          final pageResponse = await _executeWithFallback((baseUrl) {
+            return _dio.get(
+              '$baseUrl${TidalEndpoints.playlistPath}',
+              queryParameters: {
+                'id': playlistId,
+                'offset': offset,
+              },
+            );
+          });
+          
+          final pageData = pageResponse.data as Map<String, dynamic>;
+          final pageTracks = _extractTracksFromResponse(pageData, {});
+          
+          if (pageTracks.isEmpty) break; // No more tracks
+          allTracksData.addAll(pageTracks);
+        } catch (e) {
+          // If pagination fails, continue with what we have
+          break;
         }
       }
       
@@ -584,10 +601,48 @@ class TidalService {
         playlistData['uuid'] = playlistId;
       }
 
-      return PlaylistDetail.fromTidalJson(playlistData, tracksData);
+      return PlaylistDetail.fromTidalJson(playlistData, allTracksData);
     } catch (e) {
       throw TidalApiException('Failed to get playlist: $e');
     }
+  }
+
+  /// Helper to extract tracks from API response (handles various formats)
+  List<Map<String, dynamic>> _extractTracksFromResponse(
+    Map<String, dynamic> data, 
+    Map<String, dynamic> playlistData,
+  ) {
+    // Try multiple paths for tracks
+    List<dynamic> rawTracks = [];
+    if (data['items'] is List) {
+      rawTracks = data['items'] as List;
+    } else if (data['tracks'] is List) {
+      rawTracks = data['tracks'] as List;
+    } else if (data['tracks'] is Map && data['tracks']['items'] is List) {
+      rawTracks = data['tracks']['items'] as List;
+    } else if (playlistData['items'] is List) {
+      rawTracks = playlistData['items'] as List;
+    } else if (playlistData['tracks'] is List) {
+      rawTracks = playlistData['tracks'] as List;
+    }
+    
+    // Process tracks - handle nested wrappers
+    final List<Map<String, dynamic>> tracksData = [];
+    for (final item in rawTracks) {
+      if (item is Map<String, dynamic>) {
+        if (item['item'] is Map) {
+          tracksData.add(item['item'] as Map<String, dynamic>);
+        } else if (item['track'] is Map) {
+          tracksData.add(item['track'] as Map<String, dynamic>);
+        } else if (item['title'] != null) {
+          tracksData.add(item);
+        } else if (item['id'] != null) {
+          tracksData.add(item);
+        }
+      }
+    }
+    
+    return tracksData;
   }
 
   // ==================== TRACK & STREAMING ====================

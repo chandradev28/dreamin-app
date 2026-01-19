@@ -21,11 +21,15 @@ class Artist extends Equatable {
   });
 
   factory Artist.fromTidalJson(Map<String, dynamic> json) {
-    final picture = json['picture'] as String?;
-    String? imageUrl;
-    if (picture != null) {
-      final formattedPicture = picture.replaceAll('-', '/');
-      imageUrl = 'https://resources.tidal.com/images/$formattedPicture/640x640.jpg';
+    // Try direct coverUrl first (640x640 or 750x750), then construct from picture UUID
+    String? imageUrl = json['coverUrl'] as String?;
+    
+    if (imageUrl == null) {
+      final picture = json['picture'] as String?;
+      if (picture != null) {
+        final formattedPicture = picture.replaceAll('-', '/');
+        imageUrl = 'https://resources.tidal.com/images/$formattedPicture/640x640.jpg';
+      }
     }
 
     return Artist(
