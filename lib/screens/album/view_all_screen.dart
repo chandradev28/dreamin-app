@@ -3,8 +3,11 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/responsive.dart';
 import '../../models/models.dart';
+import '../../widgets/album_options_sheet.dart';
+import '../../widgets/playlist_options_sheet.dart';
 import '../album/album_detail_screen.dart';
 import '../artist/artist_detail_screen.dart';
+import '../playlist/playlist_detail_screen.dart';
 
 /// View All Screen - Grid display for albums/artists/playlists
 /// Shows 20 items max in a 2-column grid layout (TIDAL style)
@@ -128,7 +131,12 @@ class ViewAllScreen extends StatelessWidget {
         return _PlaylistGridItem(
           playlist: playlist,
           onTap: () {
-            // TODO: Navigate to playlist detail
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => PlaylistDetailScreen(playlistId: playlist.id, playlist: playlist),
+              ),
+            );
           },
         );
       },
@@ -177,29 +185,51 @@ class _AlbumGridItem extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Album Cover
+          // Album Cover with 3-dot overlay
           AspectRatio(
             aspectRatio: 1,
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(8),
-                color: AppTheme.surfaceColor,
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: album.coverArtUrl != null
-                  ? CachedNetworkImage(
-                      imageUrl: album.coverArtUrl!,
-                      fit: BoxFit.cover,
-                      placeholder: (_, __) => Container(
-                        color: AppTheme.surfaceColor,
-                        child: const Icon(Icons.album, color: AppTheme.tertiaryColor, size: 40),
+            child: Stack(
+              children: [
+                Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    color: AppTheme.surfaceColor,
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: album.coverArtUrl != null
+                      ? CachedNetworkImage(
+                          imageUrl: album.coverArtUrl!,
+                          fit: BoxFit.cover,
+                          width: double.infinity,
+                          height: double.infinity,
+                          placeholder: (_, __) => Container(
+                            color: AppTheme.surfaceColor,
+                            child: const Icon(Icons.album, color: AppTheme.tertiaryColor, size: 40),
+                          ),
+                          errorWidget: (_, __, ___) => Container(
+                            color: AppTheme.surfaceColor,
+                            child: const Icon(Icons.album, color: AppTheme.tertiaryColor, size: 40),
+                          ),
+                        )
+                      : const Icon(Icons.album, color: AppTheme.tertiaryColor, size: 40),
+                ),
+                // 3-dot menu overlay
+                Positioned(
+                  top: 6,
+                  right: 6,
+                  child: GestureDetector(
+                    onTap: () => AlbumOptionsSheet.show(context, album),
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.5),
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      errorWidget: (_, __, ___) => Container(
-                        color: AppTheme.surfaceColor,
-                        child: const Icon(Icons.album, color: AppTheme.tertiaryColor, size: 40),
-                      ),
-                    )
-                  : const Icon(Icons.album, color: AppTheme.tertiaryColor, size: 40),
+                      child: const Icon(Icons.more_horiz, color: Colors.white, size: 18),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 10),
@@ -341,29 +371,51 @@ class _PlaylistGridItem extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Playlist Cover
+          // Playlist Cover with 3-dot overlay
           AspectRatio(
             aspectRatio: 1,
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(8),
-                color: AppTheme.surfaceColor,
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: playlist.coverArtUrl != null
-                  ? CachedNetworkImage(
-                      imageUrl: playlist.coverArtUrl!,
-                      fit: BoxFit.cover,
-                      placeholder: (_, __) => Container(
-                        color: AppTheme.surfaceColor,
-                        child: const Icon(Icons.playlist_play, color: AppTheme.tertiaryColor, size: 40),
+            child: Stack(
+              children: [
+                Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    color: AppTheme.surfaceColor,
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: playlist.coverArtUrl != null
+                      ? CachedNetworkImage(
+                          imageUrl: playlist.coverArtUrl!,
+                          fit: BoxFit.cover,
+                          width: double.infinity,
+                          height: double.infinity,
+                          placeholder: (_, __) => Container(
+                            color: AppTheme.surfaceColor,
+                            child: const Icon(Icons.playlist_play, color: AppTheme.tertiaryColor, size: 40),
+                          ),
+                          errorWidget: (_, __, ___) => Container(
+                            color: AppTheme.surfaceColor,
+                            child: const Icon(Icons.playlist_play, color: AppTheme.tertiaryColor, size: 40),
+                          ),
+                        )
+                      : const Icon(Icons.playlist_play, color: AppTheme.tertiaryColor, size: 40),
+                ),
+                // 3-dot menu overlay
+                Positioned(
+                  top: 6,
+                  right: 6,
+                  child: GestureDetector(
+                    onTap: () => PlaylistOptionsSheet.show(context, playlist),
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.5),
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      errorWidget: (_, __, ___) => Container(
-                        color: AppTheme.surfaceColor,
-                        child: const Icon(Icons.playlist_play, color: AppTheme.tertiaryColor, size: 40),
-                      ),
-                    )
-                  : const Icon(Icons.playlist_play, color: AppTheme.tertiaryColor, size: 40),
+                      child: const Icon(Icons.more_horiz, color: Colors.white, size: 18),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 10),

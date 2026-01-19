@@ -14,36 +14,22 @@ class SettingsState {
   
   // Look and Feel
   final bool darkMode;
-  final bool showExplicitContent;
-  
-  // Integration
-  final bool lastFmScrobbling;
-  final bool discordRichPresence;
 
   const SettingsState({
     this.normalizeVolume = false,
     this.autoplay = true,
     this.darkMode = true,
-    this.showExplicitContent = true,
-    this.lastFmScrobbling = false,
-    this.discordRichPresence = false,
   });
 
   SettingsState copyWith({
     bool? normalizeVolume,
     bool? autoplay,
     bool? darkMode,
-    bool? showExplicitContent,
-    bool? lastFmScrobbling,
-    bool? discordRichPresence,
   }) {
     return SettingsState(
       normalizeVolume: normalizeVolume ?? this.normalizeVolume,
       autoplay: autoplay ?? this.autoplay,
       darkMode: darkMode ?? this.darkMode,
-      showExplicitContent: showExplicitContent ?? this.showExplicitContent,
-      lastFmScrobbling: lastFmScrobbling ?? this.lastFmScrobbling,
-      discordRichPresence: discordRichPresence ?? this.discordRichPresence,
     );
   }
 }
@@ -59,9 +45,6 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
       normalizeVolume: prefs.getBool('normalizeVolume') ?? false,
       autoplay: prefs.getBool('autoplay') ?? true,
       darkMode: prefs.getBool('darkMode') ?? true,
-      showExplicitContent: prefs.getBool('showExplicitContent') ?? true,
-      lastFmScrobbling: prefs.getBool('lastFmScrobbling') ?? false,
-      discordRichPresence: prefs.getBool('discordRichPresence') ?? false,
     );
   }
 
@@ -70,9 +53,6 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     await prefs.setBool('normalizeVolume', state.normalizeVolume);
     await prefs.setBool('autoplay', state.autoplay);
     await prefs.setBool('darkMode', state.darkMode);
-    await prefs.setBool('showExplicitContent', state.showExplicitContent);
-    await prefs.setBool('lastFmScrobbling', state.lastFmScrobbling);
-    await prefs.setBool('discordRichPresence', state.discordRichPresence);
   }
 
   void setNormalizeVolume(bool value) {
@@ -89,21 +69,6 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     state = state.copyWith(darkMode: value);
     _saveSettings();
   }
-
-  void setShowExplicitContent(bool value) {
-    state = state.copyWith(showExplicitContent: value);
-    _saveSettings();
-  }
-
-  void setLastFmScrobbling(bool value) {
-    state = state.copyWith(lastFmScrobbling: value);
-    _saveSettings();
-  }
-
-  void setDiscordRichPresence(bool value) {
-    state = state.copyWith(discordRichPresence: value);
-    _saveSettings();
-  }
 }
 
 final settingsProvider = StateNotifierProvider<SettingsNotifier, SettingsState>((ref) {
@@ -111,17 +76,14 @@ final settingsProvider = StateNotifierProvider<SettingsNotifier, SettingsState>(
 });
 
 // ============================================================================
-// SETTINGS SCREEN
+// MAIN SETTINGS SCREEN - Category Navigation
 // ============================================================================
 
-class SettingsScreen extends ConsumerWidget {
+class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final settings = ref.watch(settingsProvider);
-    final settingsNotifier = ref.read(settingsProvider.notifier);
-
+  Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
       appBar: AppBar(
@@ -141,13 +103,101 @@ class SettingsScreen extends ConsumerWidget {
         centerTitle: false,
       ),
       body: ListView(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        children: [
+          // Playback Section
+          _SettingsCategoryTile(
+            icon: Icons.play_circle_outline,
+            title: 'Playback',
+            subtitle: 'Volume normalization, autoplay',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const PlaybackSettingsScreen()),
+              );
+            },
+          ),
+          
+          const SizedBox(height: 8),
+          
+          // Look and Feel Section
+          _SettingsCategoryTile(
+            icon: Icons.palette_outlined,
+            title: 'Look and Feel',
+            subtitle: 'Theme and display preferences',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const LookAndFeelSettingsScreen()),
+              );
+            },
+          ),
+          
+          const SizedBox(height: 32),
+          
+          // App Info Section
+          const Divider(color: AppTheme.surfaceLight),
+          const SizedBox(height: 16),
+          
+          Center(
+            child: Column(
+              children: [
+                Text(
+                  'Dreamin',
+                  style: AppTheme.titleMedium.copyWith(
+                    color: AppTheme.secondaryColor,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Version 1.0.0',
+                  style: AppTheme.bodySmall.copyWith(
+                    color: AppTheme.secondaryColor.withOpacity(0.7),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// PLAYBACK SETTINGS SCREEN
+// ============================================================================
+
+class PlaybackSettingsScreen extends ConsumerWidget {
+  const PlaybackSettingsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(settingsProvider);
+    final settingsNotifier = ref.read(settingsProvider.notifier);
+
+    return Scaffold(
+      backgroundColor: AppTheme.backgroundColor,
+      appBar: AppBar(
+        backgroundColor: AppTheme.backgroundColor,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(
+          'Playback',
+          style: AppTheme.titleLarge.copyWith(
+            fontWeight: FontWeight.w600,
+            color: Colors.white,
+          ),
+        ),
+        centerTitle: false,
+      ),
+      body: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 16),
         children: [
           const SizedBox(height: 16),
-          
-          // ==================== PLAYBACK SECTION ====================
-          _SectionHeader(title: 'Playback'),
-          const SizedBox(height: 8),
           
           _SettingsTile(
             title: 'Normalize volume',
@@ -156,6 +206,8 @@ class SettingsScreen extends ConsumerWidget {
             onChanged: settingsNotifier.setNormalizeVolume,
           ),
           
+          const Divider(color: AppTheme.surfaceLight, height: 1),
+          
           _SettingsTile(
             title: 'Autoplay',
             subtitle: 'Play similar songs after the last track in your queue ends.',
@@ -163,44 +215,53 @@ class SettingsScreen extends ConsumerWidget {
             onChanged: settingsNotifier.setAutoplay,
           ),
           
-          const SizedBox(height: 24),
-          
-          // ==================== LOOK AND FEEL SECTION ====================
-          _SectionHeader(title: 'Look and Feel'),
-          const SizedBox(height: 8),
+          const SizedBox(height: 48),
+        ],
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// LOOK AND FEEL SETTINGS SCREEN
+// ============================================================================
+
+class LookAndFeelSettingsScreen extends ConsumerWidget {
+  const LookAndFeelSettingsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(settingsProvider);
+    final settingsNotifier = ref.read(settingsProvider.notifier);
+
+    return Scaffold(
+      backgroundColor: AppTheme.backgroundColor,
+      appBar: AppBar(
+        backgroundColor: AppTheme.backgroundColor,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(
+          'Look and Feel',
+          style: AppTheme.titleLarge.copyWith(
+            fontWeight: FontWeight.w600,
+            color: Colors.white,
+          ),
+        ),
+        centerTitle: false,
+      ),
+      body: ListView(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        children: [
+          const SizedBox(height: 16),
           
           _SettingsTile(
             title: 'Dark mode',
             subtitle: 'Use dark theme throughout the app.',
             value: settings.darkMode,
             onChanged: settingsNotifier.setDarkMode,
-          ),
-          
-          _SettingsTile(
-            title: 'Show explicit content',
-            subtitle: 'Allow content labeled with the E tag.',
-            value: settings.showExplicitContent,
-            onChanged: settingsNotifier.setShowExplicitContent,
-          ),
-          
-          const SizedBox(height: 24),
-          
-          // ==================== INTEGRATION SECTION ====================
-          _SectionHeader(title: 'Integration'),
-          const SizedBox(height: 8),
-          
-          _SettingsTile(
-            title: 'Last.fm scrobbling',
-            subtitle: 'Share your listening activity with Last.fm.',
-            value: settings.lastFmScrobbling,
-            onChanged: settingsNotifier.setLastFmScrobbling,
-          ),
-          
-          _SettingsTile(
-            title: 'Discord Rich Presence',
-            subtitle: 'Show currently playing track on Discord.',
-            value: settings.discordRichPresence,
-            onChanged: settingsNotifier.setDiscordRichPresence,
           ),
           
           const SizedBox(height: 48),
@@ -214,20 +275,64 @@ class SettingsScreen extends ConsumerWidget {
 // WIDGETS
 // ============================================================================
 
-class _SectionHeader extends StatelessWidget {
+class _SettingsCategoryTile extends StatelessWidget {
+  final IconData icon;
   final String title;
+  final String subtitle;
+  final VoidCallback onTap;
 
-  const _SectionHeader({required this.title});
+  const _SettingsCategoryTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 8, bottom: 4),
-      child: Text(
-        title,
-        style: AppTheme.headlineSmall.copyWith(
-          fontWeight: FontWeight.bold,
-          color: Colors.white,
+    return Material(
+      color: AppTheme.surfaceColor,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppTheme.surfaceLight,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, color: Colors.white, size: 24),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: AppTheme.bodyLarge.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: AppTheme.bodySmall.copyWith(
+                        color: AppTheme.secondaryColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: AppTheme.secondaryColor),
+            ],
+          ),
         ),
       ),
     );
@@ -250,7 +355,7 @@ class _SettingsTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
+      padding: const EdgeInsets.symmetric(vertical: 16),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
