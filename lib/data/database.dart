@@ -352,7 +352,7 @@ class AppDatabase extends _$AppDatabase {
   }
 
   /// Get top artist data with full info (for artists screen)
-  Future<List<ArtistFrequencyEntry>> getTopArtistData({int limit = 50}) async {
+  Future<List<ArtistFrequencyData>> getTopArtistData({int limit = 50}) async {
     return (select(artistFrequency)
       ..orderBy([(t) => OrderingTerm.desc(t.playCount)])
       ..limit(limit))
