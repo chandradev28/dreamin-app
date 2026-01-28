@@ -225,7 +225,6 @@ class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
     Responsive responsive,
   ) {
     final playerState = ref.watch(playerProvider);
-    final favState = ref.watch(favoritesProvider);
 
     return CustomScrollView(
       slivers: [
@@ -239,6 +238,25 @@ class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
             onArtistTap: () => _navigateToArtist(context, albumDetail),
             onPlay: () => _playAlbum(ref, albumDetail, shuffle: false),
             onShuffle: () => _playAlbum(ref, albumDetail, shuffle: true),
+            isAlbumSaved: ref.watch(isAlbumSavedProvider(albumDetail.id)),
+            onToggleSave: () {
+              // Create Album from AlbumDetail for saving
+              final album = Album(
+                id: albumDetail.id,
+                title: albumDetail.title,
+                artist: albumDetail.artist,
+                artistId: albumDetail.artistId,
+                coverArtUrl: albumDetail.coverArtUrl,
+                year: albumDetail.year,
+                trackCount: albumDetail.trackCount,
+                source: albumDetail.source,
+                quality: albumDetail.quality,
+                duration: albumDetail.duration,
+                isExplicit: albumDetail.isExplicit,
+                albumType: albumDetail.albumType,
+              );
+              ref.read(savedAlbumsProvider.notifier).toggleAlbum(album);
+            },
           ),
         ),
 
@@ -404,12 +422,16 @@ class _AlbumHeader extends StatelessWidget {
   final VoidCallback onArtistTap;
   final VoidCallback onPlay;
   final VoidCallback onShuffle;
+  final bool isAlbumSaved;
+  final VoidCallback onToggleSave;
 
   const _AlbumHeader({
     required this.albumDetail,
     required this.onArtistTap,
     required this.onPlay,
     required this.onShuffle,
+    required this.isAlbumSaved,
+    required this.onToggleSave,
   });
 
   @override
@@ -517,7 +539,12 @@ class _AlbumHeader extends StatelessWidget {
             children: [
               _ActionIcon(icon: Icons.download_outlined, label: 'Download', onTap: () {}),
               const SizedBox(width: 24),
-              _ActionIcon(icon: Icons.add, label: 'Add', onTap: () {}),
+              _ActionIcon(
+                icon: isAlbumSaved ? Icons.check : Icons.add,
+                label: isAlbumSaved ? 'Added' : 'Add',
+                onTap: onToggleSave,
+                isActive: isAlbumSaved,
+              ),
               const SizedBox(width: 24),
               _ActionIcon(icon: Icons.share_outlined, label: 'Share', onTap: () {}),
             ],
@@ -545,18 +572,25 @@ class _ActionIcon extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
+  final bool isActive;
 
-  const _ActionIcon({required this.icon, required this.label, required this.onTap});
+  const _ActionIcon({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.isActive = false,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final color = isActive ? AppTheme.primaryColor : AppTheme.secondaryColor;
     return GestureDetector(
       onTap: onTap,
       child: Column(
         children: [
-          Icon(icon, color: AppTheme.secondaryColor, size: 24),
+          Icon(icon, color: color, size: 24),
           const SizedBox(height: 4),
-          Text(label, style: AppTheme.labelSmall.copyWith(color: AppTheme.secondaryColor)),
+          Text(label, style: AppTheme.labelSmall.copyWith(color: color)),
         ],
       ),
     );

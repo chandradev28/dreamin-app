@@ -131,6 +131,7 @@ class TrackOptionsSheet extends ConsumerWidget {
           _OptionTile(
             icon: isFavorite ? Icons.favorite : Icons.favorite_border,
             label: isFavorite ? 'Remove from Collection' : 'Add to My Collection',
+            iconColor: isFavorite ? AppTheme.primaryColor : null,
             onTap: () {
               ref.read(favoritesProvider.notifier).toggleFavorite(track);
               Navigator.pop(context);
@@ -304,11 +305,13 @@ class _OptionTile extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
+  final Color? iconColor;
 
   const _OptionTile({
     required this.icon,
     required this.label,
     required this.onTap,
+    this.iconColor,
   });
 
   @override
@@ -319,7 +322,7 @@ class _OptionTile extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(
           children: [
-            Icon(icon, color: Colors.white, size: 24),
+            Icon(icon, color: iconColor ?? Colors.white, size: 24),
             const SizedBox(width: 16),
             Text(label, style: AppTheme.bodyLarge),
           ],

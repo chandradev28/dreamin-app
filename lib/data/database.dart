@@ -86,6 +86,24 @@ class ArtistFrequency extends Table {
   DateTimeColumn get lastPlayedAt => dateTime().nullable()();
 }
 
+/// Saved albums table (Library)
+class SavedAlbums extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get albumId => text()();
+  IntColumn get source => integer()();
+  TextColumn get albumJson => text()();
+  DateTimeColumn get addedAt => dateTime()();
+}
+
+/// Saved playlists table (Library)
+class SavedPlaylists extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get playlistId => text()();
+  IntColumn get source => integer()();
+  TextColumn get playlistJson => text()();
+  DateTimeColumn get addedAt => dateTime()();
+}
+
 @DriftDatabase(tables: [
   HistoryEntries,
   Favorites,
@@ -95,12 +113,31 @@ class ArtistFrequency extends Table {
   PlayCounts,
   GenreFrequency,
   ArtistFrequency,
+  SavedAlbums,
+  SavedPlaylists,
 ])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 3;
+
+  @override
+  MigrationStrategy get migration {
+    return MigrationStrategy(
+      onCreate: (Migrator m) async {
+        await m.createAll();
+      },
+      onUpgrade: (Migrator m, int from, int to) async {
+        if (from < 2) {
+          await m.createTable(savedAlbums);
+        }
+        if (from < 3) {
+          await m.createTable(savedPlaylists);
+        }
+      },
+    );
+  }
 
   // ==================== HISTORY ====================
 
@@ -439,6 +476,87 @@ class AppDatabase extends _$AppDatabase {
 
   Future<List<CachedTrack>> getAllCachedTracks() async {
     return select(cachedTracks).get();
+  }
+
+  // ==================== SAVED ALBUMS ====================
+
+  Future<void> saveAlbum({
+    required String albumId,
+    required int source,
+    required String albumJson,
+  }) async {
+    // Check if already saved
+    final existing = await (select(savedAlbums)
+      ..where((t) => t.albumId.equals(albumId) & t.source.equals(source)))
+      .getSingleOrNull();
+    
+    if (existing == null) {
+      await into(savedAlbums).insert(SavedAlbumsCompanion.insert(
+        albumId: albumId,
+        source: source,
+        albumJson: albumJson,
+        addedAt: DateTime.now(),
+      ));
+    }
+  }
+
+  Future<void> removeSavedAlbum(String albumId, int source) async {
+    await (delete(savedAlbums)
+      ..where((t) => t.albumId.equals(albumId) & t.source.equals(source)))
+      .go();
+  }
+
+  Future<bool> isAlbumSaved(String albumId, int source) async {
+    final result = await (select(savedAlbums)
+      ..where((t) => t.albumId.equals(albumId) & t.source.equals(source)))
+      .getSingleOrNull();
+    return result != null;
+  }
+
+  Future<List<SavedAlbum>> getAllSavedAlbums() async {
+    return (select(savedAlbums)
+      ..orderBy([(t) => OrderingTerm.desc(t.addedAt)]))
+      .get();
+  }
+
+  // ==================== SAVED PLAYLISTS ====================
+
+  Future<void> savePlaylist({
+    required String playlistId,
+    required int source,
+    required String playlistJson,
+  }) async {
+    final existing = await (select(savedPlaylists)
+      ..where((t) => t.playlistId.equals(playlistId) & t.source.equals(source)))
+      .getSingleOrNull();
+    
+    if (existing == null) {
+      await into(savedPlaylists).insert(SavedPlaylistsCompanion.insert(
+        playlistId: playlistId,
+        source: source,
+        playlistJson: playlistJson,
+        addedAt: DateTime.now(),
+      ));
+    }
+  }
+
+  Future<void> removeSavedPlaylist(String playlistId, int source) async {
+    await (delete(savedPlaylists)
+      ..where((t) => t.playlistId.equals(playlistId) & t.source.equals(source)))
+      .go();
+  }
+
+  Future<bool> isPlaylistSaved(String playlistId, int source) async {
+    final result = await (select(savedPlaylists)
+      ..where((t) => t.playlistId.equals(playlistId) & t.source.equals(source)))
+      .getSingleOrNull();
+    return result != null;
+  }
+
+  Future<List<SavedPlaylist>> getAllSavedPlaylists() async {
+    return (select(savedPlaylists)
+      ..orderBy([(t) => OrderingTerm.desc(t.addedAt)]))
+      .get();
   }
 }
 

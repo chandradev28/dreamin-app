@@ -108,6 +108,21 @@ class Album extends Equatable {
     );
   }
 
+  /// Convert to JSON for storage
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'title': title,
+      'artists': [{'id': artistId, 'name': artist}],
+      'cover': coverArtUrl,
+      'releaseDate': year != null ? '$year-01-01' : null,
+      'numberOfTracks': trackCount,
+      'duration': duration?.inSeconds,
+      'explicit': isExplicit,
+      'type': albumType.name,
+    };
+  }
+
   @override
   List<Object?> get props => [id, source, albumType];
 }

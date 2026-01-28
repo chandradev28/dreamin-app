@@ -97,6 +97,22 @@ class Playlist extends Equatable {
     );
   }
 
+  /// Convert to JSON for storage
+  Map<String, dynamic> toJson() {
+    return {
+      'uuid': id,
+      'title': title,
+      'description': description,
+      'squareImage': coverArtUrl,
+      'numberOfTracks': trackCount,
+      'duration': duration?.inSeconds,
+      'creator': creatorName != null ? {'name': creatorName} : null,
+      'popularity': likesCount,
+      'created': createdAt?.toIso8601String(),
+      'lastUpdated': updatedAt?.toIso8601String(),
+    };
+  }
+
   @override
   List<Object?> get props => [id, source];
 }

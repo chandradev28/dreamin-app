@@ -157,6 +157,28 @@ class PlaylistOptionsSheet extends ConsumerWidget {
             },
           ),
 
+          // Add to collection (toggleable)
+          Builder(
+            builder: (context) {
+              final isSaved = ref.watch(isPlaylistSavedProvider(playlist.id));
+              return _OptionTile(
+                icon: isSaved ? Icons.check : Icons.add,
+                label: isSaved ? 'Remove from collection' : 'Add to collection',
+                iconColor: isSaved ? AppTheme.primaryColor : null,
+                onTap: () {
+                  ref.read(savedPlaylistsProvider.notifier).togglePlaylist(playlist);
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(isSaved ? 'Removed from collection' : 'Added to collection'),
+                      backgroundColor: AppTheme.surfaceLight,
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+
           _OptionTile(
             icon: Icons.queue_music,
             label: 'View playlist',
@@ -193,17 +215,19 @@ class _OptionTile extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
+  final Color? iconColor;
 
   const _OptionTile({
     required this.icon,
     required this.label,
     required this.onTap,
+    this.iconColor,
   });
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      leading: Icon(icon, color: Colors.white, size: 24),
+      leading: Icon(icon, color: iconColor ?? Colors.white, size: 24),
       title: Text(label, style: AppTheme.bodyLarge),
       onTap: onTap,
       contentPadding: const EdgeInsets.symmetric(horizontal: 20),

@@ -159,6 +159,28 @@ class AlbumOptionsSheet extends ConsumerWidget {
             },
           ),
 
+          // Add to collection (toggleable)
+          Builder(
+            builder: (context) {
+              final isAlbumSaved = ref.watch(isAlbumSavedProvider(album.id));
+              return _OptionTile(
+                icon: isAlbumSaved ? Icons.check : Icons.add,
+                label: isAlbumSaved ? 'Remove from collection' : 'Add to collection',
+                iconColor: isAlbumSaved ? AppTheme.primaryColor : null,
+                onTap: () {
+                  ref.read(savedAlbumsProvider.notifier).toggleAlbum(album);
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(isAlbumSaved ? 'Removed from collection' : 'Added to collection'),
+                      backgroundColor: AppTheme.surfaceLight,
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+
           _OptionTile(
             icon: Icons.album_outlined,
             label: 'View album',
@@ -211,17 +233,19 @@ class _OptionTile extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
+  final Color? iconColor;
 
   const _OptionTile({
     required this.icon,
     required this.label,
     required this.onTap,
+    this.iconColor,
   });
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      leading: Icon(icon, color: Colors.white, size: 24),
+      leading: Icon(icon, color: iconColor ?? Colors.white, size: 24),
       title: Text(label, style: AppTheme.bodyLarge),
       onTap: onTap,
       contentPadding: const EdgeInsets.symmetric(horizontal: 20),

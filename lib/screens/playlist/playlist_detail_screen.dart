@@ -337,11 +337,36 @@ class PlaylistDetailScreen extends ConsumerWidget {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      _ActionIconButton(
-                        icon: Icons.favorite_border,
-                        label: 'Add',
-                        onTap: () {
-                          // TODO: Add to favorites
+                      Builder(
+                        builder: (context) {
+                          // We need Consumer for watching provider
+                          return Consumer(
+                            builder: (context, ref, _) {
+                              final isSaved = ref.watch(isPlaylistSavedProvider(playlistDetail.id));
+                              return _ActionIconButton(
+                                icon: isSaved ? Icons.check : Icons.add,
+                                label: isSaved ? 'Added' : 'Add',
+                                isActive: isSaved,
+                                onTap: () {
+                                  // Create Playlist from PlaylistDetail
+                                  final playlist = Playlist(
+                                    id: playlistDetail.id,
+                                    title: playlistDetail.title,
+                                    description: playlistDetail.description,
+                                    coverArtUrl: playlistDetail.coverArtUrl,
+                                    trackCount: playlistDetail.trackCount,
+                                    duration: playlistDetail.duration,
+                                    creatorName: playlistDetail.creatorName,
+                                    source: playlistDetail.source,
+                                    likesCount: playlistDetail.likesCount,
+                                    createdAt: playlistDetail.createdAt,
+                                    updatedAt: playlistDetail.updatedAt,
+                                  );
+                                  ref.read(savedPlaylistsProvider.notifier).togglePlaylist(playlist);
+                                },
+                              );
+                            },
+                          );
                         },
                       ),
                       const SizedBox(width: 48),
@@ -432,26 +457,29 @@ class _ActionIconButton extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
+  final bool isActive;
 
   const _ActionIconButton({
     required this.icon,
     required this.label,
     required this.onTap,
+    this.isActive = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final color = isActive ? AppTheme.primaryColor : Colors.white;
     return GestureDetector(
       onTap: onTap,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: Colors.white, size: 26),
+          Icon(icon, color: color, size: 26),
           const SizedBox(height: 6),
           Text(
             label,
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: color,
               fontSize: 11,
             ),
           ),
