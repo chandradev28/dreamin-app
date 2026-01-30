@@ -674,7 +674,8 @@ class FavoritesNotifier extends StateNotifier<FavoritesState> {
       final tracks = favorites.map((f) {
         try {
           final json = jsonDecode(f.trackJson) as Map<String, dynamic>;
-          return Track.fromTidalJson(json);
+          // Use fromJson since we save with toJson (not TIDAL API format)
+          return Track.fromJson(json);
         } catch (_) {
           return null;
         }

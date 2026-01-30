@@ -59,22 +59,31 @@ class SubsonicConfig {
   };
 }
 
-/// Qobuz API endpoints (scaffolded for future - 24-bit hi-res)
+/// Qobuz API endpoints (24-bit Hi-Res streaming via proxies)
+/// Quality 7 = 24-bit FLAC (highest quality)
 class QobuzEndpoints {
-  /// Primary endpoints
-  static const List<String> endpoints = [
-    'https://squid.lucida.to',
-    'https://dab.lucida.to',
-    'https://dabmusic.lucida.to',
+  /// Primary endpoints - ordered by reliability
+  /// dab and dabmusic have full search + stream, squid is stream only
+  static const List<String> searchEndpoints = [
+    'https://dab.yeet.su',
+    'https://dabmusic.xyz',
+  ];
+  
+  /// Stream endpoints (can use any of these with track_id)
+  static const List<String> streamEndpoints = [
+    'https://dab.yeet.su',
+    'https://dabmusic.xyz',
+    'https://qobuz.squid.wtf',  // Stream only, no search
   ];
 
-  static const String searchPath = '/api/search';
-  static const String albumPath = '/api/album';
-  static const String artistPath = '/api/artist';
-  static const String trackPath = '/api/track';
-  static const String streamPath = '/api/stream';
+  // API paths
+  static const String searchPath = '/api/search';     // ?q=query
+  static const String streamPath = '/api/stream';     // ?track_id=&quality=7 (dab/dabmusic)
+  static const String downloadPath = '/api/download-music';  // ?track_id= (squid)
   
-  // Qobuz delivers TRUE 24-bit/192kHz
-  static const String quality24bit = 'HI_RES_24';
-  static const String quality16bit = 'HI_RES';
+  // Quality levels for stream endpoint
+  static const int quality24bit = 7;   // 24-bit/up to 192kHz FLAC
+  static const int quality16bit = 6;   // 16-bit/44.1kHz FLAC (CD quality)
+  static const int quality320mp3 = 5;  // 320kbps MP3
 }
+

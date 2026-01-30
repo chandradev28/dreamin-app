@@ -57,14 +57,6 @@ class LibraryScreen extends ConsumerWidget {
                             );
                           },
                         ),
-                        IconButton(
-                          icon: const Icon(Icons.search),
-                          iconSize: 24,
-                          color: Colors.white,
-                          onPressed: () {
-                            // Search library
-                          },
-                        ),
                       ],
                     ),
                   ],

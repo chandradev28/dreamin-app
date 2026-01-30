@@ -475,12 +475,18 @@ class TidalService {
 
   /// Get artist details with albums and tracks
   Future<ArtistDetail> getArtist(String artistId) async {
+    // Validate artistId is a valid numeric ID
+    final parsedId = int.tryParse(artistId);
+    if (parsedId == null) {
+      throw TidalApiException('Invalid artist ID: $artistId');
+    }
+    
     try {
       // First get basic artist info with ?id= to get picture/cover
       final artistResponse = await _executeWithFallback((baseUrl) {
         return _dio.get(
           '$baseUrl${TidalEndpoints.artistPath}',
-          queryParameters: {'id': int.parse(artistId)},
+          queryParameters: {'id': parsedId},
         );
       });
 
@@ -499,7 +505,7 @@ class TidalService {
       final response = await _executeWithFallback((baseUrl) {
         return _dio.get(
           '$baseUrl${TidalEndpoints.artistPath}',
-          queryParameters: {'f': int.parse(artistId)},
+          queryParameters: {'f': parsedId},
         );
       });
 

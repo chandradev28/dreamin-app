@@ -175,13 +175,27 @@ class TrackOptionsSheet extends ConsumerWidget {
             label: 'Go to artist',
             onTap: () {
               Navigator.pop(context);
-              if (track.artistId != null && track.artistId!.isNotEmpty) {
+              // Check if artistId is a valid numeric ID (TIDAL IDs are numeric)
+              final hasValidId = track.artistId.isNotEmpty && 
+                  int.tryParse(track.artistId) != null;
+              
+              if (hasValidId) {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (context) => ArtistDetailScreen(
-                      artistId: track.artistId!,
+                      artistId: track.artistId,
                     ),
+                  ),
+                );
+              } else {
+                // Show message if artist not available
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Artist page not available for this track'),
+                    backgroundColor: AppTheme.surfaceLight,
+                    behavior: SnackBarBehavior.floating,
+                    duration: const Duration(seconds: 2),
                   ),
                 );
               }

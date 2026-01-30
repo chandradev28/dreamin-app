@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'dart:convert';
 import '../../core/theme/app_theme.dart';
 import '../../providers/providers.dart';
 import '../../models/models.dart';
@@ -77,17 +76,9 @@ class LibraryTracksScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildTracksList(List<dynamic> favorites, WidgetRef ref, BuildContext context) {
-    // Parse all tracks first
-    final tracks = <Track>[];
-    for (final fav in favorites) {
-      try {
-        final trackData = jsonDecode(fav.trackJson as String);
-        tracks.add(Track.fromJson(trackData));
-      } catch (e) {
-        // Skip invalid entries
-      }
-    }
+  Widget _buildTracksList(List<Track> favorites, WidgetRef ref, BuildContext context) {
+    // Tracks are already parsed by FavoritesNotifier
+    final tracks = favorites;
 
     return ListView.builder(
       padding: const EdgeInsets.symmetric(vertical: 8),
