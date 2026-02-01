@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import '../core/constants/api_constants.dart';
 import '../models/models.dart';
+import 'music_service.dart';
 
 /// Audio Quality Levels for TIDAL
 enum TidalQuality {
@@ -1037,4 +1038,111 @@ class TidalApiException implements Exception {
 
   @override
   String toString() => 'TidalApiException: $message';
+}
+
+// ============================================================================
+// TIDAL SERVICE IMPL - Implements MusicService interface
+// ============================================================================
+
+/// TidalServiceImpl - Wrapper that implements MusicService interface
+/// Delegates to the existing TidalService for actual API calls
+class TidalServiceImpl implements MusicService {
+  final TidalService _service = TidalService();
+
+  @override
+  MusicSource get source => MusicSource.tidal;
+
+  // ============== SEARCH ==============
+
+  @override
+  Future<SearchResult> search(String query, {int limit = 30}) async {
+    return _service.search(query, limit: limit);
+  }
+
+  @override
+  Future<List<Track>> searchTracks(String query, {int limit = 30}) async {
+    return _service.searchTracks(query, limit: limit);
+  }
+
+  @override
+  Future<List<Album>> searchAlbums(String query, {int limit = 20}) async {
+    return _service.searchAlbums(query, limit: limit);
+  }
+
+  @override
+  Future<List<Artist>> searchArtists(String query, {int limit = 20}) async {
+    return _service.searchArtists(query, limit: limit);
+  }
+
+  @override
+  Future<List<Playlist>> searchPlaylists(String query, {int limit = 20}) async {
+    return _service.searchPlaylists(query, limit: limit);
+  }
+
+  // ============== DETAILS ==============
+
+  @override
+  Future<AlbumDetail?> getAlbum(String id) async {
+    final result = await _service.getAlbum(id);
+    return result;
+  }
+
+  @override
+  Future<ArtistDetail?> getArtist(String id) async {
+    final result = await _service.getArtist(id);
+    return result;
+  }
+
+  @override
+  Future<PlaylistDetail?> getPlaylist(String id) async {
+    final result = await _service.getPlaylist(id);
+    return result;
+  }
+
+  // ============== STREAMING ==============
+
+  @override
+  Future<String?> getStreamUrl(String trackId) async {
+    return _service.getStreamUrl(trackId);
+  }
+
+  @override
+  String getCoverArt(String? id, {int size = 300}) {
+    if (id == null || id.isEmpty) return '';
+    // TIDAL cover URLs are typically returned directly in the API response
+    // This is for when we only have an ID
+    return id.startsWith('http') ? id : '';
+  }
+
+  // ============== DISCOVERY ==============
+
+  @override
+  Future<List<Album>> getNewAlbums({int limit = 20}) async {
+    return _service.getNewAlbums(limit: limit);
+  }
+
+  @override
+  Future<List<Playlist>> getPopularPlaylists({int limit = 20}) async {
+    return _service.getPopularPlaylists(limit: limit);
+  }
+
+  @override
+  Future<List<Track>> getRandomTracks({int limit = 20}) async {
+    return _service.getTrendingTracks(limit: limit);
+  }
+
+  // ============== TIDAL-SPECIFIC (keep access to underlying service) ==============
+
+  /// Get the underlying TidalService for TIDAL-specific operations
+  TidalService get tidalService => _service;
+
+  /// Get stream info with quality options (TIDAL-specific)
+  Future<StreamInfo?> getStreamInfo(String trackId, {TidalQuality? quality}) {
+    return _service.getStreamInfo(trackId, quality: quality);
+  }
+
+  /// Get lyrics (TIDAL-specific)
+  Future<Lyrics?> getLyrics(String trackId) {
+    return _service.getLyrics(trackId);
+  }
 }

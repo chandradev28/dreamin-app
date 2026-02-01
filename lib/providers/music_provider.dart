@@ -2,9 +2,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
 import '../data/database.dart';
 import '../services/tidal_service.dart';
+import '../services/music_service.dart';
 import '../services/lastfm_service.dart';
 import '../services/recommendation_service.dart';
 import '../models/models.dart';
+import 'source_provider.dart';
 
 /// Database Provider
 final databaseProvider = Provider<AppDatabase>((ref) {
@@ -63,11 +65,11 @@ class SearchState {
   }
 }
 
-/// Search Notifier
+/// Search Notifier - Uses the active music source
 class SearchNotifier extends StateNotifier<SearchState> {
-  final TidalService _tidalService;
+  final MusicService _musicService;
 
-  SearchNotifier(this._tidalService) : super(const SearchState());
+  SearchNotifier(this._musicService) : super(const SearchState());
 
   Future<void> search(String query) async {
     if (query.isEmpty) {
@@ -78,7 +80,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
     state = state.copyWith(isLoading: true, query: query, error: null);
 
     try {
-      final result = await _tidalService.search(query);
+      final result = await _musicService.search(query);
       state = state.copyWith(isLoading: false, result: result);
     } catch (e) {
       state = state.copyWith(isLoading: false, error: e.toString());
@@ -90,10 +92,10 @@ class SearchNotifier extends StateNotifier<SearchState> {
   }
 }
 
-/// Search Provider
+/// Search Provider - Uses the active music source
 final searchProvider = StateNotifierProvider<SearchNotifier, SearchState>((ref) {
-  final tidalService = ref.watch(tidalServiceProvider);
-  return SearchNotifier(tidalService);
+  final musicService = ref.watch(musicServiceProvider);
+  return SearchNotifier(musicService);
 });
 
 // ============================================================================
@@ -161,15 +163,15 @@ class HomeDataState {
 
 /// Home Data Notifier - Personalized content loading
 /// Uses LOCAL DATABASE for personalization when user has history
-/// Falls back to Last.fm/Tidal for new users
+/// Falls back to active music source for new users
 class HomeDataNotifier extends StateNotifier<HomeDataState> {
-  final TidalService _tidalService;
+  final MusicService _musicService;
   final LastFmService _lastFmService;
   final AppDatabase _database;
   final RecommendationService _recommendationService;
 
   HomeDataNotifier(
-    this._tidalService, 
+    this._musicService, 
     this._lastFmService,
     this._database,
     this._recommendationService,
@@ -216,17 +218,17 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
 
     // PARALLEL: All API searches run concurrently
     final albumByArtistFutures = topArtistNames.take(5).map((name) =>
-      _tidalService.searchAlbums(name, limit: 3)
+      _musicService.searchAlbums(name, limit: 3)
         .catchError((_) => <Album>[])
     ).toList();
 
     final albumByGenreFutures = topGenres.take(3).map((genre) =>
-      _tidalService.searchAlbums('$genre new 2024', limit: 4)
+      _musicService.searchAlbums('$genre new 2024', limit: 4)
         .catchError((_) => <Album>[])
     ).toList();
 
     final playlistByGenreFutures = topGenres.take(2).map((genre) =>
-      _tidalService.searchPlaylists('$genre playlist', limit: 5)
+      _musicService.searchPlaylists('$genre playlist', limit: 5)
         .catchError((_) => <Playlist>[])
     ).toList();
 
@@ -235,7 +237,7 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
       Future.wait(albumByArtistFutures),
       Future.wait(albumByGenreFutures),
       Future.wait(playlistByGenreFutures),
-      _tidalService.searchPlaylists('songs of the year', limit: 10)
+      _musicService.searchPlaylists('songs of the year', limit: 10)
         .catchError((_) => <Playlist>[]),
     ]);
 
@@ -267,133 +269,41 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
   }
 
   /// Load discovery content for new users (no history)
-  /// OPTIMIZED: Uses parallel API calls instead of sequential loops
+  /// SIMPLIFIED: Direct TIDAL searches only - fast and reliable
   Future<void> _loadDiscoveryData() async {
     try {
-      // PHASE 1: Load TIDAL content + Last.fm chart data in parallel
-      final phase1Results = await Future.wait([
-        // 1. Songs of the Year playlists (TIDAL)
-        _tidalService.searchPlaylists('songs of the year', limit: 10)
-            .catchError((_) => <Playlist>[]),
-        // 2. Popular playlists (TIDAL)
-        _tidalService.searchPlaylists('top hits', limit: 10)
-            .catchError((_) => <Playlist>[]),
-        // 3. Get chart top tracks from Last.fm (for discovery)
-        _lastFmService.getChartTopTracks(limit: 20)
-            .catchError((_) => <LastFmTrack>[]),
-        // 4. Get chart top artists from Last.fm
-        _lastFmService.getChartTopArtists(limit: 10)
-            .catchError((_) => <LastFmArtist>[]),
-        // 5. Get top tags/genres from Last.fm
-        _lastFmService.getTopTags(limit: 20)
-            .catchError((_) => <String>[]),
-      ]);
-
-      final songsOfYear = phase1Results[0] as List<Playlist>;
-      final popular = phase1Results[1] as List<Playlist>;
-      final lastFmTracks = phase1Results[2] as List<LastFmTrack>;
-      final lastFmArtists = phase1Results[3] as List<LastFmArtist>;
-      final topTags = phase1Results[4] as List<String>;
-
-      // PHASE 2: PARALLEL lookups - all executed concurrently
-      final shuffledTracks = List<LastFmTrack>.from(lastFmTracks)..shuffle();
-      final shuffledArtists = List<LastFmArtist>.from(lastFmArtists)..shuffle();
-      final shuffledTags = List<String>.from(topTags)..shuffle();
-
-      // Create all futures FIRST (don't await yet)
-      final trackFutures = shuffledTracks.take(8).map((lfm) =>
-        _tidalService.searchTracks('${lfm.artist} ${lfm.name}', limit: 1)
-          .catchError((_) => <Track>[])
-      ).toList();
-
-      final albumFutures = shuffledArtists.take(5).map((lfm) =>
-        _tidalService.searchAlbums(lfm.name, limit: 2)
-          .catchError((_) => <Album>[])
-      ).toList();
-
-      final artistFutures = lastFmArtists.take(6).map((lfm) =>
-        _tidalService.searchArtists(lfm.name, limit: 1)
-          .catchError((_) => <Artist>[])
-      ).toList();
-
-      // Get albums by tags in parallel
-      final tagAlbumFutures = <Future<List<Album>>>[];
-      for (final tag in shuffledTags.take(3)) {
-        tagAlbumFutures.add(
-          _lastFmService.getTopAlbumsByTag(tag, limit: 3).then((lfmAlbums) async {
-            final results = <Album>[];
-            // Sub-searches in parallel too
-            final subFutures = lfmAlbums.take(2).map((lfm) =>
-              _tidalService.searchAlbums('${lfm.artist} ${lfm.name}', limit: 1)
-                .catchError((_) => <Album>[])
-            );
-            final subResults = await Future.wait(subFutures);
-            for (final r in subResults) {
-              if (r.isNotEmpty) results.add(r.first);
-            }
-            return results;
-          }).catchError((_) => <Album>[])
-        );
-      }
-
-      // EXECUTE ALL PHASE 2 IN PARALLEL
-      final phase2Results = await Future.wait([
-        Future.wait(trackFutures),
-        Future.wait(albumFutures),
-        Future.wait(artistFutures),
-        Future.wait(tagAlbumFutures),
-      ]);
-
-      // Flatten results
-      final trendingTracks = (phase2Results[0] as List<List<Track>>)
-          .expand((x) => x).take(10).toList();
-      final newAlbums = (phase2Results[1] as List<List<Album>>)
-          .expand((x) => x).take(10).toList();
-      final recentArtists = (phase2Results[2] as List<List<Artist>>)
-          .expand((x) => x).take(6).toList();
-      final albumsYouLlEnjoy = (phase2Results[3] as List<List<Album>>)
-          .expand((x) => x).take(10).toList();
-
-      // PHASE 3: Quick fallbacks if needed (parallel)
-      final List<Future<void>> fallbackFutures = [];
+      print('🏠 Loading discovery data (new user mode)...');
       
-      List<Track> extraTracks = [];
-      List<Album> extraAlbums = [];
-      List<Album> extraEnjoyAlbums = [];
+      // ALL searches run in parallel - single phase, fast loading
+      final results = await Future.wait([
+        // 1. Songs of the Year playlists
+        _musicService.searchPlaylists('songs of the year', limit: 10)
+            .catchError((_) => <Playlist>[]),
+        // 2. Popular playlists 
+        _musicService.searchPlaylists('top hits 2024', limit: 10)
+            .catchError((_) => <Playlist>[]),
+        // 3. Trending tracks
+        _musicService.searchTracks('trending 2024', limit: 12)
+            .catchError((_) => <Track>[]),
+        // 4. New albums
+        _musicService.searchAlbums('new releases 2024', limit: 10)
+            .catchError((_) => <Album>[]),
+        // 5. Popular albums
+        _musicService.searchAlbums('best albums', limit: 10)
+            .catchError((_) => <Album>[]),
+        // 6. Top artists for genre display
+        _musicService.searchArtists('popular', limit: 6)
+            .catchError((_) => <Artist>[]),
+      ]);
 
-      if (trendingTracks.length < 5) {
-        fallbackFutures.add(
-          _tidalService.searchTracks('trending 2024', limit: 8)
-            .then((r) => extraTracks = r)
-            .catchError((_) {})
-        );
-      }
-      if (newAlbums.length < 5) {
-        fallbackFutures.add(
-          _tidalService.searchAlbums('new release 2024', limit: 10)
-            .then((r) => extraAlbums = r)
-            .catchError((_) {})
-        );
-      }
-      if (albumsYouLlEnjoy.length < 5) {
-        fallbackFutures.add(
-          _tidalService.searchAlbums('best albums', limit: 10)
-            .then((r) => extraEnjoyAlbums = r)
-            .catchError((_) {})
-        );
-      }
+      final songsOfYear = results[0] as List<Playlist>;
+      final popular = results[1] as List<Playlist>;
+      final trendingTracks = results[2] as List<Track>;
+      final newAlbums = results[3] as List<Album>;
+      final albumsYouLlEnjoy = results[4] as List<Album>;
+      final artists = results[5] as List<Artist>;
 
-      if (fallbackFutures.isNotEmpty) {
-        await Future.wait(fallbackFutures);
-        trendingTracks.addAll(extraTracks);
-        newAlbums.addAll(extraAlbums);
-        albumsYouLlEnjoy.addAll(extraEnjoyAlbums);
-      }
-
-      // Filter genres to show nice display names
-      final displayGenres = topTags.isNotEmpty 
-          ? topTags.take(10).map((t) => _capitalizeTag(t)).toList()
-          : const ['Pop', 'Rock', 'Hip Hop', 'R&B', 'Electronic', 'Jazz'];
+      print('✅ Discovery loaded: ${songsOfYear.length} year playlists, ${popular.length} popular, ${trendingTracks.length} tracks, ${newAlbums.length} new albums');
 
       state = state.copyWith(
         isLoading: false,
@@ -404,11 +314,12 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
         albumsYouLlEnjoy: albumsYouLlEnjoy.take(10).toList(),
         recommendations: trendingTracks.take(10).toList(),
         playlistsForYou: songsOfYear,
-        topGenres: displayGenres,
-        recentlyPlayedArtists: recentArtists,
+        topGenres: const ['Pop', 'Rock', 'Hip Hop', 'R&B', 'Electronic', 'Jazz'],
+        recentlyPlayedArtists: artists,
       );
     } catch (e) {
-      // Fallback to pure TIDAL if Last.fm fails
+      print('❌ Discovery load error: $e');
+      // Fallback to pure TIDAL if anything fails
       await _loadTidalOnly();
     }
   }
@@ -424,17 +335,17 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
   Future<void> _loadTidalOnly() async {
     try {
       final results = await Future.wait([
-        _tidalService.searchPlaylists('songs of the year', limit: 10)
+        _musicService.searchPlaylists('songs of the year', limit: 10)
             .catchError((_) => <Playlist>[]),
-        _tidalService.searchTracks('trending', limit: 8)
+        _musicService.searchTracks('trending', limit: 8)
             .catchError((_) => <Track>[]),
-        _tidalService.searchPlaylists('hip hop', limit: 10)
+        _musicService.searchPlaylists('hip hop', limit: 10)
             .catchError((_) => <Playlist>[]),
-        _tidalService.searchAlbums('new albums 2024', limit: 10)
+        _musicService.searchAlbums('new albums 2024', limit: 10)
             .catchError((_) => <Album>[]),
-        _tidalService.searchAlbums('pop hits', limit: 10)
+        _musicService.searchAlbums('pop hits', limit: 10)
             .catchError((_) => <Album>[]),
-        _tidalService.searchArtists('pop', limit: 6)
+        _musicService.searchArtists('pop', limit: 6)
             .catchError((_) => <Artist>[]),
       ]);
 
@@ -460,44 +371,44 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
   }
 }
 
-/// Home Data Provider (with personalization + Last.fm fallback)
+/// Home Data Provider (with personalization + active source)
 final homeDataProvider = StateNotifierProvider<HomeDataNotifier, HomeDataState>((ref) {
-  final tidalService = ref.watch(tidalServiceProvider);
+  final musicService = ref.watch(musicServiceProvider);
   final lastFmService = ref.watch(lastFmServiceProvider);
   final database = ref.watch(databaseProvider);
   final recommendationService = ref.watch(recommendationServiceProvider);
-  return HomeDataNotifier(tidalService, lastFmService, database, recommendationService);
+  return HomeDataNotifier(musicService, lastFmService, database, recommendationService);
 });
 
 // ============================================================================
 // ALBUM, ARTIST, PLAYLIST DETAIL PROVIDERS
 // ============================================================================
 
-/// Album Detail Provider
+/// Album Detail Provider - Uses active music source
 final albumDetailProvider = FutureProvider.family<AlbumDetail?, String>((ref, albumId) async {
-  final tidalService = ref.watch(tidalServiceProvider);
+  final musicService = ref.watch(musicServiceProvider);
   try {
-    return await tidalService.getAlbum(albumId);
+    return await musicService.getAlbum(albumId);
   } catch (e) {
     return null;
   }
 });
 
-/// Artist Detail Provider  
+/// Artist Detail Provider - Uses active music source
 final artistDetailProvider = FutureProvider.family<ArtistDetail?, String>((ref, artistId) async {
-  final tidalService = ref.watch(tidalServiceProvider);
+  final musicService = ref.watch(musicServiceProvider);
   try {
-    return await tidalService.getArtist(artistId);
+    return await musicService.getArtist(artistId);
   } catch (e) {
     return null;
   }
 });
 
-/// Playlist Detail Provider
+/// Playlist Detail Provider - Uses active music source
 final playlistDetailProvider = FutureProvider.family<PlaylistDetail?, String>((ref, playlistId) async {
-  final tidalService = ref.watch(tidalServiceProvider);
+  final musicService = ref.watch(musicServiceProvider);
   try {
-    return await tidalService.getPlaylist(playlistId);
+    return await musicService.getPlaylist(playlistId);
   } catch (e) {
     return null;
   }

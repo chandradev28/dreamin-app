@@ -4,9 +4,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../models/models.dart';
 import '../services/tidal_service.dart';
+import '../services/music_service.dart';
 import '../services/recommendation_service.dart';
 import '../data/database.dart';
 import 'music_provider.dart';
+import 'source_provider.dart';
 
 /// Playback State
 enum PlaybackStatus { idle, loading, playing, paused, error }
@@ -106,7 +108,8 @@ class PlayerState {
 /// Player Notifier with History Recording
 class PlayerNotifier extends StateNotifier<PlayerState> {
   final AudioPlayer _audioPlayer;
-  final TidalService _tidalService;
+  final MusicService _musicService;
+  final TidalService? _tidalService; // For TIDAL-specific quality info
   final AppDatabase _database;
   final Ref _ref;
   List<Track> _originalQueue = [];
@@ -119,7 +122,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   AndroidLoudnessEnhancer? _loudnessEnhancer;
   static const _normalizationGainDb = 6.0; // Target gain in decibels
 
-  PlayerNotifier(this._tidalService, this._database, this._ref)
+  PlayerNotifier(this._musicService, this._tidalService, this._database, this._ref)
       : _audioPlayer = AudioPlayer(),
         super(const PlayerState()) {
     _initListeners();
@@ -341,18 +344,45 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     );
 
     try {
-      print('🎵 Playing: ${track.title} (ID: ${track.id})');
+      print('🎵 Playing: ${track.title} (ID: ${track.id}, Source: ${track.source.name})');
       
-      // Get stream info (includes quality metadata)
-      final streamInfo = await _tidalService.getStreamInfo(track.id);
-      print('🔗 Stream URL: ${streamInfo.url.substring(0, 50.clamp(0, streamInfo.url.length))}...');
-      print('📊 Quality: ${streamInfo.quality}, BitDepth: ${streamInfo.bitDepth}, SampleRate: ${streamInfo.sampleRate}');
+      String? streamUrl;
+      String? quality = 'HIGH';
+      int? bitDepth = 16;
+      int? sampleRate = 44100;
       
-      if (streamInfo.url.isEmpty) {
-        throw Exception('Empty stream URL received');
+      // For TIDAL tracks, use TidalService for quality info
+      if (track.source == MusicSource.tidal && _tidalService != null) {
+        final streamInfo = await _tidalService!.getStreamInfo(track.id);
+        streamUrl = streamInfo.url;
+        quality = streamInfo.quality;
+        bitDepth = streamInfo.bitDepth;
+        sampleRate = streamInfo.sampleRate;
+        print('📊 TIDAL Quality: $quality, BitDepth: $bitDepth, SampleRate: $sampleRate');
+      } else {
+        // Use unified MusicService for other sources
+        streamUrl = await _musicService.getStreamUrl(track.id);
+        
+        // Set quality based on source
+        if (track.source == MusicSource.qobuz) {
+          quality = 'HI_RES_LOSSLESS';
+          bitDepth = 24;
+          sampleRate = 96000;
+        } else if (track.source == MusicSource.subsonic) {
+          quality = 'LOSSLESS';
+          bitDepth = 16;
+          sampleRate = 44100;
+        }
+        print('📊 ${track.source.name} Quality: $quality');
       }
       
-      await _audioPlayer.setUrl(streamInfo.url);
+      if (streamUrl == null || streamUrl.isEmpty) {
+        throw Exception('Failed to get stream URL');
+      }
+      
+      print('🔗 Stream URL: ${streamUrl.substring(0, 50.clamp(0, streamUrl.length))}...');
+      
+      await _audioPlayer.setUrl(streamUrl);
       print('✅ URL set successfully');
       
       // Apply volume normalization setting before playing
@@ -366,7 +396,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       _consecutiveFailures = 0;
       
       // Update state with current quality
-      state = state.copyWith(currentQuality: streamInfo.quality);
+      state = state.copyWith(currentQuality: quality);
     } catch (e) {
       print('❌ Play error for "${track.title}": $e');
       _consecutiveFailures++;
@@ -621,11 +651,12 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   }
 }
 
-/// Player Provider
+/// Player Provider - Uses active music source with TIDAL fallback for quality info
 final playerProvider = StateNotifierProvider<PlayerNotifier, PlayerState>((ref) {
+  final musicService = ref.watch(musicServiceProvider);
   final tidalService = ref.watch(tidalServiceProvider);
   final database = ref.watch(databaseProvider);
-  return PlayerNotifier(tidalService, database, ref);
+  return PlayerNotifier(musicService, tidalService, database, ref);
 });
 
 // ============================================================================
