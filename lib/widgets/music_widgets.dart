@@ -402,6 +402,7 @@ class SourceBadge extends StatelessWidget {
       MusicSource.tidal => AppTheme.tidalBadge,
       MusicSource.subsonic => AppTheme.hifiBadge,
       MusicSource.qobuz => AppTheme.qobuzBadge,
+      MusicSource.deezer => AppTheme.deezerBadge,
     };
 
     return Container(
