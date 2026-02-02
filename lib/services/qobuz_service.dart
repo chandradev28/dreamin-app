@@ -135,6 +135,7 @@ class QobuzServiceImpl implements MusicService {
   SearchResult _parseDabSearchResult(dynamic json) {
     final tracks = <Track>[];
     final albums = <Album>[];
+    final seenAlbumIds = <String>{};
 
     if (json is! Map) {
       return const SearchResult(tracks: [], albums: [], artists: [], playlists: [], source: MusicSource.qobuz);
@@ -144,12 +145,38 @@ class QobuzServiceImpl implements MusicService {
     final trackList = json['tracks'] as List? ?? [];
     for (final t in trackList) {
       tracks.add(_trackFromDab(t));
+      
+      // Extract unique albums from track data
+      final albumId = t['albumId']?.toString() ?? '';
+      if (albumId.isNotEmpty && !seenAlbumIds.contains(albumId)) {
+        seenAlbumIds.add(albumId);
+        // Extract year from releaseDate (format: "2017-03-10")
+        final releaseDate = t['releaseDate']?.toString() ?? '';
+        final year = releaseDate.length >= 4 ? int.tryParse(releaseDate.substring(0, 4)) : null;
+        final isHiRes = t['audioQuality']?['isHiRes'] == true;
+        
+        albums.add(Album(
+          id: albumId,
+          title: t['albumTitle']?.toString() ?? 'Unknown Album',
+          artist: t['artist']?.toString() ?? 'Unknown Artist',
+          artistId: t['artistId']?.toString() ?? '',
+          coverArtUrl: t['albumCover']?.toString() ?? t['images']?['large']?.toString(),
+          year: year,
+          trackCount: t['mediaCount'] ?? 1,
+          source: MusicSource.qobuz,
+          quality: isHiRes ? const AudioQuality(bitDepth: 24, sampleRate: 96000) : null,
+        ));
+      }
     }
 
-    // Parse albums if present
+    // Also parse albums if present (some endpoints may have it)
     final albumList = json['albums'] as List? ?? [];
     for (final a in albumList) {
-      albums.add(_albumFromDab(a));
+      final albumId = a['id']?.toString() ?? '';
+      if (albumId.isNotEmpty && !seenAlbumIds.contains(albumId)) {
+        seenAlbumIds.add(albumId);
+        albums.add(_albumFromDab(a));
+      }
     }
 
     return SearchResult(
