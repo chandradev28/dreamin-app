@@ -21,7 +21,6 @@ class AppTheme {
   static const Color tidalBadge = Color(0xFF00FFFF); // Cyan for TIDAL badge
   static const Color hifiBadge = Color(0xFFFFD700); // Gold for HiFi badge
   static const Color qobuzBadge = Color(0xFF9B59B6); // Purple for Qobuz badge
-  static const Color deezerBadge = Color(0xFFA855F7); // Violet for Deezer badge
   
   static const Color successColor = Color(0xFF4CAF50);
   static const Color errorColor = Color(0xFFFF5252);
@@ -38,13 +37,6 @@ class AppTheme {
   static const Color qobuzBackground = Color(0xFF0A0A14);
   static const Color qobuzSurface = Color(0xFF14142A);
   static const Color qobuzAccent = Color(0xFF9B59B6);
-  
-  /// Deezer Theme - Rich purple/violet gradient
-  static const Color deezerBackground = Color(0xFF1A0A2E);
-  static const Color deezerSurface = Color(0xFF2D1B4E);
-  static const Color deezerSurfaceLight = Color(0xFF3D2B5E);
-  static const Color deezerAccent = Color(0xFFA855F7);
-  static const Color deezerAccentLight = Color(0xFFC084FC);
   
   /// Subsonic/HiFi Theme - Gold accents
   static const Color subsonicBackground = Color(0xFF0A0A0A);
@@ -296,16 +288,6 @@ class AppTheme {
 
   // ============== SOURCE GRADIENTS ==============
   
-  /// Deezer gradient - Rich purple/violet like official app
-  static const LinearGradient deezerGradient = LinearGradient(
-    begin: Alignment.topCenter,
-    end: Alignment.bottomCenter,
-    colors: [
-      Color(0xFF2D1B4E),  // Rich purple top
-      Color(0xFF1A0A2E),  // Deep violet bottom
-    ],
-  );
-  
   /// TIDAL gradient - Dark with subtle cyan tint
   static const LinearGradient tidalGradient = LinearGradient(
     begin: Alignment.topCenter,
@@ -373,16 +355,6 @@ class SourceThemeColors {
     accent: AppTheme.qobuzAccent,
     accentLight: Color(0xFFB370C9),
     gradient: AppTheme.qobuzGradient,
-  );
-
-  /// Deezer theme - Rich purple/violet
-  static const SourceThemeColors deezer = SourceThemeColors(
-    background: AppTheme.deezerBackground,
-    surface: AppTheme.deezerSurface,
-    surfaceLight: AppTheme.deezerSurfaceLight,
-    accent: AppTheme.deezerAccent,
-    accentLight: AppTheme.deezerAccentLight,
-    gradient: AppTheme.deezerGradient,
   );
 
   /// Subsonic/HiFi theme

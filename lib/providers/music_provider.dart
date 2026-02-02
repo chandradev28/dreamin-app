@@ -190,13 +190,7 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
         return;
       }
       
-      // Check if using Deezer
-      if (_musicService.source == MusicSource.deezer) {
-        print('🎵 Home: Using Deezer curated content');
-        await _loadDeezerDiscovery();
-        return;
-      }
-      
+
       // Check if using Subsonic/HiFi Server
       if (_musicService.source == MusicSource.subsonic) {
         print('🎵 Home: Using HiFi Server content');
@@ -415,56 +409,6 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
     }
   }
 
-  /// Load curated content for Deezer
-  /// Uses Deezer's search to create sections like trending, playlists, albums
-  Future<void> _loadDeezerDiscovery() async {
-    try {
-      print('💜 Loading Deezer curated content...');
-      
-      // All curated searches run in parallel
-      final results = await Future.wait([
-        // 1. Trending tracks
-        _musicService.searchTracks('top hits 2026', limit: 12)
-            .catchError((_) => <Track>[]),
-        // 2. Popular albums
-        _musicService.searchAlbums('new album 2026', limit: 10)
-            .catchError((_) => <Album>[]),
-        // 3. Hip hop albums
-        _musicService.searchAlbums('hip hop', limit: 10)
-            .catchError((_) => <Album>[]),
-        // 4. Pop albums for variety
-        _musicService.searchAlbums('pop hits', limit: 10)
-            .catchError((_) => <Album>[]),
-        // 5. Featured artists
-        _musicService.searchArtists('popular', limit: 8)
-            .catchError((_) => <Artist>[]),
-      ]);
-
-      final trendingTracks = results[0] as List<Track>;
-      final newAlbums = results[1] as List<Album>;
-      final hipHopAlbums = results[2] as List<Album>;
-      final popAlbums = results[3] as List<Album>;
-      final artists = results[4] as List<Artist>;
-
-      print('✅ Deezer home loaded: ${trendingTracks.length} tracks, ${newAlbums.length} albums');
-
-      state = state.copyWith(
-        isLoading: false,
-        newAlbums: newAlbums.take(10).toList(),
-        albumsYouLlEnjoy: hipHopAlbums.take(10).toList(),
-        trendingTracks: trendingTracks.take(10).toList(),
-        recommendations: trendingTracks.take(10).toList(),
-        songsOfTheYear: const [], // Deezer playlists require different handling
-        popularPlaylists: const [],
-        playlistsForYou: const [],
-        topGenres: const ['Pop', 'Hip Hop', 'R&B', 'Electronic', 'Rock', 'Indie'],
-        recentlyPlayedArtists: artists,
-      );
-    } catch (e) {
-      print('❌ Deezer home load error: $e');
-      state = state.copyWith(isLoading: false, error: e.toString());
-    }
-  }
 
   /// Load content for Subsonic/HiFi Server
   /// Shows library content from the personal server

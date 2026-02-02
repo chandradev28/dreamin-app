@@ -2,8 +2,7 @@
 enum MusicSource {
   tidal,
   subsonic,
-  qobuz,
-  deezer;
+  qobuz;
 
   String get displayName {
     switch (this) {
@@ -13,8 +12,6 @@ enum MusicSource {
         return 'HiFi';
       case MusicSource.qobuz:
         return 'Qobuz';
-      case MusicSource.deezer:
-        return 'Deezer';
     }
   }
 
@@ -26,8 +23,6 @@ enum MusicSource {
         return '🏠';
       case MusicSource.qobuz:
         return '🎧';
-      case MusicSource.deezer:
-        return '💜';
     }
   }
 }

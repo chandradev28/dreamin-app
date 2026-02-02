@@ -5,11 +5,11 @@ import '../services/music_service.dart';
 import '../services/tidal_service.dart';
 import '../services/subsonic_service.dart';
 import '../services/qobuz_service.dart';
-import '../services/deezer_service.dart';
+
 import 'subsonic_provider.dart';
 
 /// Active music source enum
-enum ActiveSource { tidal, subsonic, qobuz, deezer }
+enum ActiveSource { tidal, subsonic, qobuz }
 
 extension ActiveSourceExtension on ActiveSource {
   String get displayName {
@@ -20,8 +20,7 @@ extension ActiveSourceExtension on ActiveSource {
         return 'HiFi Server';
       case ActiveSource.qobuz:
         return 'Qobuz';
-      case ActiveSource.deezer:
-        return 'Deezer';
+
     }
   }
 
@@ -33,8 +32,7 @@ extension ActiveSourceExtension on ActiveSource {
         return 'Your personal Subsonic/HiFi server';
       case ActiveSource.qobuz:
         return '24-bit Hi-Res FLAC streaming';
-      case ActiveSource.deezer:
-        return 'Millions of tracks in HQ';
+
     }
   }
 }
@@ -120,9 +118,7 @@ final musicServiceProvider = Provider<MusicService>((ref) {
       print('🎵 Using QobuzServiceImpl');
       return QobuzServiceImpl();
       
-    case ActiveSource.deezer:
-      print('🎵 Using DeezerServiceImpl');
-      return DeezerServiceImpl();
+
       
     case ActiveSource.tidal:
     default:
@@ -153,8 +149,7 @@ final sourceThemeProvider = Provider<SourceThemeColors>((ref) {
   final source = ref.watch(sourceSelectionProvider).activeSource;
   
   switch (source) {
-    case ActiveSource.deezer:
-      return SourceThemeColors.deezer;
+
     case ActiveSource.qobuz:
       return SourceThemeColors.qobuz;
     case ActiveSource.subsonic:
