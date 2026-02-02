@@ -195,6 +195,13 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
   Future<void> loadData() async {
     state = state.copyWith(isLoading: true, error: null);
 
+    // DIAGNOSTIC: Log which service is being used
+    print('🏠 HOME: loadData() called');
+    print('🏠 HOME: _musicService.runtimeType = ${_musicService.runtimeType}');
+    print('🏠 HOME: _musicService.source = ${_musicService.source}');
+    print('🏠 HOME: MusicSource.qobuz = ${MusicSource.qobuz}');
+    print('🏠 HOME: Check result = ${_musicService.source == MusicSource.qobuz}');
+
     try {
       // Check if using Qobuz - it needs different curated content loading
       if (_musicService.source == MusicSource.qobuz) {

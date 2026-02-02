@@ -40,6 +40,7 @@ class QobuzServiceImpl implements MusicService {
   @override
   Future<SearchResult> search(String query, {int limit = 30}) async {
     print('🔍 Qobuz search: $query');
+    print('🔍 Qobuz search URL: $_searchUrl?q=$query&offset=0');
     
     try {
       // Try primary squid.wtf endpoint
