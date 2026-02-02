@@ -111,6 +111,10 @@ class HomeDataState {
   final List<Playlist> popularPlaylists;      // Popular playlists on TIDAL
   final List<Album> newAlbums;                // Suggested new albums for you
   final List<Album> albumsYouLlEnjoy;         // Albums you'll enjoy
+  // Qobuz genre sections (filled only for Qobuz source)
+  final List<Album> jazzAlbums;               // Jazz collection
+  final List<Album> classicalAlbums;          // Classical collection
+  final List<Album> rockAlbums;               // Rock collection
   // Legacy fields for backward compatibility with other screens
   final List<Track> recommendations;          // Alias for trendingTracks
   final List<Playlist> playlistsForYou;       // Alias for songsOfTheYear
@@ -125,6 +129,9 @@ class HomeDataState {
     this.popularPlaylists = const [],
     this.newAlbums = const [],
     this.albumsYouLlEnjoy = const [],
+    this.jazzAlbums = const [],
+    this.classicalAlbums = const [],
+    this.rockAlbums = const [],
     this.recommendations = const [],
     this.playlistsForYou = const [],
     this.topGenres = const [],
@@ -139,6 +146,9 @@ class HomeDataState {
     List<Playlist>? popularPlaylists,
     List<Album>? newAlbums,
     List<Album>? albumsYouLlEnjoy,
+    List<Album>? jazzAlbums,
+    List<Album>? classicalAlbums,
+    List<Album>? rockAlbums,
     List<Track>? recommendations,
     List<Playlist>? playlistsForYou,
     List<String>? topGenres,
@@ -152,6 +162,9 @@ class HomeDataState {
       popularPlaylists: popularPlaylists ?? this.popularPlaylists,
       newAlbums: newAlbums ?? this.newAlbums,
       albumsYouLlEnjoy: albumsYouLlEnjoy ?? this.albumsYouLlEnjoy,
+      jazzAlbums: jazzAlbums ?? this.jazzAlbums,
+      classicalAlbums: classicalAlbums ?? this.classicalAlbums,
+      rockAlbums: rockAlbums ?? this.rockAlbums,
       recommendations: recommendations ?? this.recommendations,
       playlistsForYou: playlistsForYou ?? this.playlistsForYou,
       topGenres: topGenres ?? this.topGenres,
@@ -346,61 +359,66 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
       print('🎧 Loading Qobuz curated content (Hi-Res focus)...');
       
       // All curated searches run in parallel
+      // Using general search terms that return abundant results
       final results = await Future.wait([
-        // 1. Hi-Res 24-bit Picks (Qobuz specialty!)
-        _musicService.searchAlbums('hi-res 24 bit', limit: 12)
+        // 1. Featured Albums (general query for rich results)
+        _musicService.searchAlbums('pop', limit: 12)
             .catchError((_) => <Album>[]),
         // 2. New Releases
-        _musicService.searchAlbums('new releases 2026', limit: 10)
+        _musicService.searchAlbums('new', limit: 10)
             .catchError((_) => <Album>[]),
         // 3. Trending Pop Tracks
-        _musicService.searchTracks('pop hits 2026', limit: 12)
+        _musicService.searchTracks('hits', limit: 12)
             .catchError((_) => <Track>[]),
-        // 4. Jazz Essentials
-        _musicService.searchAlbums('jazz essentials', limit: 10)
+        // 4. Jazz Collection
+        _musicService.searchAlbums('jazz', limit: 10)
             .catchError((_) => <Album>[]),
-        // 5. Classical Masters
-        _musicService.searchAlbums('classical symphony', limit: 10)
+        // 5. Classical Collection
+        _musicService.searchAlbums('classical', limit: 10)
             .catchError((_) => <Album>[]),
-        // 6. Audiophile Recordings (Qobuz-specific!)
-        _musicService.searchAlbums('audiophile recording', limit: 10)
+        // 6. Rock Collection
+        _musicService.searchAlbums('rock', limit: 10)
             .catchError((_) => <Album>[]),
-        // 7. Rock Legends
-        _musicService.searchAlbums('rock greatest hits', limit: 10)
+        // 7. Electronic/Dance
+        _musicService.searchAlbums('electronic', limit: 10)
             .catchError((_) => <Album>[]),
         // 8. Featured Artists
         _musicService.searchArtists('popular', limit: 8)
             .catchError((_) => <Artist>[]),
       ]);
 
-      final hiResAlbums = results[0] as List<Album>;
+      final popAlbums = results[0] as List<Album>;
       final newReleases = results[1] as List<Album>;
       final trendingTracks = results[2] as List<Track>;
       final jazzAlbums = results[3] as List<Album>;
       final classicalAlbums = results[4] as List<Album>;
-      final audiophileAlbums = results[5] as List<Album>;
-      final rockAlbums = results[6] as List<Album>;
+      final rockAlbums = results[5] as List<Album>;
+      final electronicAlbums = results[6] as List<Album>;
       final artists = results[7] as List<Artist>;
 
-      print('✅ Qobuz home loaded: ${hiResAlbums.length} Hi-Res, ${newReleases.length} new, ${trendingTracks.length} tracks, ${jazzAlbums.length} jazz');
+      print('✅ Qobuz home loaded: ${popAlbums.length} pop, ${newReleases.length} new, ${trendingTracks.length} tracks, ${jazzAlbums.length} jazz');
 
       // Map Qobuz content to home state
-      // Hi-Res → newAlbums (featured), Jazz/Classical/Rock splits to different sections
+      // Pop albums → newAlbums (featured), other genres for variety
       state = state.copyWith(
         isLoading: false,
-        // Featured Hi-Res albums (main hero section)
-        newAlbums: hiResAlbums.take(10).toList(),
+        // Featured pop albums (main hero section)
+        newAlbums: popAlbums.take(10).toList(),
         // New releases as "albums you'll enjoy"
         albumsYouLlEnjoy: newReleases.take(10).toList(),
         // Trending tracks for bento box
         trendingTracks: trendingTracks.take(10).toList(),
         recommendations: trendingTracks.take(10).toList(),
-        // Jazz + Classical combined for playlists section (rendered as albums)
-        songsOfTheYear: const [], // Qobuz has no playlists
+        // Genre collections for Qobuz
+        jazzAlbums: jazzAlbums.take(10).toList(),
+        classicalAlbums: classicalAlbums.take(10).toList(),
+        rockAlbums: rockAlbums.take(10).toList(),
+        // Qobuz has no playlists in squid.wtf response
+        songsOfTheYear: const [],
         popularPlaylists: const [],
         playlistsForYou: const [],
         // Genres based on Qobuz strengths
-        topGenres: const ['Hi-Res', 'Jazz', 'Classical', 'Rock', 'Pop', 'Audiophile'],
+        topGenres: const ['Pop', 'Jazz', 'Classical', 'Rock', 'Electronic', 'New'],
         recentlyPlayedArtists: artists,
       );
     } catch (e) {

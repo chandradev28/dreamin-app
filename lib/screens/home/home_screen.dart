@@ -10,8 +10,10 @@ import '../album/album_detail_screen.dart';
 import '../playlist/playlist_detail_screen.dart';
 import 'see_all_screen.dart';
 
-/// Home Screen - TIDAL Style Homepage
-/// Sections: Songs of the Year, Recommended new tracks (bento), Popular playlists, New albums, Albums you'll enjoy
+/// Home Screen - Source-Aware Homepage
+/// TIDAL: Songs of the Year, Playlists, Albums
+/// Qobuz: Hi-Res Focus, Genre Collections, New Releases
+/// Subsonic: Personal Library Content
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
@@ -20,6 +22,9 @@ class HomeScreen extends ConsumerWidget {
     final homeData = ref.watch(homeDataProvider);
     final responsive = Responsive(context);
     final sourceTheme = ref.watch(sourceThemeProvider);
+    final activeSource = ref.watch(sourceSelectionProvider).activeSource;
+    final isQobuz = activeSource == ActiveSource.qobuz;
+    final isSubsonic = activeSource == ActiveSource.subsonic;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -72,9 +77,9 @@ class HomeScreen extends ConsumerWidget {
                 )
             else ...[
               // ============================================================
-              // SECTION 1: SONGS OF THE YEAR
+              // SECTION 1: SONGS OF THE YEAR (TIDAL only - Qobuz has no playlists)
               // ============================================================
-              if (homeData.songsOfTheYear.isNotEmpty) ...[
+              if (!isQobuz && homeData.songsOfTheYear.isNotEmpty) ...[
                 SliverToBoxAdapter(
                   child: _TidalSectionHeader(
                     title: 'Songs of the Year',
@@ -122,7 +127,7 @@ class HomeScreen extends ConsumerWidget {
               ],
 
               // ============================================================
-              // SECTION 2: RECOMMENDED NEW TRACKS (Bento Box)
+              // SECTION 2: TRENDING/POPULAR TRACKS (Bento Box)
               // ============================================================
               if (homeData.trendingTracks.isNotEmpty) ...[
                 SliverToBoxAdapter(
@@ -155,9 +160,9 @@ class HomeScreen extends ConsumerWidget {
               ],
 
               // ============================================================
-              // SECTION 3: POPULAR PLAYLISTS ON TIDAL
+              // SECTION 3: POPULAR PLAYLISTS (TIDAL only - Qobuz has no playlists)
               // ============================================================
-              if (homeData.popularPlaylists.isNotEmpty) ...[
+              if (!isQobuz && homeData.popularPlaylists.isNotEmpty) ...[
                 SliverToBoxAdapter(
                   child: _TidalSectionHeader(
                     title: 'Popular playlists on TIDAL',
@@ -201,16 +206,16 @@ class HomeScreen extends ConsumerWidget {
               ],
 
               // ============================================================
-              // SECTION 4: SUGGESTED NEW ALBUMS FOR YOU
+              // SECTION 4: FEATURED/SUGGESTED NEW ALBUMS
               // ============================================================
               if (homeData.newAlbums.isNotEmpty) ...[
                 SliverToBoxAdapter(
                   child: _TidalSectionHeader(
-                    title: 'Suggested new albums for you',
+                    title: isQobuz ? 'Featured Albums' : 'Suggested new albums for you',
                     onSeeAll: () => Navigator.push(context, MaterialPageRoute(
                       builder: (_) => SeeAllScreen(
-                        title: 'Suggested new albums for you',
-                        searchQuery: 'new album ${DateTime.now().year}',
+                        title: isQobuz ? 'Featured Albums' : 'Suggested new albums for you',
+                        searchQuery: isQobuz ? 'pop' : 'new album ${DateTime.now().year}',
                         type: SeeAllType.album,
                         initialItems: homeData.newAlbums,
                       ),
@@ -247,16 +252,16 @@ class HomeScreen extends ConsumerWidget {
               ],
 
               // ============================================================
-              // SECTION 5: ALBUMS YOU'LL ENJOY
+              // SECTION 5: NEW RELEASES / ALBUMS YOU'LL ENJOY
               // ============================================================
               if (homeData.albumsYouLlEnjoy.isNotEmpty) ...[
                 SliverToBoxAdapter(
                   child: _TidalSectionHeader(
-                    title: "Albums you'll enjoy",
+                    title: isQobuz ? 'New Releases' : "Albums you'll enjoy",
                     onSeeAll: () => Navigator.push(context, MaterialPageRoute(
                       builder: (_) => SeeAllScreen(
-                        title: "Albums you'll enjoy",
-                        searchQuery: 'best albums',
+                        title: isQobuz ? 'New Releases' : "Albums you'll enjoy",
+                        searchQuery: isQobuz ? 'new' : 'best albums',
                         type: SeeAllType.album,
                         initialItems: homeData.albumsYouLlEnjoy,
                       ),
@@ -272,6 +277,144 @@ class HomeScreen extends ConsumerWidget {
                       itemCount: homeData.albumsYouLlEnjoy.length.clamp(0, 10),
                       itemBuilder: (context, index) {
                         final album = homeData.albumsYouLlEnjoy[index];
+                        return _AlbumCard(
+                          album: album,
+                          width: responsive.value(mobile: 150.0, tablet: 180.0),
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => AlbumDetailScreen(
+                                  albumId: album.id,
+                                  album: album,
+                                ),
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ],
+
+              // ============================================================
+              // SECTION 6: JAZZ COLLECTION (Qobuz only)
+              // ============================================================
+              if (isQobuz && homeData.jazzAlbums.isNotEmpty) ...[
+                SliverToBoxAdapter(
+                  child: _TidalSectionHeader(
+                    title: 'Jazz Collection',
+                    onSeeAll: () => Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => SeeAllScreen(
+                        title: 'Jazz Collection',
+                        searchQuery: 'jazz',
+                        type: SeeAllType.album,
+                        initialItems: homeData.jazzAlbums,
+                      ),
+                    )),
+                  ),
+                ),
+                SliverToBoxAdapter(
+                  child: SizedBox(
+                    height: responsive.value(mobile: 220.0, tablet: 280.0),
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
+                      itemCount: homeData.jazzAlbums.length.clamp(0, 10),
+                      itemBuilder: (context, index) {
+                        final album = homeData.jazzAlbums[index];
+                        return _AlbumCard(
+                          album: album,
+                          width: responsive.value(mobile: 150.0, tablet: 180.0),
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => AlbumDetailScreen(
+                                  albumId: album.id,
+                                  album: album,
+                                ),
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ],
+
+              // ============================================================
+              // SECTION 7: CLASSICAL PICKS (Qobuz only)
+              // ============================================================
+              if (isQobuz && homeData.classicalAlbums.isNotEmpty) ...[
+                SliverToBoxAdapter(
+                  child: _TidalSectionHeader(
+                    title: 'Classical Picks',
+                    onSeeAll: () => Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => SeeAllScreen(
+                        title: 'Classical Picks',
+                        searchQuery: 'classical',
+                        type: SeeAllType.album,
+                        initialItems: homeData.classicalAlbums,
+                      ),
+                    )),
+                  ),
+                ),
+                SliverToBoxAdapter(
+                  child: SizedBox(
+                    height: responsive.value(mobile: 220.0, tablet: 280.0),
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
+                      itemCount: homeData.classicalAlbums.length.clamp(0, 10),
+                      itemBuilder: (context, index) {
+                        final album = homeData.classicalAlbums[index];
+                        return _AlbumCard(
+                          album: album,
+                          width: responsive.value(mobile: 150.0, tablet: 180.0),
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => AlbumDetailScreen(
+                                  albumId: album.id,
+                                  album: album,
+                                ),
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ],
+
+              // ============================================================
+              // SECTION 8: ROCK ESSENTIALS (Qobuz only)
+              // ============================================================
+              if (isQobuz && homeData.rockAlbums.isNotEmpty) ...[
+                SliverToBoxAdapter(
+                  child: _TidalSectionHeader(
+                    title: 'Rock Essentials',
+                    onSeeAll: () => Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => SeeAllScreen(
+                        title: 'Rock Essentials',
+                        searchQuery: 'rock',
+                        type: SeeAllType.album,
+                        initialItems: homeData.rockAlbums,
+                      ),
+                    )),
+                  ),
+                ),
+                SliverToBoxAdapter(
+                  child: SizedBox(
+                    height: responsive.value(mobile: 220.0, tablet: 280.0),
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
+                      itemCount: homeData.rockAlbums.length.clamp(0, 10),
+                      itemBuilder: (context, index) {
+                        final album = homeData.rockAlbums[index];
                         return _AlbumCard(
                           album: album,
                           width: responsive.value(mobile: 150.0, tablet: 180.0),

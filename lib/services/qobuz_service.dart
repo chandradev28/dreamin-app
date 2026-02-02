@@ -18,11 +18,11 @@ class QobuzServiceImpl implements MusicService {
     'https://dabmusic.xyz/api/search',
   ];
   
-  // Stream endpoints with fallback - quality 27 = 24-bit/192kHz (MAX)
+  // Stream endpoints with fallback - quality 7 = max quality (24-bit Hi-Res)
   static const _streamEndpoints = [
     {'url': 'https://qobuz.squid.wtf/api/download-music', 'param': 'track_id'},
-    {'url': 'https://dab.yeet.su/api/stream', 'param': 'trackId', 'quality': '27'},
-    {'url': 'https://dabmusic.xyz/api/stream', 'param': 'trackId', 'quality': '27'},
+    {'url': 'https://dab.yeet.su/api/stream', 'param': 'trackId', 'quality': '7'},
+    {'url': 'https://dabmusic.xyz/api/stream', 'param': 'trackId', 'quality': '7'},
   ];
 
   final Dio _dio;
