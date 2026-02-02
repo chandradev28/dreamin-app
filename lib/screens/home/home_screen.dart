@@ -76,6 +76,27 @@ class HomeScreen extends ConsumerWidget {
                   ),
                 )
             else ...[
+              // DEBUG BANNER - shows what data we have
+              SliverToBoxAdapter(
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  margin: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.orange),
+                  ),
+                  child: Text(
+                    'DEBUG: Source=${activeSource.name} | '
+                    'Albums=${homeData.newAlbums.length} | '
+                    'Tracks=${homeData.trendingTracks.length} | '
+                    'Jazz=${homeData.jazzAlbums.length} | '
+                    'Loading=${homeData.isLoading} | '
+                    'Error=${homeData.error ?? "none"}',
+                    style: const TextStyle(fontSize: 11, color: Colors.orange),
+                  ),
+                ),
+              ),
               // ============================================================
               // SECTION 1: SONGS OF THE YEAR (TIDAL only - Qobuz has no playlists)
               // ============================================================
