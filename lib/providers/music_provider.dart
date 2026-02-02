@@ -183,6 +183,13 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
     state = state.copyWith(isLoading: true, error: null);
 
     try {
+      // Check if using Qobuz - it needs different curated content loading
+      if (_musicService.source == MusicSource.qobuz) {
+        print('🎵 Home: Using Qobuz curated content');
+        await _loadQobuzDiscovery();
+        return;
+      }
+      
       // Check if user has enough listening history for personalization
       final totalPlays = await _database.getTotalPlayCount();
       final hasPersonalization = totalPlays >= 10;
@@ -321,6 +328,76 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
       print('❌ Discovery load error: $e');
       // Fallback to pure TIDAL if anything fails
       await _loadTidalOnly();
+    }
+  }
+
+  /// Load curated content for Qobuz (no discovery API, so use search queries)
+  /// Creates a Spotify-like experience with genre sections + Hi-Res focus
+  Future<void> _loadQobuzDiscovery() async {
+    try {
+      print('🎧 Loading Qobuz curated content (Hi-Res focus)...');
+      
+      // All curated searches run in parallel
+      final results = await Future.wait([
+        // 1. Hi-Res 24-bit Picks (Qobuz specialty!)
+        _musicService.searchAlbums('hi-res 24 bit', limit: 12)
+            .catchError((_) => <Album>[]),
+        // 2. New Releases
+        _musicService.searchAlbums('new releases 2026', limit: 10)
+            .catchError((_) => <Album>[]),
+        // 3. Trending Pop Tracks
+        _musicService.searchTracks('pop hits 2026', limit: 12)
+            .catchError((_) => <Track>[]),
+        // 4. Jazz Essentials
+        _musicService.searchAlbums('jazz essentials', limit: 10)
+            .catchError((_) => <Album>[]),
+        // 5. Classical Masters
+        _musicService.searchAlbums('classical symphony', limit: 10)
+            .catchError((_) => <Album>[]),
+        // 6. Audiophile Recordings (Qobuz-specific!)
+        _musicService.searchAlbums('audiophile recording', limit: 10)
+            .catchError((_) => <Album>[]),
+        // 7. Rock Legends
+        _musicService.searchAlbums('rock greatest hits', limit: 10)
+            .catchError((_) => <Album>[]),
+        // 8. Featured Artists
+        _musicService.searchArtists('popular', limit: 8)
+            .catchError((_) => <Artist>[]),
+      ]);
+
+      final hiResAlbums = results[0] as List<Album>;
+      final newReleases = results[1] as List<Album>;
+      final trendingTracks = results[2] as List<Track>;
+      final jazzAlbums = results[3] as List<Album>;
+      final classicalAlbums = results[4] as List<Album>;
+      final audiophileAlbums = results[5] as List<Album>;
+      final rockAlbums = results[6] as List<Album>;
+      final artists = results[7] as List<Artist>;
+
+      print('✅ Qobuz home loaded: ${hiResAlbums.length} Hi-Res, ${newReleases.length} new, ${trendingTracks.length} tracks, ${jazzAlbums.length} jazz');
+
+      // Map Qobuz content to home state
+      // Hi-Res → newAlbums (featured), Jazz/Classical/Rock splits to different sections
+      state = state.copyWith(
+        isLoading: false,
+        // Featured Hi-Res albums (main hero section)
+        newAlbums: hiResAlbums.take(10).toList(),
+        // New releases as "albums you'll enjoy"
+        albumsYouLlEnjoy: newReleases.take(10).toList(),
+        // Trending tracks for bento box
+        trendingTracks: trendingTracks.take(10).toList(),
+        recommendations: trendingTracks.take(10).toList(),
+        // Jazz + Classical combined for playlists section (rendered as albums)
+        songsOfTheYear: const [], // Qobuz has no playlists
+        popularPlaylists: const [],
+        playlistsForYou: const [],
+        // Genres based on Qobuz strengths
+        topGenres: const ['Hi-Res', 'Jazz', 'Classical', 'Rock', 'Pop', 'Audiophile'],
+        recentlyPlayedArtists: artists,
+      );
+    } catch (e) {
+      print('❌ Qobuz home load error: $e');
+      state = state.copyWith(isLoading: false, error: e.toString());
     }
   }
 

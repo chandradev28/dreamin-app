@@ -21,10 +21,35 @@ class AppTheme {
   static const Color tidalBadge = Color(0xFF00FFFF); // Cyan for TIDAL badge
   static const Color hifiBadge = Color(0xFFFFD700); // Gold for HiFi badge
   static const Color qobuzBadge = Color(0xFF9B59B6); // Purple for Qobuz badge
+  static const Color deezerBadge = Color(0xFFA855F7); // Violet for Deezer badge
   
   static const Color successColor = Color(0xFF4CAF50);
   static const Color errorColor = Color(0xFFFF5252);
   static const Color warningColor = Color(0xFFFFB74D);
+
+  // ============== SOURCE-SPECIFIC THEMES ==============
+  
+  /// TIDAL Theme - Dark with cyan accents
+  static const Color tidalBackground = Color(0xFF000000);
+  static const Color tidalSurface = Color(0xFF121212);
+  static const Color tidalAccent = Color(0xFF00FFFF);
+  
+  /// Qobuz Theme - Deep purple/blue
+  static const Color qobuzBackground = Color(0xFF0A0A14);
+  static const Color qobuzSurface = Color(0xFF14142A);
+  static const Color qobuzAccent = Color(0xFF9B59B6);
+  
+  /// Deezer Theme - Rich purple/violet gradient
+  static const Color deezerBackground = Color(0xFF1A0A2E);
+  static const Color deezerSurface = Color(0xFF2D1B4E);
+  static const Color deezerSurfaceLight = Color(0xFF3D2B5E);
+  static const Color deezerAccent = Color(0xFFA855F7);
+  static const Color deezerAccentLight = Color(0xFFC084FC);
+  
+  /// Subsonic/HiFi Theme - Gold accents
+  static const Color subsonicBackground = Color(0xFF0A0A0A);
+  static const Color subsonicSurface = Color(0xFF161616);
+  static const Color subsonicAccent = Color(0xFFFFD700);
 
   // Gradients
   static const LinearGradient primaryGradient = LinearGradient(
@@ -268,4 +293,105 @@ class AppTheme {
   static const Duration animationFast = Duration(milliseconds: 150);
   static const Duration animationNormal = Duration(milliseconds: 300);
   static const Duration animationSlow = Duration(milliseconds: 500);
+
+  // ============== SOURCE GRADIENTS ==============
+  
+  /// Deezer gradient - Rich purple/violet like official app
+  static const LinearGradient deezerGradient = LinearGradient(
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: [
+      Color(0xFF2D1B4E),  // Rich purple top
+      Color(0xFF1A0A2E),  // Deep violet bottom
+    ],
+  );
+  
+  /// TIDAL gradient - Dark with subtle cyan tint
+  static const LinearGradient tidalGradient = LinearGradient(
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: [
+      Color(0xFF0A1A1A),
+      Color(0xFF000000),
+    ],
+  );
+  
+  /// Qobuz gradient - Deep purple-blue
+  static const LinearGradient qobuzGradient = LinearGradient(
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: [
+      Color(0xFF14142A),
+      Color(0xFF0A0A14),
+    ],
+  );
+  
+  /// Subsonic gradient - Dark with gold tint
+  static const LinearGradient subsonicGradient = LinearGradient(
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: [
+      Color(0xFF161610),
+      Color(0xFF0A0A0A),
+    ],
+  );
+}
+
+/// Source-specific theme colors container
+class SourceThemeColors {
+  final Color background;
+  final Color surface;
+  final Color surfaceLight;
+  final Color accent;
+  final Color accentLight;
+  final LinearGradient gradient;
+
+  const SourceThemeColors({
+    required this.background,
+    required this.surface,
+    required this.surfaceLight,
+    required this.accent,
+    required this.accentLight,
+    required this.gradient,
+  });
+
+  /// Default TIDAL theme
+  static const SourceThemeColors tidal = SourceThemeColors(
+    background: AppTheme.tidalBackground,
+    surface: AppTheme.tidalSurface,
+    surfaceLight: AppTheme.surfaceLight,
+    accent: AppTheme.tidalAccent,
+    accentLight: AppTheme.tidalAccent,
+    gradient: AppTheme.tidalGradient,
+  );
+
+  /// Qobuz theme  
+  static const SourceThemeColors qobuz = SourceThemeColors(
+    background: AppTheme.qobuzBackground,
+    surface: AppTheme.qobuzSurface,
+    surfaceLight: Color(0xFF1E1E3A),
+    accent: AppTheme.qobuzAccent,
+    accentLight: Color(0xFFB370C9),
+    gradient: AppTheme.qobuzGradient,
+  );
+
+  /// Deezer theme - Rich purple/violet
+  static const SourceThemeColors deezer = SourceThemeColors(
+    background: AppTheme.deezerBackground,
+    surface: AppTheme.deezerSurface,
+    surfaceLight: AppTheme.deezerSurfaceLight,
+    accent: AppTheme.deezerAccent,
+    accentLight: AppTheme.deezerAccentLight,
+    gradient: AppTheme.deezerGradient,
+  );
+
+  /// Subsonic/HiFi theme
+  static const SourceThemeColors subsonic = SourceThemeColors(
+    background: AppTheme.subsonicBackground,
+    surface: AppTheme.subsonicSurface,
+    surfaceLight: Color(0xFF202020),
+    accent: AppTheme.subsonicAccent,
+    accentLight: Color(0xFFFFE55C),
+    gradient: AppTheme.subsonicGradient,
+  );
 }

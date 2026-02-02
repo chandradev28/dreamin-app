@@ -19,52 +19,57 @@ class HomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final homeData = ref.watch(homeDataProvider);
     final responsive = Responsive(context);
+    final sourceTheme = ref.watch(sourceThemeProvider);
 
     return Scaffold(
-      backgroundColor: AppTheme.backgroundColor,
-      body: RefreshIndicator(
-        onRefresh: () => ref.read(homeDataProvider.notifier).refresh(),
-        color: AppTheme.primaryColor,
-        backgroundColor: AppTheme.surfaceColor,
-        child: CustomScrollView(
-          slivers: [
-            // App Bar
-            SliverAppBar(
-              floating: true,
-              backgroundColor: AppTheme.backgroundColor,
-              toolbarHeight: responsive.value(mobile: 56.0, tablet: 64.0),
-              title: Text(
-                'Home',
-                style: responsive.value(
-                  mobile: AppTheme.headlineMedium,
-                  tablet: AppTheme.headlineLarge,
-                ),
-              ),
-              actions: [
-                IconButton(
-                  icon: const Icon(Icons.cast_outlined),
-                  onPressed: () {},
-                ),
-                SizedBox(width: responsive.value(mobile: 8.0, tablet: 16.0)),
-              ],
-            ),
-
-            // Content
-            if (homeData.isLoading)
-              const SliverFillRemaining(
-                child: Center(
-                  child: CircularProgressIndicator(
-                    color: AppTheme.primaryColor,
+      backgroundColor: Colors.transparent,
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: sourceTheme.gradient,
+        ),
+        child: RefreshIndicator(
+          onRefresh: () => ref.read(homeDataProvider.notifier).refresh(),
+          color: AppTheme.primaryColor,
+          backgroundColor: sourceTheme.surface,
+          child: CustomScrollView(
+            slivers: [
+              // App Bar
+              SliverAppBar(
+                floating: true,
+                backgroundColor: Colors.transparent,
+                toolbarHeight: responsive.value(mobile: 56.0, tablet: 64.0),
+                title: Text(
+                  'Home',
+                  style: responsive.value(
+                    mobile: AppTheme.headlineMedium,
+                    tablet: AppTheme.headlineLarge,
                   ),
                 ),
-              )
-            else if (homeData.error != null)
-              SliverFillRemaining(
-                child: _ErrorWidget(
-                  message: homeData.error!,
-                  onRetry: () => ref.read(homeDataProvider.notifier).refresh(),
-                ),
-              )
+                actions: [
+                  IconButton(
+                    icon: const Icon(Icons.cast_outlined),
+                    onPressed: () {},
+                  ),
+                  SizedBox(width: responsive.value(mobile: 8.0, tablet: 16.0)),
+                ],
+              ),
+
+              // Content
+              if (homeData.isLoading)
+                SliverFillRemaining(
+                  child: Center(
+                    child: CircularProgressIndicator(
+                      color: sourceTheme.accent,
+                    ),
+                  ),
+                )
+              else if (homeData.error != null)
+                SliverFillRemaining(
+                  child: _ErrorWidget(
+                    message: homeData.error!,
+                    onRetry: () => ref.read(homeDataProvider.notifier).refresh(),
+                  ),
+                )
             else ...[
               // ============================================================
               // SECTION 1: SONGS OF THE YEAR
@@ -296,6 +301,7 @@ class HomeScreen extends ConsumerWidget {
             ],
           ],
         ),
+      ),
       ),
     );
   }

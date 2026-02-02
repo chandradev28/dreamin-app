@@ -1,7 +1,13 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../core/constants/api_constants.dart';
 import '../services/subsonic_service.dart';
+
+/// Pre-configured HiFi Server credentials
+class _HiFiCredentials {
+  static const serverUrl = 'http://135.235.163.138:8080';
+  static const username = 'hifi';
+  static const password = 'local';
+}
 
 /// Subsonic/HiFi Server Configuration State
 class SubsonicConfigState {
@@ -12,10 +18,10 @@ class SubsonicConfigState {
   final bool isConnected;
 
   const SubsonicConfigState({
-    this.serverUrl = '',
-    this.username = '',
-    this.password = '',
-    this.isEnabled = false,
+    this.serverUrl = _HiFiCredentials.serverUrl,
+    this.username = _HiFiCredentials.username,
+    this.password = _HiFiCredentials.password,
+    this.isEnabled = true,
     this.isConnected = false,
   });
 
@@ -46,58 +52,20 @@ class SubsonicConfigState {
   }
 }
 
-/// Subsonic Configuration Notifier
+/// Subsonic Configuration Notifier - Pre-configured with HiFi server
 class SubsonicConfigNotifier extends StateNotifier<SubsonicConfigState> {
   SubsonicServiceImpl? _service;
 
   SubsonicConfigNotifier() : super(const SubsonicConfigState()) {
-    _loadConfig();
+    // Initialize immediately with pre-set credentials
+    _initService();
   }
 
   SubsonicServiceImpl? get service => _service;
 
-  Future<void> _loadConfig() async {
-    final prefs = await SharedPreferences.getInstance();
-    state = SubsonicConfigState(
-      serverUrl: prefs.getString('subsonic_serverUrl') ?? '',
-      username: prefs.getString('subsonic_username') ?? '',
-      password: prefs.getString('subsonic_password') ?? '',
-      isEnabled: prefs.getBool('subsonic_enabled') ?? false,
-    );
-    
-    if (state.hasConfig && state.isEnabled) {
-      _initService();
-    }
-  }
-
-  Future<void> _saveConfig() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('subsonic_serverUrl', state.serverUrl);
-    await prefs.setString('subsonic_username', state.username);
-    await prefs.setString('subsonic_password', state.password);
-    await prefs.setBool('subsonic_enabled', state.isEnabled);
-  }
-
   void _initService() {
-    if (state.hasConfig) {
-      _service = SubsonicServiceImpl(state.toSubsonicConfig());
-    }
-  }
-
-  /// Update server configuration
-  Future<void> updateConfig({
-    required String serverUrl,
-    required String username,
-    required String password,
-  }) async {
-    state = state.copyWith(
-      serverUrl: serverUrl.trim(),
-      username: username.trim(),
-      password: password,
-      isConnected: false,
-    );
-    await _saveConfig();
-    _initService();
+    _service = SubsonicServiceImpl(state.toSubsonicConfig());
+    state = state.copyWith(isConnected: true);
   }
 
   /// Test connection to server
@@ -110,28 +78,15 @@ class SubsonicConfigNotifier extends StateNotifier<SubsonicConfigState> {
     state = state.copyWith(isConnected: success);
     return success;
   }
-
-  /// Enable/disable HiFi source
-  Future<void> setEnabled(bool enabled) async {
-    state = state.copyWith(isEnabled: enabled);
-    await _saveConfig();
-    
-    if (enabled && state.hasConfig) {
-      _initService();
-    } else {
-      _service = null;
-    }
-  }
 }
 
-/// Provider for Subsonic configuration
+/// Provider for Subsonic configuration (pre-configured)
 final subsonicConfigProvider = StateNotifierProvider<SubsonicConfigNotifier, SubsonicConfigState>((ref) {
   return SubsonicConfigNotifier();
 });
 
-/// Provider for Subsonic service (null if not configured/enabled)
+/// Provider for Subsonic service (always available with pre-set config)
 final subsonicServiceProvider = Provider<SubsonicServiceImpl?>((ref) {
-  final config = ref.watch(subsonicConfigProvider);
-  if (!config.isEnabled || !config.hasConfig) return null;
-  return ref.watch(subsonicConfigProvider.notifier).service;
+  final notifier = ref.watch(subsonicConfigProvider.notifier);
+  return notifier.service;
 });

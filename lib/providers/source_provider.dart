@@ -1,13 +1,15 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../core/theme/app_theme.dart';
 import '../services/music_service.dart';
 import '../services/tidal_service.dart';
 import '../services/subsonic_service.dart';
 import '../services/qobuz_service.dart';
+import '../services/deezer_service.dart';
 import 'subsonic_provider.dart';
 
 /// Active music source enum
-enum ActiveSource { tidal, subsonic, qobuz }
+enum ActiveSource { tidal, subsonic, qobuz, deezer }
 
 extension ActiveSourceExtension on ActiveSource {
   String get displayName {
@@ -18,6 +20,8 @@ extension ActiveSourceExtension on ActiveSource {
         return 'HiFi Server';
       case ActiveSource.qobuz:
         return 'Qobuz';
+      case ActiveSource.deezer:
+        return 'Deezer';
     }
   }
 
@@ -29,6 +33,8 @@ extension ActiveSourceExtension on ActiveSource {
         return 'Your personal Subsonic/HiFi server';
       case ActiveSource.qobuz:
         return '24-bit Hi-Res FLAC streaming';
+      case ActiveSource.deezer:
+        return 'Millions of tracks in HQ';
     }
   }
 }
@@ -98,19 +104,29 @@ final musicServiceProvider = Provider<MusicService>((ref) {
   final sourceState = ref.watch(sourceSelectionProvider);
   final subsonicConfig = ref.watch(subsonicConfigProvider);
   
+  print('🎵 musicServiceProvider: activeSource = ${sourceState.activeSource}');
+  
   switch (sourceState.activeSource) {
     case ActiveSource.subsonic:
       if (subsonicConfig.hasConfig && subsonicConfig.isEnabled) {
+        print('🎵 Using SubsonicServiceImpl');
         return SubsonicServiceImpl(subsonicConfig.toSubsonicConfig());
       }
       // Fallback to TIDAL if Subsonic not configured
+      print('🎵 Subsonic not configured, falling back to TIDAL');
       return TidalServiceImpl();
       
     case ActiveSource.qobuz:
+      print('🎵 Using QobuzServiceImpl');
       return QobuzServiceImpl();
+      
+    case ActiveSource.deezer:
+      print('🎵 Using DeezerServiceImpl');
+      return DeezerServiceImpl();
       
     case ActiveSource.tidal:
     default:
+      print('🎵 Using TidalServiceImpl');
       return TidalServiceImpl();
   }
 });
@@ -129,4 +145,22 @@ final sourceSupportsArtistDetailsProvider = Provider<bool>((ref) {
 final sourceSupportsDiscoveryProvider = Provider<bool>((ref) {
   final source = ref.watch(sourceSelectionProvider).activeSource;
   return source == ActiveSource.tidal;
+});
+
+/// Provider for source-specific theme colors
+/// Returns theme colors (background, surface, accent, gradient) based on active source
+final sourceThemeProvider = Provider<SourceThemeColors>((ref) {
+  final source = ref.watch(sourceSelectionProvider).activeSource;
+  
+  switch (source) {
+    case ActiveSource.deezer:
+      return SourceThemeColors.deezer;
+    case ActiveSource.qobuz:
+      return SourceThemeColors.qobuz;
+    case ActiveSource.subsonic:
+      return SourceThemeColors.subsonic;
+    case ActiveSource.tidal:
+    default:
+      return SourceThemeColors.tidal;
+  }
 });

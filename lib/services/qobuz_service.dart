@@ -9,6 +9,7 @@ import 'music_service.dart';
 class QobuzServiceImpl implements MusicService {
   static const _searchUrl = 'https://qobuz.squid.wtf/api/get-music';
   static const _albumUrl = 'https://qobuz.squid.wtf/api/get-album';
+  static const _artistUrl = 'https://qobuz.squid.wtf/api/get-artist';
   static const _playlistUrl = 'https://qobuz.squid.wtf/api/get-playlist';
   
   // Fallback search endpoints
@@ -17,11 +18,11 @@ class QobuzServiceImpl implements MusicService {
     'https://dabmusic.xyz/api/search',
   ];
   
-  // Stream endpoints with fallback
+  // Stream endpoints with fallback - quality 27 = 24-bit/192kHz (MAX)
   static const _streamEndpoints = [
     {'url': 'https://qobuz.squid.wtf/api/download-music', 'param': 'track_id'},
-    {'url': 'https://dab.yeet.su/api/stream', 'param': 'trackId', 'quality': '7'},
-    {'url': 'https://dabmusic.xyz/api/stream', 'param': 'trackId', 'quality': '7'},
+    {'url': 'https://dab.yeet.su/api/stream', 'param': 'trackId', 'quality': '27'},
+    {'url': 'https://dabmusic.xyz/api/stream', 'param': 'trackId', 'quality': '27'},
   ];
 
   final Dio _dio;
@@ -38,6 +39,8 @@ class QobuzServiceImpl implements MusicService {
 
   @override
   Future<SearchResult> search(String query, {int limit = 30}) async {
+    print('🔍 Qobuz search: $query');
+    
     try {
       // Try primary squid.wtf endpoint
       final response = await _dio.get(
@@ -45,8 +48,13 @@ class QobuzServiceImpl implements MusicService {
         queryParameters: {'q': query, 'offset': 0},
       );
       
+      print('📡 Qobuz response status: ${response.statusCode}');
+      print('📡 Qobuz response type: ${response.data.runtimeType}');
+      
       if (response.statusCode == 200) {
-        return _parseSquidSearchResult(response.data);
+        final result = _parseSquidSearchResult(response.data);
+        print('✅ Qobuz parsed: ${result.tracks.length} tracks, ${result.albums.length} albums, ${result.artists.length} artists');
+        return result;
       }
     } catch (e) {
       print('⚠️ Qobuz primary search failed: $e');
@@ -55,19 +63,23 @@ class QobuzServiceImpl implements MusicService {
     // Try fallback endpoints
     for (final fallback in _searchFallbacks) {
       try {
+        print('🔄 Trying fallback: $fallback');
         final response = await _dio.get(
           fallback,
           queryParameters: {'q': query},
         ).timeout(const Duration(seconds: 8));
         
         if (response.statusCode == 200) {
-          return _parseDabSearchResult(response.data);
+          final result = _parseDabSearchResult(response.data);
+          print('✅ Fallback parsed: ${result.tracks.length} tracks');
+          return result;
         }
       } catch (e) {
         print('⚠️ Qobuz fallback $fallback failed: $e');
       }
     }
 
+    print('❌ All Qobuz endpoints failed');
     return const SearchResult(
       tracks: [],
       albums: [],
@@ -197,8 +209,50 @@ class QobuzServiceImpl implements MusicService {
 
   @override
   Future<ArtistDetail?> getArtist(String id) async {
-    // Qobuz API doesn't have artist detail endpoint
-    // Return null - UI should handle this gracefully
+    try {
+      final artistId = id.replaceFirst('qobuz:', '');
+      print('🎤 Fetching Qobuz artist: $artistId');
+      
+      final response = await _dio.get(
+        _artistUrl,
+        queryParameters: {'artist_id': artistId},
+      );
+      
+      if (response.statusCode == 200) {
+        final data = response.data['data'] ?? response.data;
+        final artistData = data['artist'] ?? data;
+        
+        // Get artist biography
+        final bio = artistData['biography'];
+        final bioContent = bio is Map ? (bio['content'] ?? '') : '';
+        
+        // Get artist name
+        final name = artistData['name'];
+        final displayName = name is Map ? (name['display'] ?? 'Unknown') : (name ?? 'Unknown');
+        
+        // Get image
+        final picture = artistData['picture'] ??
+            artistData['image']?['large'] ??
+            artistData['image']?['small'] ?? '';
+        
+        print('✅ Qobuz artist loaded: $displayName');
+        
+        // Search for artist albums
+        final albumsResult = await searchAlbums(displayName.toString(), limit: 20);
+        
+        return ArtistDetail(
+          id: 'qobuz:$artistId',
+          name: displayName.toString(),
+          imageUrl: picture.toString(),
+          bio: bioContent.toString(),
+          albums: albumsResult,
+          topTracks: const [],
+          source: MusicSource.qobuz,
+        );
+      }
+    } catch (e) {
+      print('❌ Qobuz getArtist failed: $e');
+    }
     return null;
   }
 
