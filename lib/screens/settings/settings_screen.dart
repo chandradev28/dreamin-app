@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme/app_theme.dart';
+import '../../providers/music_provider.dart';
 import '../../providers/subsonic_provider.dart';
 import '../../providers/source_provider.dart';
 
@@ -479,7 +480,10 @@ class MusicSourceSettingsScreen extends ConsumerWidget {
             title: 'TIDAL',
             subtitle: 'HiFi streaming with recommendations',
             isSelected: sourceState.activeSource == ActiveSource.tidal,
-            onTap: () => ref.read(sourceSelectionProvider.notifier).setActiveSource(ActiveSource.tidal),
+            onTap: () {
+              ref.read(sourceSelectionProvider.notifier).setActiveSource(ActiveSource.tidal);
+              ref.invalidate(homeDataProvider);
+            },
           ),
           
           const SizedBox(height: 12),
@@ -491,7 +495,11 @@ class MusicSourceSettingsScreen extends ConsumerWidget {
             title: 'Qobuz',
             subtitle: '24-bit Hi-Res FLAC streaming',
             isSelected: sourceState.activeSource == ActiveSource.qobuz,
-            onTap: () => ref.read(sourceSelectionProvider.notifier).setActiveSource(ActiveSource.qobuz),
+            onTap: () {
+              ref.read(sourceSelectionProvider.notifier).setActiveSource(ActiveSource.qobuz);
+              // Invalidate home data to force reload with new source
+              ref.invalidate(homeDataProvider);
+            },
           ),
           
           const SizedBox(height: 12),
@@ -503,7 +511,10 @@ class MusicSourceSettingsScreen extends ConsumerWidget {
             title: 'HiFi Server',
             subtitle: 'Your personal music server',
             isSelected: sourceState.activeSource == ActiveSource.subsonic,
-            onTap: () => ref.read(sourceSelectionProvider.notifier).setActiveSource(ActiveSource.subsonic),
+            onTap: () {
+              ref.read(sourceSelectionProvider.notifier).setActiveSource(ActiveSource.subsonic);
+              ref.invalidate(homeDataProvider);
+            },
           ),
           
           const SizedBox(height: 32),
