@@ -496,6 +496,18 @@ class MusicSourceSettingsScreen extends ConsumerWidget {
           
           const SizedBox(height: 12),
           
+          // Deezer Option
+          _SourceOptionTile(
+            icon: Icons.music_note,
+            iconColor: const Color(0xFFA855F7), // Deezer purple
+            title: 'Deezer',
+            subtitle: 'Free music streaming',
+            isSelected: sourceState.activeSource == ActiveSource.deezer,
+            onTap: () => ref.read(sourceSelectionProvider.notifier).setActiveSource(ActiveSource.deezer),
+          ),
+          
+          const SizedBox(height: 12),
+          
           // HiFi Server Option (pre-configured)
           _SourceOptionTile(
             icon: Icons.dns_outlined,

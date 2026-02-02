@@ -190,6 +190,20 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
         return;
       }
       
+      // Check if using Deezer
+      if (_musicService.source == MusicSource.deezer) {
+        print('🎵 Home: Using Deezer curated content');
+        await _loadDeezerDiscovery();
+        return;
+      }
+      
+      // Check if using Subsonic/HiFi Server
+      if (_musicService.source == MusicSource.subsonic) {
+        print('🎵 Home: Using HiFi Server content');
+        await _loadSubsonicDiscovery();
+        return;
+      }
+      
       // Check if user has enough listening history for personalization
       final totalPlays = await _database.getTotalPlayCount();
       final hasPersonalization = totalPlays >= 10;
@@ -397,6 +411,100 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
       );
     } catch (e) {
       print('❌ Qobuz home load error: $e');
+      state = state.copyWith(isLoading: false, error: e.toString());
+    }
+  }
+
+  /// Load curated content for Deezer
+  /// Uses Deezer's search to create sections like trending, playlists, albums
+  Future<void> _loadDeezerDiscovery() async {
+    try {
+      print('💜 Loading Deezer curated content...');
+      
+      // All curated searches run in parallel
+      final results = await Future.wait([
+        // 1. Trending tracks
+        _musicService.searchTracks('top hits 2026', limit: 12)
+            .catchError((_) => <Track>[]),
+        // 2. Popular albums
+        _musicService.searchAlbums('new album 2026', limit: 10)
+            .catchError((_) => <Album>[]),
+        // 3. Hip hop albums
+        _musicService.searchAlbums('hip hop', limit: 10)
+            .catchError((_) => <Album>[]),
+        // 4. Pop albums for variety
+        _musicService.searchAlbums('pop hits', limit: 10)
+            .catchError((_) => <Album>[]),
+        // 5. Featured artists
+        _musicService.searchArtists('popular', limit: 8)
+            .catchError((_) => <Artist>[]),
+      ]);
+
+      final trendingTracks = results[0] as List<Track>;
+      final newAlbums = results[1] as List<Album>;
+      final hipHopAlbums = results[2] as List<Album>;
+      final popAlbums = results[3] as List<Album>;
+      final artists = results[4] as List<Artist>;
+
+      print('✅ Deezer home loaded: ${trendingTracks.length} tracks, ${newAlbums.length} albums');
+
+      state = state.copyWith(
+        isLoading: false,
+        newAlbums: newAlbums.take(10).toList(),
+        albumsYouLlEnjoy: hipHopAlbums.take(10).toList(),
+        trendingTracks: trendingTracks.take(10).toList(),
+        recommendations: trendingTracks.take(10).toList(),
+        songsOfTheYear: const [], // Deezer playlists require different handling
+        popularPlaylists: const [],
+        playlistsForYou: const [],
+        topGenres: const ['Pop', 'Hip Hop', 'R&B', 'Electronic', 'Rock', 'Indie'],
+        recentlyPlayedArtists: artists,
+      );
+    } catch (e) {
+      print('❌ Deezer home load error: $e');
+      state = state.copyWith(isLoading: false, error: e.toString());
+    }
+  }
+
+  /// Load content for Subsonic/HiFi Server
+  /// Shows library content from the personal server
+  Future<void> _loadSubsonicDiscovery() async {
+    try {
+      print('🎵 Loading HiFi Server content...');
+      
+      // For Subsonic, we search the user's own library
+      final results = await Future.wait([
+        // Random albums from library
+        _musicService.searchAlbums('', limit: 15)
+            .catchError((_) => <Album>[]),
+        // Random tracks
+        _musicService.searchTracks('', limit: 12)
+            .catchError((_) => <Track>[]),
+        // Artists in library
+        _musicService.searchArtists('', limit: 10)
+            .catchError((_) => <Artist>[]),
+      ]);
+
+      final albums = results[0] as List<Album>;
+      final tracks = results[1] as List<Track>;
+      final artists = results[2] as List<Artist>;
+
+      print('✅ HiFi Server loaded: ${albums.length} albums, ${tracks.length} tracks');
+
+      state = state.copyWith(
+        isLoading: false,
+        newAlbums: albums.take(10).toList(),
+        albumsYouLlEnjoy: albums.skip(5).take(10).toList(),
+        trendingTracks: tracks.take(10).toList(),
+        recommendations: tracks.take(10).toList(),
+        songsOfTheYear: const [],
+        popularPlaylists: const [],
+        playlistsForYou: const [],
+        topGenres: const ['Your Library', 'Albums', 'Artists', 'Tracks'],
+        recentlyPlayedArtists: artists,
+      );
+    } catch (e) {
+      print('❌ HiFi Server load error: $e');
       state = state.copyWith(isLoading: false, error: e.toString());
     }
   }
