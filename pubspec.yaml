@@ -49,6 +49,7 @@ dependencies:
   iconsax: ^0.0.8
   path: ^1.9.0
   palette_generator: ^0.3.3+7
+  http: ^1.6.0
 
 dev_dependencies:
   flutter_test:

@@ -359,113 +359,78 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
     }
   }
 
-  /// Load curated content for Qobuz (no discovery API, so use search queries)
+  /// Load curated content for Qobuz (search-based discovery)
   /// Creates a Spotify-like experience with genre sections + Hi-Res focus
   Future<void> _loadQobuzDiscovery() async {
+    String? firstError;
+    
+    // Helper to wrap API calls with proper error logging
+    Future<List<T>> safeSearch<T>(Future<List<T>> Function() apiCall, String label) async {
+      try {
+        final result = await apiCall();
+        print('✅ Qobuz $label: ${result.length} items');
+        return result;
+      } catch (e) {
+        print('❌ Qobuz $label FAILED: $e');
+        firstError ??= 'Qobuz $label: $e';
+        return <T>[];
+      }
+    }
+
     try {
-      print('🎧 Loading Qobuz - USING HARDCODED TEST DATA...');
+      print('🎧 Loading Qobuz curated content...');
       
-      // HARDCODED TEST DATA - bypassing API completely to test UI rendering
-      final testAlbums = <Album>[
-        Album(
-          id: 'qobuz:test1',
-          title: 'Test Album 1',
-          artist: 'Test Artist',
-          artistId: 'artist1',
-          coverArtUrl: 'https://static.qobuz.com/images/covers/la/tz/m80xg0c8ctzla_600.jpg',
-          year: 2024,
-          trackCount: 10,
-          source: MusicSource.qobuz,
-        ),
-        Album(
-          id: 'qobuz:test2',
-          title: 'Test Album 2',
-          artist: 'Another Artist',
-          artistId: 'artist2',
-          coverArtUrl: 'https://static.qobuz.com/images/covers/26/95/0060253739526_600.jpg',
-          year: 2024,
-          trackCount: 12,
-          source: MusicSource.qobuz,
-        ),
-        Album(
-          id: 'qobuz:test3',
-          title: 'Test Album 3',
-          artist: 'Cool Artist',
-          artistId: 'artist3',
-          coverArtUrl: 'https://static.qobuz.com/images/covers/sy/qc/wtj33tq4ocqsy_600.jpg',
-          year: 2023,
-          trackCount: 8,
-          source: MusicSource.qobuz,
-        ),
-        Album(
-          id: 'qobuz:test4',
-          title: 'Jazz Collection',
-          artist: 'Jazz Master',
-          artistId: 'artist4',
-          coverArtUrl: 'https://static.qobuz.com/images/covers/la/tz/m80xg0c8ctzla_600.jpg',
-          year: 2024,
-          trackCount: 15,
-          source: MusicSource.qobuz,
-        ),
-        Album(
-          id: 'qobuz:test5',
-          title: 'Classical Hits',
-          artist: 'Orchestra',
-          artistId: 'artist5',
-          coverArtUrl: 'https://static.qobuz.com/images/covers/26/95/0060253739526_600.jpg',
-          year: 2022,
-          trackCount: 20,
-          source: MusicSource.qobuz,
-        ),
-      ];
-      
-      final testTracks = <Track>[
-        Track(
-          id: 'qobuz:track1',
-          title: 'Test Track 1',
-          artist: 'Test Artist',
-          artistId: 'artist1',
-          album: 'Test Album 1',
-          albumId: 'qobuz:test1',
-          duration: const Duration(minutes: 3, seconds: 30),
-          trackNumber: 1,
-          coverArtUrl: 'https://static.qobuz.com/images/covers/la/tz/m80xg0c8ctzla_600.jpg',
-          isExplicit: false,
-          source: MusicSource.qobuz,
-        ),
-        Track(
-          id: 'qobuz:track2',
-          title: 'Test Track 2',
-          artist: 'Another Artist',
-          artistId: 'artist2',
-          album: 'Test Album 2',
-          albumId: 'qobuz:test2',
-          duration: const Duration(minutes: 4, seconds: 15),
-          trackNumber: 1,
-          coverArtUrl: 'https://static.qobuz.com/images/covers/26/95/0060253739526_600.jpg',
-          isExplicit: false,
-          source: MusicSource.qobuz,
-        ),
-      ];
+      // All curated searches run in parallel with proper error logging
+      final results = await Future.wait([
+        // 1. Featured Albums (pop search returns rich results)
+        safeSearch<Album>(() => _musicService.searchAlbums('pop', limit: 15), 'Featured'),
+        // 2. New Releases
+        safeSearch<Album>(() => _musicService.searchAlbums('new releases', limit: 12), 'New'),
+        // 3. Trending Tracks
+        safeSearch<Track>(() => _musicService.searchTracks('hits', limit: 15), 'Tracks'),
+        // 4. Jazz Collection
+        safeSearch<Album>(() => _musicService.searchAlbums('jazz', limit: 12), 'Jazz'),
+        // 5. Classical Collection
+        safeSearch<Album>(() => _musicService.searchAlbums('classical', limit: 12), 'Classical'),
+        // 6. Rock Collection
+        safeSearch<Album>(() => _musicService.searchAlbums('rock', limit: 12), 'Rock'),
+        // 7. Featured Artists
+        safeSearch<Artist>(() => _musicService.searchArtists('artist', limit: 10), 'Artists'),
+      ]);
 
-      print('✅ Qobuz TEST DATA: ${testAlbums.length} albums, ${testTracks.length} tracks');
+      final popAlbums = results[0] as List<Album>;
+      final newReleases = results[1] as List<Album>;
+      final trendingTracks = results[2] as List<Track>;
+      final jazzAlbums = results[3] as List<Album>;
+      final classicalAlbums = results[4] as List<Album>;
+      final rockAlbums = results[5] as List<Album>;
+      final artists = results[6] as List<Artist>;
 
-      // Map test data to home state
+      final totalItems = popAlbums.length + newReleases.length + trendingTracks.length;
+      print('✅ Qobuz home: $totalItems total items loaded');
+
+      // If ALL results are empty and we had an error, surface it
+      if (totalItems == 0 && firstError != null) {
+        state = state.copyWith(isLoading: false, error: firstError);
+        return;
+      }
+
+      // Map Qobuz content to home state
       state = state.copyWith(
         isLoading: false,
-        error: 'TEST MODE - hardcoded data',
-        newAlbums: testAlbums,
-        albumsYouLlEnjoy: testAlbums,
-        trendingTracks: testTracks,
-        recommendations: testTracks,
-        jazzAlbums: testAlbums.take(3).toList(),
-        classicalAlbums: testAlbums.take(3).toList(),
-        rockAlbums: testAlbums.take(3).toList(),
+        error: null,
+        newAlbums: popAlbums.take(12).toList(),
+        albumsYouLlEnjoy: newReleases.take(12).toList(),
+        trendingTracks: trendingTracks.take(12).toList(),
+        recommendations: trendingTracks.take(12).toList(),
+        jazzAlbums: jazzAlbums.take(10).toList(),
+        classicalAlbums: classicalAlbums.take(10).toList(),
+        rockAlbums: rockAlbums.take(10).toList(),
         songsOfTheYear: const [],
         popularPlaylists: const [],
         playlistsForYou: const [],
         topGenres: const ['Pop', 'Jazz', 'Classical', 'Rock', 'Electronic', 'New'],
-        recentlyPlayedArtists: const [],
+        recentlyPlayedArtists: artists,
       );
     } catch (e) {
       print('❌ Qobuz home load error: $e');
