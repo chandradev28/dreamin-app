@@ -442,34 +442,57 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
   /// Load content for Subsonic/HiFi Server
   /// Shows library content from the personal server
   Future<void> _loadSubsonicDiscovery() async {
+    String? firstError;
+    
+    // Helper to wrap API calls with proper error logging
+    Future<List<T>> safeCall<T>(Future<List<T>> Function() apiCall, String label) async {
+      try {
+        final result = await apiCall();
+        print('✅ HiFi $label: ${result.length} items');
+        return result;
+      } catch (e) {
+        print('❌ HiFi $label FAILED: $e');
+        firstError ??= 'HiFi $label: $e';
+        return <T>[];
+      }
+    }
+
     try {
       print('🎵 Loading HiFi Server content...');
       
-      // For Subsonic, we search the user's own library
+      // Use proper Subsonic discovery endpoints (not empty searches)
       final results = await Future.wait([
-        // Random albums from library
-        _musicService.searchAlbums('', limit: 15)
-            .catchError((_) => <Album>[]),
-        // Random tracks
-        _musicService.searchTracks('', limit: 12)
-            .catchError((_) => <Track>[]),
-        // Artists in library
-        _musicService.searchArtists('', limit: 10)
-            .catchError((_) => <Artist>[]),
+        // New albums (using getAlbumList2 type=newest)
+        safeCall<Album>(() => _musicService.getNewAlbums(limit: 20), 'New Albums'),
+        // Random tracks (using getRandomSongs)
+        safeCall<Track>(() => _musicService.getRandomTracks(limit: 20), 'Random Tracks'),
+        // Popular albums (using getAlbumList2 type=frequent if available)
+        safeCall<Album>(() => _musicService.searchAlbums('a', limit: 15), 'All Albums'),
+        // Artists search
+        safeCall<Artist>(() => _musicService.searchArtists('a', limit: 12), 'Artists'),
       ]);
 
-      final albums = results[0] as List<Album>;
-      final tracks = results[1] as List<Track>;
-      final artists = results[2] as List<Artist>;
+      final newAlbums = results[0] as List<Album>;
+      final randomTracks = results[1] as List<Track>;
+      final allAlbums = results[2] as List<Album>;
+      final artists = results[3] as List<Artist>;
 
-      print('✅ HiFi Server loaded: ${albums.length} albums, ${tracks.length} tracks');
+      final totalItems = newAlbums.length + randomTracks.length;
+      print('✅ HiFi Server: $totalItems total items loaded');
+
+      // If ALL results are empty and we had an error, surface it
+      if (totalItems == 0 && firstError != null) {
+        state = state.copyWith(isLoading: false, error: firstError);
+        return;
+      }
 
       state = state.copyWith(
         isLoading: false,
-        newAlbums: albums.take(10).toList(),
-        albumsYouLlEnjoy: albums.skip(5).take(10).toList(),
-        trendingTracks: tracks.take(10).toList(),
-        recommendations: tracks.take(10).toList(),
+        error: null,
+        newAlbums: newAlbums.take(12).toList(),
+        albumsYouLlEnjoy: allAlbums.take(12).toList(),
+        trendingTracks: randomTracks.take(12).toList(),
+        recommendations: randomTracks.take(12).toList(),
         songsOfTheYear: const [],
         popularPlaylists: const [],
         playlistsForYou: const [],
