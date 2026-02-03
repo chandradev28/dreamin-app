@@ -42,6 +42,8 @@ class QobuzServiceImpl implements MusicService {
     print('🔍 Qobuz search: $query');
     print('🔍 Qobuz search URL: $_searchUrl?q=$query&offset=0');
     
+    String? lastError;
+    
     try {
       // Try primary squid.wtf endpoint
       final response = await _dio.get(
@@ -58,6 +60,7 @@ class QobuzServiceImpl implements MusicService {
         return result;
       }
     } catch (e) {
+      lastError = e.toString();
       print('⚠️ Qobuz primary search failed: $e');
     }
 
@@ -76,18 +79,15 @@ class QobuzServiceImpl implements MusicService {
           return result;
         }
       } catch (e) {
+        lastError = e.toString();
         print('⚠️ Qobuz fallback $fallback failed: $e');
       }
     }
 
-    print('❌ All Qobuz endpoints failed');
-    return const SearchResult(
-      tracks: [],
-      albums: [],
-      artists: [],
-      playlists: [],
-      source: MusicSource.qobuz,
-    );
+    // All endpoints failed - THROW exception instead of returning empty
+    final errorMessage = 'All Qobuz endpoints failed: ${lastError ?? "Unknown error"}';
+    print('❌ $errorMessage');
+    throw Exception(errorMessage);
   }
 
   /// Parse squid.wtf response format
