@@ -362,36 +362,42 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
   /// Load curated content for Qobuz (no discovery API, so use search queries)
   /// Creates a Spotify-like experience with genre sections + Hi-Res focus
   Future<void> _loadQobuzDiscovery() async {
+    String? firstError;
+    
+    // Helper to wrap API calls with proper error logging
+    Future<List<T>> safeSearch<T>(Future<List<T>> Function() apiCall, String label) async {
+      try {
+        final result = await apiCall();
+        print('✅ Qobuz $label: ${result.length} items');
+        return result;
+      } catch (e) {
+        print('❌ Qobuz $label FAILED: $e');
+        firstError ??= 'Qobuz $label: $e';
+        return <T>[];
+      }
+    }
+
     try {
       print('🎧 Loading Qobuz curated content (Hi-Res focus)...');
       
-      // All curated searches run in parallel
-      // Using general search terms that return abundant results
+      // All curated searches run in parallel with proper error logging
       final results = await Future.wait([
-        // 1. Featured Albums (general query for rich results)
-        _musicService.searchAlbums('pop', limit: 12)
-            .catchError((_) => <Album>[]),
+        // 1. Featured Albums
+        safeSearch<Album>(() => _musicService.searchAlbums('pop', limit: 12), 'Featured Albums'),
         // 2. New Releases
-        _musicService.searchAlbums('new', limit: 10)
-            .catchError((_) => <Album>[]),
+        safeSearch<Album>(() => _musicService.searchAlbums('new', limit: 10), 'New Releases'),
         // 3. Trending Pop Tracks
-        _musicService.searchTracks('hits', limit: 12)
-            .catchError((_) => <Track>[]),
+        safeSearch<Track>(() => _musicService.searchTracks('hits', limit: 12), 'Trending Tracks'),
         // 4. Jazz Collection
-        _musicService.searchAlbums('jazz', limit: 10)
-            .catchError((_) => <Album>[]),
+        safeSearch<Album>(() => _musicService.searchAlbums('jazz', limit: 10), 'Jazz'),
         // 5. Classical Collection
-        _musicService.searchAlbums('classical', limit: 10)
-            .catchError((_) => <Album>[]),
+        safeSearch<Album>(() => _musicService.searchAlbums('classical', limit: 10), 'Classical'),
         // 6. Rock Collection
-        _musicService.searchAlbums('rock', limit: 10)
-            .catchError((_) => <Album>[]),
+        safeSearch<Album>(() => _musicService.searchAlbums('rock', limit: 10), 'Rock'),
         // 7. Electronic/Dance
-        _musicService.searchAlbums('electronic', limit: 10)
-            .catchError((_) => <Album>[]),
+        safeSearch<Album>(() => _musicService.searchAlbums('electronic', limit: 10), 'Electronic'),
         // 8. Featured Artists
-        _musicService.searchArtists('popular', limit: 8)
-            .catchError((_) => <Artist>[]),
+        safeSearch<Artist>(() => _musicService.searchArtists('popular', limit: 8), 'Artists'),
       ]);
 
       final popAlbums = results[0] as List<Album>;
@@ -405,26 +411,27 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
 
       print('✅ Qobuz home loaded: ${popAlbums.length} pop, ${newReleases.length} new, ${trendingTracks.length} tracks, ${jazzAlbums.length} jazz');
 
+      // If ALL results are empty and we had an error, surface it
+      final totalItems = popAlbums.length + newReleases.length + trendingTracks.length + jazzAlbums.length;
+      if (totalItems == 0 && firstError != null) {
+        state = state.copyWith(isLoading: false, error: firstError);
+        return;
+      }
+
       // Map Qobuz content to home state
-      // Pop albums → newAlbums (featured), other genres for variety
       state = state.copyWith(
         isLoading: false,
-        // Featured pop albums (main hero section)
+        error: null,
         newAlbums: popAlbums.take(10).toList(),
-        // New releases as "albums you'll enjoy"
         albumsYouLlEnjoy: newReleases.take(10).toList(),
-        // Trending tracks for bento box
         trendingTracks: trendingTracks.take(10).toList(),
         recommendations: trendingTracks.take(10).toList(),
-        // Genre collections for Qobuz
         jazzAlbums: jazzAlbums.take(10).toList(),
         classicalAlbums: classicalAlbums.take(10).toList(),
         rockAlbums: rockAlbums.take(10).toList(),
-        // Qobuz has no playlists in squid.wtf response
         songsOfTheYear: const [],
         popularPlaylists: const [],
         playlistsForYou: const [],
-        // Genres based on Qobuz strengths
         topGenres: const ['Pop', 'Jazz', 'Classical', 'Rock', 'Electronic', 'New'],
         recentlyPlayedArtists: artists,
       );

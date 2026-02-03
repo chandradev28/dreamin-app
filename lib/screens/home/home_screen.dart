@@ -82,18 +82,29 @@ class HomeScreen extends ConsumerWidget {
                   padding: const EdgeInsets.all(12),
                   margin: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.orange.withOpacity(0.2),
+                    color: homeData.error != null ? Colors.red.withOpacity(0.2) : Colors.orange.withOpacity(0.2),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.orange),
+                    border: Border.all(color: homeData.error != null ? Colors.red : Colors.orange),
                   ),
-                  child: Text(
-                    'DEBUG: Source=${activeSource.name} | '
-                    'Albums=${homeData.newAlbums.length} | '
-                    'Tracks=${homeData.trendingTracks.length} | '
-                    'Jazz=${homeData.jazzAlbums.length} | '
-                    'Loading=${homeData.isLoading} | '
-                    'Error=${homeData.error ?? "none"}',
-                    style: const TextStyle(fontSize: 11, color: Colors.orange),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'DEBUG: Source=${activeSource.name} | '
+                        'Albums=${homeData.newAlbums.length} | '
+                        'Tracks=${homeData.trendingTracks.length} | '
+                        'Jazz=${homeData.jazzAlbums.length}',
+                        style: TextStyle(fontSize: 11, color: homeData.error != null ? Colors.red : Colors.orange),
+                      ),
+                      if (homeData.error != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text(
+                            'ERROR: ${homeData.error!.length > 200 ? homeData.error!.substring(0, 200) : homeData.error}',
+                            style: const TextStyle(fontSize: 10, color: Colors.red),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               ),
