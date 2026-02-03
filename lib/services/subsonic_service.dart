@@ -282,10 +282,82 @@ class SubsonicServiceImpl implements MusicService {
     }
   }
 
+  /// Get frequently played albums
+  Future<List<Album>> getFrequentAlbums({int limit = 20}) async {
+    try {
+      final url = _buildUrl('getAlbumList2', {
+        'type': 'frequent',
+        'size': limit.toString(),
+      });
+      final response = await _dio.get(url);
+      final data = response.data['subsonic-response']['albumList2'];
+
+      final albums = <Album>[];
+      if (data?['album'] is List) {
+        for (final a in data['album']) {
+          albums.add(_albumFromSubsonic(a));
+        }
+      }
+      return albums;
+    } catch (e) {
+      print('❌ Subsonic getFrequentAlbums failed: $e');
+      return [];
+    }
+  }
+
+  /// Get recently played albums
+  Future<List<Album>> getRecentAlbums({int limit = 20}) async {
+    try {
+      final url = _buildUrl('getAlbumList2', {
+        'type': 'recent',
+        'size': limit.toString(),
+      });
+      final response = await _dio.get(url);
+      final data = response.data['subsonic-response']['albumList2'];
+
+      final albums = <Album>[];
+      if (data?['album'] is List) {
+        for (final a in data['album']) {
+          albums.add(_albumFromSubsonic(a));
+        }
+      }
+      return albums;
+    } catch (e) {
+      print('❌ Subsonic getRecentAlbums failed: $e');
+      return [];
+    }
+  }
+
+  /// Get all artists (indexed alphabetically)
+  Future<List<Artist>> getArtists() async {
+    try {
+      final url = _buildUrl('getArtists');
+      final response = await _dio.get(url);
+      final data = response.data['subsonic-response']['artists'];
+
+      final artists = <Artist>[];
+      // Artists are grouped by index (A, B, C, etc.)
+      if (data?['index'] is List) {
+        for (final index in data['index']) {
+          if (index['artist'] is List) {
+            for (final a in index['artist']) {
+              artists.add(_artistFromSubsonic(a));
+            }
+          }
+        }
+      }
+      print('✅ Subsonic getArtists: ${artists.length} artists');
+      return artists;
+    } catch (e) {
+      print('❌ Subsonic getArtists failed: $e');
+      return [];
+    }
+  }
+
   @override
   Future<List<Playlist>> getPopularPlaylists({int limit = 20}) async {
-    // Subsonic doesn't have playlists
-    return [];
+    // Return user's own playlists from the server
+    return getPlaylists();
   }
 
   @override
