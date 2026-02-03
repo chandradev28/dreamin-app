@@ -76,38 +76,6 @@ class HomeScreen extends ConsumerWidget {
                   ),
                 )
             else ...[
-              // DEBUG BANNER - shows what data we have
-              SliverToBoxAdapter(
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  margin: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: homeData.error != null ? Colors.red.withOpacity(0.2) : Colors.orange.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: homeData.error != null ? Colors.red : Colors.orange),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'DEBUG: Source=${activeSource.name} | '
-                        'Albums=${homeData.newAlbums.length} | '
-                        'Tracks=${homeData.trendingTracks.length} | '
-                        'Jazz=${homeData.jazzAlbums.length}',
-                        style: TextStyle(fontSize: 11, color: homeData.error != null ? Colors.red : Colors.orange),
-                      ),
-                      if (homeData.error != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 8),
-                          child: Text(
-                            'ERROR: ${homeData.error!.length > 200 ? homeData.error!.substring(0, 200) : homeData.error}',
-                            style: const TextStyle(fontSize: 10, color: Colors.red),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
               // ============================================================
               // SECTION 1: SONGS OF THE YEAR (TIDAL only - Qobuz has no playlists)
               // ============================================================
