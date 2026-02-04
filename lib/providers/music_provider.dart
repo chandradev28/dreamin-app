@@ -5,6 +5,7 @@ import '../services/tidal_service.dart';
 import '../services/music_service.dart';
 import '../services/lastfm_service.dart';
 import '../services/recommendation_service.dart';
+import '../services/subsonic_service.dart';
 import '../models/models.dart';
 import 'source_provider.dart';
 
@@ -460,24 +461,30 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
     try {
       print('🎵 Loading HiFi Server content...');
       
-      // Use proper Subsonic discovery endpoints (not empty searches)
+      // Cast to SubsonicServiceImpl to access specific methods
+      final subsonicService = _musicService as SubsonicServiceImpl;
+      
+      // Use proper Subsonic discovery endpoints
       final results = await Future.wait([
-        // New albums (using getAlbumList2 type=newest)
-        safeCall<Album>(() => _musicService.getNewAlbums(limit: 20), 'New Albums'),
-        // Random tracks (using getRandomSongs)
-        safeCall<Track>(() => _musicService.getRandomTracks(limit: 20), 'Random Tracks'),
-        // Popular albums (using getAlbumList2 type=frequent if available)
-        safeCall<Album>(() => _musicService.searchAlbums('a', limit: 15), 'All Albums'),
-        // Artists search
-        safeCall<Artist>(() => _musicService.searchArtists('a', limit: 12), 'Artists'),
+        // New albums (getAlbumList2 type=newest)
+        safeCall<Album>(() => subsonicService.getNewAlbums(limit: 20), 'New Albums'),
+        // Random albums (getAlbumList2 type=random)
+        safeCall<Album>(() => subsonicService.getRandomAlbums(limit: 20), 'Random Albums'),
+        // Random tracks (getRandomSongs)
+        safeCall<Track>(() => subsonicService.getRandomSongs(count: 20), 'Random Songs'),
+        // All artists (getArtists)
+        safeCall<Artist>(() => subsonicService.getArtists(), 'Artists'),
+        // User playlists
+        safeCall<Playlist>(() => subsonicService.getPlaylists(), 'Playlists'),
       ]);
 
       final newAlbums = results[0] as List<Album>;
-      final randomTracks = results[1] as List<Track>;
-      final allAlbums = results[2] as List<Album>;
+      final randomAlbums = results[1] as List<Album>;
+      final randomTracks = results[2] as List<Track>;
       final artists = results[3] as List<Artist>;
+      final playlists = results[4] as List<Playlist>;
 
-      final totalItems = newAlbums.length + randomTracks.length;
+      final totalItems = newAlbums.length + randomTracks.length + randomAlbums.length;
       print('✅ HiFi Server: $totalItems total items loaded');
 
       // If ALL results are empty and we had an error, surface it
@@ -490,14 +497,14 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
         isLoading: false,
         error: null,
         newAlbums: newAlbums.take(12).toList(),
-        albumsYouLlEnjoy: allAlbums.take(12).toList(),
+        albumsYouLlEnjoy: randomAlbums.take(12).toList(),
         trendingTracks: randomTracks.take(12).toList(),
         recommendations: randomTracks.take(12).toList(),
         songsOfTheYear: const [],
-        popularPlaylists: const [],
+        popularPlaylists: playlists.take(10).toList(),
         playlistsForYou: const [],
         topGenres: const ['Your Library', 'Albums', 'Artists', 'Tracks'],
-        recentlyPlayedArtists: artists,
+        recentlyPlayedArtists: artists.take(12).toList(),
       );
     } catch (e) {
       print('❌ HiFi Server load error: $e');

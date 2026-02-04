@@ -1,23 +1,23 @@
-import 'package:dio/dio.dart';
+import 'dart:async';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 import '../core/constants/api_constants.dart';
 import '../models/models.dart';
 import 'music_service.dart';
 
 /// Subsonic/OpenSubsonic Service - Full Implementation
 /// Works with Navidrome, Gonic, Airsonic, and custom hifi servers
+/// Rewritten to use http package for reliability
 class SubsonicServiceImpl implements MusicService {
-  final Dio _dio;
+  final http.Client _client;
   final SubsonicConfig config;
 
-  SubsonicServiceImpl(this.config) : _dio = Dio() {
-    _dio.options.connectTimeout = const Duration(seconds: 10);
-    _dio.options.receiveTimeout = const Duration(seconds: 30);
-  }
+  SubsonicServiceImpl(this.config) : _client = http.Client();
 
   @override
   MusicSource get source => MusicSource.subsonic;
 
-  /// Build query params with Subsonic auth
+  /// Build authentication parameters for Subsonic API
   Map<String, String> _authParams() {
     return {
       'u': config.username,
@@ -28,24 +28,73 @@ class SubsonicServiceImpl implements MusicService {
     };
   }
 
-  /// Build full URL with auth params
-  String _buildUrl(String endpoint, [Map<String, String>? extra]) {
-    final params = {..._authParams(), ...?extra};
-    final query = params.entries.map((e) => '${e.key}=${Uri.encodeComponent(e.value)}').join('&');
-    return '${config.serverUrl}/rest/$endpoint?$query';
+  /// Build full URI with auth params using proper encoding
+  Uri _buildUri(String endpoint, [Map<String, String>? extraParams]) {
+    final params = _authParams();
+    if (extraParams != null) {
+      params.addAll(extraParams);
+    }
+    return Uri.parse('${config.serverUrl}/rest/$endpoint')
+        .replace(queryParameters: params);
+  }
+
+  /// Get cover art URL from cover art ID (returns FULL authenticated URL)
+  String getCoverArtUrl(String? coverArtId, {int size = 300}) {
+    if (coverArtId == null || coverArtId.isEmpty) return '';
+    
+    // If already a full URL, return as-is
+    if (coverArtId.startsWith('http')) return coverArtId;
+    
+    final params = _authParams();
+    params['id'] = coverArtId;
+    params['size'] = size.toString();
+    
+    return Uri.parse('${config.serverUrl}/rest/getCoverArt')
+        .replace(queryParameters: params)
+        .toString();
+  }
+
+  @override
+  String getCoverArt(String? id, {int size = 300}) {
+    return getCoverArtUrl(id, size: size);
+  }
+
+  /// Get stream URL for a track
+  String getStreamUrlSync(String trackId, {int? maxBitRate}) {
+    final params = _authParams();
+    params['id'] = trackId;
+    if (maxBitRate != null) {
+      params['maxBitRate'] = maxBitRate.toString();
+    }
+    
+    return Uri.parse('${config.serverUrl}/rest/stream')
+        .replace(queryParameters: params)
+        .toString();
+  }
+
+  @override
+  Future<String?> getStreamUrl(String trackId) async {
+    return getStreamUrlSync(trackId);
   }
 
   /// Ping server to verify connection
   Future<bool> ping() async {
     try {
-      final response = await _dio.get(_buildUrl('ping'));
-      if (response.data is Map) {
-        final status = response.data['subsonic-response']?['status'];
-        return status == 'ok';
+      final uri = _buildUri('ping');
+      print('[HiFi] Ping: $uri');
+      final response = await _client.get(uri).timeout(const Duration(seconds: 5));
+      
+      if (response.statusCode != 200) {
+        print('[HiFi] Ping failed: ${response.statusCode}');
+        return false;
       }
-      return false;
+      
+      final data = json.decode(response.body);
+      final status = data['subsonic-response']?['status'];
+      print('[HiFi] Ping status: $status');
+      return status == 'ok';
     } catch (e) {
-      print('❌ Subsonic ping failed: $e');
+      print('[HiFi] Ping error: $e');
       return false;
     }
   }
@@ -53,40 +102,71 @@ class SubsonicServiceImpl implements MusicService {
   /// Search across library (songs, albums, artists)
   @override
   Future<SearchResult> search(String query, {int limit = 30}) async {
+    if (query.trim().isEmpty) {
+      return const SearchResult(
+        tracks: [],
+        albums: [],
+        artists: [],
+        playlists: [],
+        source: MusicSource.subsonic,
+      );
+    }
+    
+    print('[HiFi] Searching for: "$query"');
+    
     try {
-      final url = _buildUrl('search3', {
+      final uri = _buildUri('search3', {
         'query': query,
         'songCount': limit.toString(),
         'albumCount': '20',
         'artistCount': '20',
       });
-
-      final response = await _dio.get(url);
-      final data = response.data['subsonic-response']['searchResult3'] ?? {};
-
+      
+      print('[HiFi] Search URL: $uri');
+      
+      final response = await _client.get(uri).timeout(const Duration(seconds: 15));
+      
+      if (response.statusCode != 200) {
+        print('[HiFi] Search failed: ${response.statusCode}');
+        throw Exception('Search failed: ${response.statusCode}');
+      }
+      
+      final data = json.decode(response.body);
+      final result = data['subsonic-response'];
+      
+      if (result?['status'] == 'failed') {
+        final error = result['error']?['message'] ?? 'Unknown error';
+        print('[HiFi] Search error: $error');
+        throw Exception('Search error: $error');
+      }
+      
+      final searchResult = result?['searchResult3'] ?? {};
+      
       // Parse songs
       final songs = <Track>[];
-      if (data['song'] is List) {
-        for (final s in data['song']) {
-          songs.add(_trackFromSubsonic(s));
+      if (searchResult['song'] is List) {
+        for (final s in searchResult['song']) {
+          songs.add(_trackFromSubsonic(s as Map<String, dynamic>));
         }
       }
 
       // Parse albums
       final albums = <Album>[];
-      if (data['album'] is List) {
-        for (final a in data['album']) {
-          albums.add(_albumFromSubsonic(a));
+      if (searchResult['album'] is List) {
+        for (final a in searchResult['album']) {
+          albums.add(_albumFromSubsonic(a as Map<String, dynamic>));
         }
       }
 
       // Parse artists
       final artists = <Artist>[];
-      if (data['artist'] is List) {
-        for (final a in data['artist']) {
-          artists.add(_artistFromSubsonic(a));
+      if (searchResult['artist'] is List) {
+        for (final a in searchResult['artist']) {
+          artists.add(_artistFromSubsonic(a as Map<String, dynamic>));
         }
       }
+
+      print('[HiFi] Found ${songs.length} tracks, ${albums.length} albums, ${artists.length} artists');
 
       return SearchResult(
         tracks: songs,
@@ -96,14 +176,8 @@ class SubsonicServiceImpl implements MusicService {
         source: MusicSource.subsonic,
       );
     } catch (e) {
-      print('❌ Subsonic search failed: $e');
-      return const SearchResult(
-        tracks: [],
-        albums: [],
-        artists: [],
-        playlists: [],
-        source: MusicSource.subsonic,
-      );
+      print('[HiFi] Search error: $e');
+      throw Exception('HiFi search failed: $e');
     }
   }
 
@@ -137,34 +211,45 @@ class SubsonicServiceImpl implements MusicService {
   /// Get album details with all tracks
   @override
   Future<AlbumDetail?> getAlbum(String albumId) async {
+    print('[HiFi] Getting album: $albumId');
+    
     try {
-      final url = _buildUrl('getAlbum', {'id': albumId});
-      final response = await _dio.get(url);
-      final data = response.data['subsonic-response']['album'];
-
-      if (data == null) return null;
+      final uri = _buildUri('getAlbum', {'id': albumId});
+      final response = await _client.get(uri).timeout(const Duration(seconds: 10));
+      
+      if (response.statusCode != 200) return null;
+      
+      final data = json.decode(response.body);
+      final result = data['subsonic-response'];
+      
+      if (result?['status'] == 'failed') return null;
+      
+      final albumData = result?['album'];
+      if (albumData == null) return null;
 
       final tracks = <Track>[];
-      if (data['song'] is List) {
-        for (final s in data['song']) {
-          tracks.add(_trackFromSubsonic(s));
+      if (albumData['song'] is List) {
+        for (final s in albumData['song']) {
+          tracks.add(_trackFromSubsonic(s as Map<String, dynamic>));
         }
       }
 
+      print('[HiFi] Found ${tracks.length} tracks in album');
+
       return AlbumDetail(
-        id: data['id']?.toString() ?? albumId,
-        title: data['name'] ?? data['title'] ?? 'Unknown Album',
-        artist: data['artist'] ?? 'Unknown Artist',
-        artistId: data['artistId']?.toString() ?? '',
-        coverArtUrl: getCoverArtUrl(data['coverArt']),
-        year: data['year'] as int?,
+        id: albumData['id']?.toString() ?? albumId,
+        title: albumData['name'] ?? albumData['title'] ?? 'Unknown Album',
+        artist: albumData['artist'] ?? 'Unknown Artist',
+        artistId: albumData['artistId']?.toString() ?? '',
+        coverArtUrl: getCoverArtUrl(albumData['coverArt']?.toString()),
+        year: albumData['year'] as int?,
         trackCount: tracks.length,
-        duration: Duration(seconds: data['duration'] ?? 0),
+        duration: Duration(seconds: albumData['duration'] ?? 0),
         tracks: tracks,
         source: MusicSource.subsonic,
       );
     } catch (e) {
-      print('❌ Subsonic getAlbum failed: $e');
+      print('[HiFi] getAlbum error: $e');
       return null;
     }
   }
@@ -172,44 +257,43 @@ class SubsonicServiceImpl implements MusicService {
   /// Get artist details
   @override
   Future<ArtistDetail?> getArtist(String artistId) async {
+    print('[HiFi] Getting artist: $artistId');
+    
     try {
-      final url = _buildUrl('getArtist', {'id': artistId});
-      final response = await _dio.get(url);
-      final data = response.data['subsonic-response']['artist'];
-
-      if (data == null) return null;
+      final uri = _buildUri('getArtist', {'id': artistId});
+      final response = await _client.get(uri).timeout(const Duration(seconds: 10));
+      
+      if (response.statusCode != 200) return null;
+      
+      final data = json.decode(response.body);
+      final result = data['subsonic-response'];
+      
+      if (result?['status'] == 'failed') return null;
+      
+      final artistData = result?['artist'];
+      if (artistData == null) return null;
 
       final albums = <Album>[];
-      if (data['album'] is List) {
-        for (final a in data['album']) {
-          albums.add(_albumFromSubsonic(a));
+      if (artistData['album'] is List) {
+        for (final a in artistData['album']) {
+          albums.add(_albumFromSubsonic(a as Map<String, dynamic>));
         }
       }
 
+      print('[HiFi] Found ${albums.length} albums for artist');
+
       return ArtistDetail(
-        id: data['id']?.toString() ?? artistId,
-        name: data['name'] ?? 'Unknown Artist',
-        imageUrl: getCoverArtUrl(data['coverArt']),
+        id: artistData['id']?.toString() ?? artistId,
+        name: artistData['name'] ?? 'Unknown Artist',
+        imageUrl: getCoverArtUrl(artistData['coverArt']?.toString()),
         albums: albums,
         topTracks: const [],
         source: MusicSource.subsonic,
       );
     } catch (e) {
-      print('❌ Subsonic getArtist failed: $e');
+      print('[HiFi] getArtist error: $e');
       return null;
     }
-  }
-
-  /// Get stream URL (async version for MusicService interface)
-  @override
-  Future<String?> getStreamUrl(String trackId) async {
-    return getStreamUrlSync(trackId);
-  }
-
-  /// Cover art for MusicService interface
-  @override
-  String getCoverArt(String? id, {int size = 300}) {
-    return getCoverArtUrl(id, size: size);
   }
 
   /// Get playlist details (not fully supported on Subsonic/HiFi)
@@ -219,40 +303,40 @@ class SubsonicServiceImpl implements MusicService {
     return null;
   }
 
-  /// Sync version of stream URL for internal use
-  String getStreamUrlSync(String trackId, {int? maxBitRate}) {
-    final params = <String, String>{'id': trackId};
-    if (maxBitRate != null) {
-      params['maxBitRate'] = maxBitRate.toString();
-    }
-    return _buildUrl('stream', params);
-  }
-
-  /// Get cover art URL
-  String getCoverArtUrl(String? coverArtId, {int size = 300}) {
-    if (coverArtId == null || coverArtId.isEmpty) return '';
-    return _buildUrl('getCoverArt', {'id': coverArtId, 'size': size.toString()});
-  }
-
   /// Get random songs
   Future<List<Track>> getRandomSongs({int count = 20, String? genre}) async {
+    print('[HiFi] Getting $count random songs');
+    
     try {
       final params = <String, String>{'size': count.toString()};
       if (genre != null) params['genre'] = genre;
 
-      final url = _buildUrl('getRandomSongs', params);
-      final response = await _dio.get(url);
-      final data = response.data['subsonic-response']['randomSongs'];
-
-      final songs = <Track>[];
-      if (data?['song'] is List) {
-        for (final s in data['song']) {
-          songs.add(_trackFromSubsonic(s));
-        }
+      final uri = _buildUri('getRandomSongs', params);
+      final response = await _client.get(uri).timeout(const Duration(seconds: 10));
+      
+      if (response.statusCode != 200) {
+        print('[HiFi] getRandomSongs failed: ${response.statusCode}');
+        return [];
       }
-      return songs;
+      
+      final data = json.decode(response.body);
+      final result = data['subsonic-response'];
+      
+      if (result?['status'] == 'failed') {
+        print('[HiFi] getRandomSongs error: ${result['error']?['message']}');
+        return [];
+      }
+      
+      final songs = result?['randomSongs']?['song'] as List? ?? [];
+      
+      final tracks = songs
+          .map((s) => _trackFromSubsonic(s as Map<String, dynamic>))
+          .toList();
+      
+      print('[HiFi] Got ${tracks.length} random tracks');
+      return tracks;
     } catch (e) {
-      print('❌ Subsonic getRandomSongs failed: $e');
+      print('[HiFi] getRandomSongs error: $e');
       return [];
     }
   }
@@ -261,95 +345,102 @@ class SubsonicServiceImpl implements MusicService {
 
   @override
   Future<List<Album>> getNewAlbums({int limit = 20}) async {
-    try {
-      final url = _buildUrl('getAlbumList2', {
-        'type': 'newest',
-        'size': limit.toString(),
-      });
-      final response = await _dio.get(url);
-      final data = response.data['subsonic-response']['albumList2'];
-
-      final albums = <Album>[];
-      if (data?['album'] is List) {
-        for (final a in data['album']) {
-          albums.add(_albumFromSubsonic(a));
-        }
-      }
-      return albums;
-    } catch (e) {
-      print('❌ Subsonic getNewAlbums failed: $e');
-      return [];
-    }
+    return _getAlbumList('newest', limit: limit);
   }
 
   /// Get frequently played albums
   Future<List<Album>> getFrequentAlbums({int limit = 20}) async {
-    try {
-      final url = _buildUrl('getAlbumList2', {
-        'type': 'frequent',
-        'size': limit.toString(),
-      });
-      final response = await _dio.get(url);
-      final data = response.data['subsonic-response']['albumList2'];
-
-      final albums = <Album>[];
-      if (data?['album'] is List) {
-        for (final a in data['album']) {
-          albums.add(_albumFromSubsonic(a));
-        }
-      }
-      return albums;
-    } catch (e) {
-      print('❌ Subsonic getFrequentAlbums failed: $e');
-      return [];
-    }
+    return _getAlbumList('frequent', limit: limit);
   }
 
   /// Get recently played albums
   Future<List<Album>> getRecentAlbums({int limit = 20}) async {
+    return _getAlbumList('recent', limit: limit);
+  }
+
+  /// Get random albums
+  Future<List<Album>> getRandomAlbums({int limit = 20}) async {
+    return _getAlbumList('random', limit: limit);
+  }
+
+  /// Internal helper to fetch album lists by type
+  Future<List<Album>> _getAlbumList(String type, {int limit = 20}) async {
+    print('[HiFi] Getting album list: $type');
+    
     try {
-      final url = _buildUrl('getAlbumList2', {
-        'type': 'recent',
+      final uri = _buildUri('getAlbumList2', {
+        'type': type,
         'size': limit.toString(),
       });
-      final response = await _dio.get(url);
-      final data = response.data['subsonic-response']['albumList2'];
-
-      final albums = <Album>[];
-      if (data?['album'] is List) {
-        for (final a in data['album']) {
-          albums.add(_albumFromSubsonic(a));
-        }
+      
+      final response = await _client.get(uri).timeout(const Duration(seconds: 10));
+      
+      if (response.statusCode != 200) {
+        print('[HiFi] getAlbumList2 failed: ${response.statusCode}');
+        return [];
       }
+      
+      final data = json.decode(response.body);
+      final result = data['subsonic-response'];
+      
+      if (result?['status'] == 'failed') {
+        print('[HiFi] getAlbumList2 error: ${result['error']?['message']}');
+        return [];
+      }
+      
+      final albumList = result?['albumList2']?['album'] as List? ?? [];
+      
+      final albums = albumList
+          .map((a) => _albumFromSubsonic(a as Map<String, dynamic>))
+          .toList();
+      
+      print('[HiFi] Got ${albums.length} $type albums');
       return albums;
     } catch (e) {
-      print('❌ Subsonic getRecentAlbums failed: $e');
+      print('[HiFi] getAlbumList2 error: $e');
       return [];
     }
   }
 
   /// Get all artists (indexed alphabetically)
   Future<List<Artist>> getArtists() async {
+    print('[HiFi] Getting all artists');
+    
     try {
-      final url = _buildUrl('getArtists');
-      final response = await _dio.get(url);
-      final data = response.data['subsonic-response']['artists'];
-
+      final uri = _buildUri('getArtists');
+      final response = await _client.get(uri).timeout(const Duration(seconds: 10));
+      
+      if (response.statusCode != 200) {
+        print('[HiFi] getArtists failed: ${response.statusCode}');
+        return [];
+      }
+      
+      final data = json.decode(response.body);
+      final result = data['subsonic-response'];
+      
+      if (result?['status'] == 'failed') {
+        print('[HiFi] getArtists error: ${result['error']?['message']}');
+        return [];
+      }
+      
+      final artistsData = result?['artists'];
       final artists = <Artist>[];
+      
       // Artists are grouped by index (A, B, C, etc.)
-      if (data?['index'] is List) {
-        for (final index in data['index']) {
+      if (artistsData?['index'] is List) {
+        for (final index in artistsData['index']) {
           if (index['artist'] is List) {
             for (final a in index['artist']) {
-              artists.add(_artistFromSubsonic(a));
+              artists.add(_artistFromSubsonic(a as Map<String, dynamic>));
             }
           }
         }
       }
-      print('✅ Subsonic getArtists: ${artists.length} artists');
+      
+      print('[HiFi] Found ${artists.length} artists');
       return artists;
     } catch (e) {
-      print('❌ Subsonic getArtists failed: $e');
+      print('[HiFi] getArtists error: $e');
       return [];
     }
   }
@@ -367,20 +458,32 @@ class SubsonicServiceImpl implements MusicService {
 
   /// Get starred/favorite items
   Future<List<Track>> getStarred() async {
+    print('[HiFi] Getting starred items');
+    
     try {
-      final url = _buildUrl('getStarred2');
-      final response = await _dio.get(url);
-      final data = response.data['subsonic-response']['starred2'];
-
+      final uri = _buildUri('getStarred2');
+      final response = await _client.get(uri).timeout(const Duration(seconds: 10));
+      
+      if (response.statusCode != 200) return [];
+      
+      final data = json.decode(response.body);
+      final result = data['subsonic-response'];
+      
+      if (result?['status'] == 'failed') return [];
+      
+      final starred = result?['starred2'] ?? {};
+      
       final songs = <Track>[];
-      if (data?['song'] is List) {
-        for (final s in data['song']) {
-          songs.add(_trackFromSubsonic(s));
+      if (starred['song'] is List) {
+        for (final s in starred['song']) {
+          songs.add(_trackFromSubsonic(s as Map<String, dynamic>));
         }
       }
+
+      print('[HiFi] Found ${songs.length} starred tracks');
       return songs;
     } catch (e) {
-      print('❌ Subsonic getStarred failed: $e');
+      print('[HiFi] getStarred error: $e');
       return [];
     }
   }
@@ -388,56 +491,69 @@ class SubsonicServiceImpl implements MusicService {
   /// Star a track
   Future<void> star(String trackId) async {
     try {
-      await _dio.get(_buildUrl('star', {'id': trackId}));
+      final uri = _buildUri('star', {'id': trackId});
+      await _client.get(uri).timeout(const Duration(seconds: 5));
     } catch (e) {
-      print('❌ Subsonic star failed: $e');
+      print('[HiFi] star error: $e');
     }
   }
 
   /// Unstar a track
   Future<void> unstar(String trackId) async {
     try {
-      await _dio.get(_buildUrl('unstar', {'id': trackId}));
+      final uri = _buildUri('unstar', {'id': trackId});
+      await _client.get(uri).timeout(const Duration(seconds: 5));
     } catch (e) {
-      print('❌ Subsonic unstar failed: $e');
+      print('[HiFi] unstar error: $e');
     }
   }
 
   /// Scrobble a play
   Future<void> scrobble(String trackId, {bool submission = true}) async {
     try {
-      await _dio.get(_buildUrl('scrobble', {
+      final uri = _buildUri('scrobble', {
         'id': trackId,
         'submission': submission.toString(),
-      }));
+      });
+      await _client.get(uri).timeout(const Duration(seconds: 5));
     } catch (e) {
-      print('❌ Subsonic scrobble failed: $e');
+      print('[HiFi] scrobble error: $e');
     }
   }
 
   /// Get playlists
   Future<List<Playlist>> getPlaylists() async {
+    print('[HiFi] Getting playlists');
+    
     try {
-      final url = _buildUrl('getPlaylists');
-      final response = await _dio.get(url);
-      final data = response.data['subsonic-response']['playlists'];
+      final uri = _buildUri('getPlaylists');
+      final response = await _client.get(uri).timeout(const Duration(seconds: 10));
+      
+      if (response.statusCode != 200) return [];
+      
+      final data = json.decode(response.body);
+      final result = data['subsonic-response'];
+      
+      if (result?['status'] == 'failed') return [];
+      
+      final playlistsData = result?['playlists']?['playlist'] as List? ?? [];
 
       final playlists = <Playlist>[];
-      if (data?['playlist'] is List) {
-        for (final p in data['playlist']) {
-          playlists.add(Playlist(
-            id: p['id']?.toString() ?? '',
-            title: p['name'] ?? 'Unknown Playlist',
-            trackCount: p['songCount'] ?? 0,
-            coverArtUrl: getCoverArtUrl(p['coverArt']),
-            creatorName: p['owner'] ?? 'You',
-            source: MusicSource.subsonic,
-          ));
-        }
+      for (final p in playlistsData) {
+        playlists.add(Playlist(
+          id: p['id']?.toString() ?? '',
+          title: p['name'] ?? 'Unknown Playlist',
+          trackCount: p['songCount'] ?? 0,
+          coverArtUrl: getCoverArtUrl(p['coverArt']?.toString()),
+          creatorName: p['owner'] ?? 'You',
+          source: MusicSource.subsonic,
+        ));
       }
+      
+      print('[HiFi] Found ${playlists.length} playlists');
       return playlists;
     } catch (e) {
-      print('❌ Subsonic getPlaylists failed: $e');
+      print('[HiFi] getPlaylists error: $e');
       return [];
     }
   }
@@ -445,39 +561,48 @@ class SubsonicServiceImpl implements MusicService {
   // ============ CONVERSION HELPERS ============
 
   Track _trackFromSubsonic(Map<String, dynamic> s) {
+    // Build FULL cover art URL immediately
+    final coverArtUrl = getCoverArtUrl(s['coverArt']?.toString());
+    
     return Track(
       id: 'subsonic:${s['id']}',
       title: s['title'] ?? 'Unknown',
       artist: s['artist'] ?? 'Unknown Artist',
       artistId: s['artistId']?.toString() ?? '',
       album: s['album'] ?? 'Unknown Album',
-      albumId: s['albumId']?.toString() ?? '',
+      albumId: 'subsonic:${s['albumId'] ?? ''}',
       duration: Duration(seconds: s['duration'] ?? 0),
-      trackNumber: s['track'] as int? ?? 1,
-      coverArtUrl: getCoverArtUrl(s['coverArt']),
+      coverArtUrl: coverArtUrl,
+      trackNumber: s['track'] ?? 1,
       isExplicit: false,
       source: MusicSource.subsonic,
     );
   }
 
   Album _albumFromSubsonic(Map<String, dynamic> a) {
+    // Build FULL cover art URL immediately
+    final coverArtUrl = getCoverArtUrl(a['coverArt']?.toString());
+    
     return Album(
       id: 'subsonic:${a['id']}',
       title: a['name'] ?? a['title'] ?? 'Unknown Album',
       artist: a['artist'] ?? 'Unknown Artist',
       artistId: a['artistId']?.toString() ?? '',
-      coverArtUrl: getCoverArtUrl(a['coverArt']),
-      year: a['year'] as int?,
+      coverArtUrl: coverArtUrl,
+      year: a['year'],
       trackCount: a['songCount'] ?? 0,
       source: MusicSource.subsonic,
     );
   }
 
   Artist _artistFromSubsonic(Map<String, dynamic> a) {
+    // Build FULL cover art URL immediately
+    final coverArtUrl = getCoverArtUrl(a['coverArt']?.toString());
+    
     return Artist(
       id: 'subsonic:${a['id']}',
       name: a['name'] ?? 'Unknown Artist',
-      imageUrl: getCoverArtUrl(a['coverArt']),
+      imageUrl: coverArtUrl,
       source: MusicSource.subsonic,
     );
   }
