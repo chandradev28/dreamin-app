@@ -560,20 +560,28 @@ class SubsonicServiceImpl implements MusicService {
 
   // ============ CONVERSION HELPERS ============
 
+  /// Safely parse int from dynamic value (handles String or int)
+  int _parseInt(dynamic value, [int defaultValue = 0]) {
+    if (value == null) return defaultValue;
+    if (value is int) return value;
+    if (value is String) return int.tryParse(value) ?? defaultValue;
+    return defaultValue;
+  }
+
   Track _trackFromSubsonic(Map<String, dynamic> s) {
     // Build FULL cover art URL immediately
     final coverArtUrl = getCoverArtUrl(s['coverArt']?.toString());
     
     return Track(
       id: 'subsonic:${s['id']}',
-      title: s['title'] ?? 'Unknown',
-      artist: s['artist'] ?? 'Unknown Artist',
+      title: s['title']?.toString() ?? 'Unknown',
+      artist: s['artist']?.toString() ?? 'Unknown Artist',
       artistId: s['artistId']?.toString() ?? '',
-      album: s['album'] ?? 'Unknown Album',
+      album: s['album']?.toString() ?? 'Unknown Album',
       albumId: 'subsonic:${s['albumId'] ?? ''}',
-      duration: Duration(seconds: s['duration'] ?? 0),
+      duration: Duration(seconds: _parseInt(s['duration'])),
       coverArtUrl: coverArtUrl,
-      trackNumber: s['track'] ?? 1,
+      trackNumber: _parseInt(s['track'], 1),
       isExplicit: false,
       source: MusicSource.subsonic,
     );
@@ -583,14 +591,22 @@ class SubsonicServiceImpl implements MusicService {
     // Build FULL cover art URL immediately
     final coverArtUrl = getCoverArtUrl(a['coverArt']?.toString());
     
+    // Safely parse year
+    int? year;
+    final yearVal = a['year'];
+    if (yearVal != null) {
+      year = _parseInt(yearVal);
+      if (year == 0) year = null;
+    }
+    
     return Album(
       id: 'subsonic:${a['id']}',
-      title: a['name'] ?? a['title'] ?? 'Unknown Album',
-      artist: a['artist'] ?? 'Unknown Artist',
+      title: a['name']?.toString() ?? a['title']?.toString() ?? 'Unknown Album',
+      artist: a['artist']?.toString() ?? 'Unknown Artist',
       artistId: a['artistId']?.toString() ?? '',
       coverArtUrl: coverArtUrl,
-      year: a['year'],
-      trackCount: a['songCount'] ?? 0,
+      year: year,
+      trackCount: _parseInt(a['songCount']),
       source: MusicSource.subsonic,
     );
   }
@@ -601,7 +617,7 @@ class SubsonicServiceImpl implements MusicService {
     
     return Artist(
       id: 'subsonic:${a['id']}',
-      name: a['name'] ?? 'Unknown Artist',
+      name: a['name']?.toString() ?? 'Unknown Artist',
       imageUrl: coverArtUrl,
       source: MusicSource.subsonic,
     );
