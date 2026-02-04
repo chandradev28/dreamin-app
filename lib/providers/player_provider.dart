@@ -5,10 +5,12 @@ import 'dart:convert';
 import '../models/models.dart';
 import '../services/tidal_service.dart';
 import '../services/music_service.dart';
+import '../services/subsonic_service.dart';
 import '../services/recommendation_service.dart';
 import '../data/database.dart';
 import 'music_provider.dart';
 import 'source_provider.dart';
+import 'subsonic_provider.dart';
 
 /// Playback State
 enum PlaybackStatus { idle, loading, playing, paused, error }
@@ -351,29 +353,48 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       int? bitDepth = 16;
       int? sampleRate = 44100;
       
-      // For TIDAL tracks, use TidalService for quality info
-      if (track.source == MusicSource.tidal && _tidalService != null) {
-        final streamInfo = await _tidalService!.getStreamInfo(track.id);
-        streamUrl = streamInfo.url;
-        quality = streamInfo.quality;
-        bitDepth = streamInfo.bitDepth;
-        sampleRate = streamInfo.sampleRate;
-        print('📊 TIDAL Quality: $quality, BitDepth: $bitDepth, SampleRate: $sampleRate');
-      } else {
-        // Use unified MusicService for other sources
-        streamUrl = await _musicService.getStreamUrl(track.id);
-        
-        // Set quality based on source
-        if (track.source == MusicSource.qobuz) {
-          quality = 'HI_RES_LOSSLESS';
-          bitDepth = 24;
-          sampleRate = 96000;
-        } else if (track.source == MusicSource.subsonic) {
+      // Get stream URL based on track source - explicitly use correct service
+      switch (track.source) {
+        case MusicSource.tidal:
+          if (_tidalService != null) {
+            final streamInfo = await _tidalService!.getStreamInfo(track.id);
+            streamUrl = streamInfo.url;
+            quality = streamInfo.quality;
+            bitDepth = streamInfo.bitDepth;
+            sampleRate = streamInfo.sampleRate;
+            print('📊 TIDAL Quality: $quality, BitDepth: $bitDepth, SampleRate: $sampleRate');
+          }
+          break;
+          
+        case MusicSource.subsonic:
+          // CRITICAL: Use SubsonicServiceImpl directly via provider
+          // This ensures correct service is used regardless of which musicService 
+          // the player was initialized with
+          final subsonicService = _ref.read(subsonicServiceProvider);
+          if (subsonicService != null) {
+            streamUrl = subsonicService.getStreamUrlSync(track.id);
+            print('[HiFi] Using SubsonicService directly for stream URL');
+          } else {
+            // Fallback to generic service
+            streamUrl = await _musicService.getStreamUrl(track.id);
+          }
           quality = 'LOSSLESS';
           bitDepth = 16;
           sampleRate = 44100;
-        }
-        print('📊 ${track.source.name} Quality: $quality');
+          print('📊 HiFi Server Quality: $quality (FLAC)');
+          break;
+          
+        case MusicSource.qobuz:
+          streamUrl = await _musicService.getStreamUrl(track.id);
+          quality = 'HI_RES_LOSSLESS';
+          bitDepth = 24;
+          sampleRate = 96000;
+          print('📊 Qobuz Quality: $quality');
+          break;
+          
+        default:
+          streamUrl = await _musicService.getStreamUrl(track.id);
+          print('📊 ${track.source.name} Quality: $quality');
       }
       
       if (streamUrl == null || streamUrl.isEmpty) {
