@@ -502,20 +502,20 @@ class MusicSourceSettingsScreen extends ConsumerWidget {
             },
           ),
           
-          const SizedBox(height: 12),
-          
-          // HiFi Server Option (pre-configured)
-          _SourceOptionTile(
-            icon: Icons.dns_outlined,
-            iconColor: Colors.green,
-            title: 'HiFi Server',
-            subtitle: 'Your personal music server',
-            isSelected: sourceState.activeSource == ActiveSource.subsonic,
-            onTap: () {
-              ref.read(sourceSelectionProvider.notifier).setActiveSource(ActiveSource.subsonic);
-              ref.invalidate(homeDataProvider);
-            },
-          ),
+          // TODO: HiFi Server disabled - backend (hifi.401658.xyz) is down
+          // Uncomment when backend is available again
+          // const SizedBox(height: 12),
+          // _SourceOptionTile(
+          //   icon: Icons.dns_outlined,
+          //   iconColor: Colors.green,
+          //   title: 'HiFi Server',
+          //   subtitle: 'Your personal music server',
+          //   isSelected: sourceState.activeSource == ActiveSource.subsonic,
+          //   onTap: () {
+          //     ref.read(sourceSelectionProvider.notifier).setActiveSource(ActiveSource.subsonic);
+          //     ref.invalidate(homeDataProvider);
+          //   },
+          // ),
           
           const SizedBox(height: 32),
           
