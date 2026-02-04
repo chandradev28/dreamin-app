@@ -45,13 +45,27 @@ class SubsonicServiceImpl implements MusicService {
     // If already a full URL, return as-is
     if (coverArtId.startsWith('http')) return coverArtId;
     
+    // Strip subsonic: prefix if present
+    String cleanId = coverArtId;
+    if (coverArtId.startsWith('subsonic:')) {
+      cleanId = coverArtId.substring(9);
+    }
+    
     final params = _authParams();
-    params['id'] = coverArtId;
+    params['id'] = cleanId;
     params['size'] = size.toString();
     
     return Uri.parse('${config.serverUrl}/rest/getCoverArt')
         .replace(queryParameters: params)
         .toString();
+  }
+
+  /// Strip 'subsonic:' prefix from ID if present
+  String _stripPrefix(String id) {
+    if (id.startsWith('subsonic:')) {
+      return id.substring(9); // 'subsonic:'.length == 9
+    }
+    return id;
   }
 
   @override
@@ -61,15 +75,18 @@ class SubsonicServiceImpl implements MusicService {
 
   /// Get stream URL for a track
   String getStreamUrlSync(String trackId, {int? maxBitRate}) {
+    final cleanId = _stripPrefix(trackId);
     final params = _authParams();
-    params['id'] = trackId;
+    params['id'] = cleanId;
     if (maxBitRate != null) {
       params['maxBitRate'] = maxBitRate.toString();
     }
     
-    return Uri.parse('${config.serverUrl}/rest/stream')
+    final url = Uri.parse('${config.serverUrl}/rest/stream')
         .replace(queryParameters: params)
         .toString();
+    print('[HiFi] Stream URL: $url');
+    return url;
   }
 
   @override
