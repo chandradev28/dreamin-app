@@ -6,6 +6,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/utils/responsive.dart';
 import '../../providers/providers.dart';
 import '../../models/models.dart';
+import '../../widgets/quality_badge.dart';
 
 /// Now Playing Screen - TIDAL Style
 /// Features:
@@ -366,13 +367,9 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
             children: [
               Text(_formatDuration(position), style: AppTheme.labelSmall.copyWith(color: Colors.white70)),
               // Quality badge
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(playerState.qualityLabel, style: AppTheme.labelSmall.copyWith(color: Colors.white, fontSize: 10)),
+              QualityBadge(
+                qualityCode: playerState.currentQuality,
+                source: playerState.currentTrack?.source,
               ),
               Text(_formatDuration(duration), style: AppTheme.labelSmall.copyWith(color: Colors.white70)),
             ],

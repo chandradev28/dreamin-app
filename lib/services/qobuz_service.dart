@@ -267,7 +267,9 @@ class QobuzServiceImpl implements MusicService {
       final artistData = data['data'] ?? data;
       
       final image = artistData['image'] as Map<String, dynamic>?;
+      final artistName = artistData['name'] ?? 'Unknown Artist';
       final albums = <Album>[];
+      final topTracks = <Track>[];
       
       // Parse albums if available
       final albumsData = artistData['albums']?['items'] as List? ?? [];
@@ -275,12 +277,40 @@ class QobuzServiceImpl implements MusicService {
         albums.add(_albumFromJson(album as Map<String, dynamic>));
       }
       
+      // Try to get top tracks from API response first
+      final tracksData = artistData['tracks']?['items'] as List? ?? 
+                         artistData['tracks_appears_on']?['items'] as List? ?? [];
+      for (final track in tracksData) {
+        topTracks.add(_trackFromJson(track as Map<String, dynamic>));
+      }
+      
+      // If no tracks from API, search for artist's popular tracks
+      if (topTracks.isEmpty && artistName != 'Unknown Artist') {
+        print('[Qobuz] No tracks in response, searching for: $artistName');
+        try {
+          final searchResult = await search(artistName, limit: 30);
+          // Filter tracks by this artist
+          final artistTracks = searchResult.tracks
+              .where((t) => t.artist.toLowerCase().contains(artistName.toLowerCase()) ||
+                           artistName.toLowerCase().contains(t.artist.toLowerCase()))
+              .take(20)
+              .toList();
+          topTracks.addAll(artistTracks);
+          print('[Qobuz] Found ${topTracks.length} tracks via search');
+        } catch (e) {
+          print('[Qobuz] Track search failed: $e');
+        }
+      }
+      
+      print('[Qobuz] Artist loaded: ${albums.length} albums, ${topTracks.length} tracks');
+      
       return ArtistDetail(
         id: 'qobuz:$artistId',
-        name: artistData['name'] ?? 'Unknown Artist',
+        name: artistName,
         imageUrl: _extractCoverUrl(image),
         source: MusicSource.qobuz,
         albums: albums,
+        topTracks: topTracks,
         bio: artistData['biography']?['content'],
       );
     } catch (e) {

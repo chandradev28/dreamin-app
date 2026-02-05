@@ -820,6 +820,54 @@ class TidalService {
     }
   }
 
+  // ==================== VIDEO COVERS (Direct CDN Access) ====================
+
+  /// Get video cover URL from cover UUID (animated album art)
+  /// Video covers are served directly from Tidal's CDN - no proxy needed!
+  /// @param coverUuid The cover UUID from album/track data (e.g., "a1b2c3d4-e5f6-7890-abcd-ef1234567890")
+  /// @param size Video size (default 640, options: 160, 320, 480, 640, 750, 1280)
+  /// @return MP4 video URL or null if UUID invalid
+  String? getVideoCoverUrl(String? coverUuid, {int size = 640}) {
+    if (coverUuid == null || coverUuid.isEmpty) return null;
+    
+    // Already a full URL? Return as-is
+    if (coverUuid.startsWith('http')) return coverUuid;
+    
+    // Convert UUID format: a1b2c3d4-e5f6-7890-abcd-ef1234567890 -> a1b2c3d4/e5f6/7890/abcd/ef1234567890
+    final pathUuid = coverUuid.replaceAll('-', '/');
+    return 'https://resources.tidal.com/videos/$pathUuid/${size}x$size.mp4';
+  }
+
+  /// Get static image cover URL from cover UUID
+  /// Covers are served directly from Tidal's CDN - no proxy needed!
+  /// @param coverUuid The cover UUID from album/track data
+  /// @param size Image size (default 640, options: 80, 160, 320, 480, 640, 750, 1280)
+  /// @return JPG image URL or null if UUID invalid
+  String? getStaticCoverUrl(String? coverUuid, {int size = 640}) {
+    if (coverUuid == null || coverUuid.isEmpty) return null;
+    
+    // Already a full URL? Return as-is
+    if (coverUuid.startsWith('http')) return coverUuid;
+    
+    // Convert UUID format: a1b2c3d4-e5f6-7890-abcd-ef1234567890 -> a1b2c3d4/e5f6/7890/abcd/ef1234567890
+    final pathUuid = coverUuid.replaceAll('-', '/');
+    return 'https://resources.tidal.com/images/$pathUuid/${size}x$size.jpg';
+  }
+
+  /// Get artist picture URL from picture UUID
+  /// @param pictureUuid The picture UUID from artist data
+  /// @param size Image size (default 750, options: 160, 320, 480, 640, 750)
+  String? getArtistPictureUrl(String? pictureUuid, {int size = 750}) {
+    if (pictureUuid == null || pictureUuid.isEmpty) return null;
+    
+    // Already a full URL? Return as-is
+    if (pictureUuid.startsWith('http')) return pictureUuid;
+    
+    // Convert UUID format: a1b2c3d4-e5f6-7890-abcd-ef1234567890 -> a1b2c3d4/e5f6/7890/abcd/ef1234567890
+    final pathUuid = pictureUuid.replaceAll('-', '/');
+    return 'https://resources.tidal.com/images/$pathUuid/${size}x$size.jpg';
+  }
+
   // ==================== UTILITY ====================
 
   /// Check endpoint health

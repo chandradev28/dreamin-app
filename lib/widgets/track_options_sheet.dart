@@ -155,6 +155,54 @@ class TrackOptionsSheet extends ConsumerWidget {
             },
           ),
 
+          // Download option
+          Consumer(
+            builder: (context, ref, _) {
+              final downloadState = ref.watch(downloadProvider);
+              final isDownloaded = downloadState.isDownloaded(track.id);
+              final isDownloading = downloadState.isCurrentlyDownloading(track.id);
+              final isInQueue = downloadState.isInQueue(track.id);
+              
+              String label;
+              IconData icon;
+              Color? iconColor;
+              
+              if (isDownloaded) {
+                label = 'Downloaded';
+                icon = Icons.download_done_rounded;
+                iconColor = AppTheme.primaryColor;
+              } else if (isDownloading) {
+                label = 'Downloading... ${(downloadState.currentProgress * 100).toInt()}%';
+                icon = Icons.downloading_rounded;
+                iconColor = AppTheme.primaryColor;
+              } else if (isInQueue) {
+                label = 'Queued for download';
+                icon = Icons.hourglass_empty_rounded;
+              } else {
+                label = 'Download';
+                icon = Icons.download_outlined;
+              }
+              
+              return _OptionTile(
+                icon: icon,
+                label: label,
+                iconColor: iconColor,
+                onTap: (isDownloaded || isDownloading || isInQueue) ? () {
+                  Navigator.pop(context);
+                } : () {
+                  ref.read(downloadProvider.notifier).addToQueue(track);
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Downloading "${track.title}"'),
+                      duration: const Duration(seconds: 2),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+
           if (track.albumId != null)
             _OptionTile(
               icon: Icons.album_outlined,
