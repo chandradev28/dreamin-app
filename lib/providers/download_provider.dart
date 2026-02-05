@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/models.dart';
 import '../services/download_service.dart';
 import '../data/database.dart';
-import 'database_provider.dart';
+import 'music_provider.dart';
 
 /// Download state - tracks queue and current download progress
 class DownloadState {
