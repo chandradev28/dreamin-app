@@ -264,45 +264,83 @@ class QobuzServiceImpl implements MusicService {
       }
       
       final data = json.decode(response.body);
-      final artistData = data['data'] ?? data;
       
-      final image = artistData['image'] as Map<String, dynamic>?;
-      final artistName = artistData['name'] ?? 'Unknown Artist';
+      // API structure: { success: true, data: { artist: { ... } } }
+      final artistData = data['data']?['artist'] ?? data['data'] ?? data;
+      
+      // Name can be string or object {display: "..."}
+      String artistName = 'Unknown Artist';
+      final nameField = artistData['name'];
+      if (nameField is String) {
+        artistName = nameField;
+      } else if (nameField is Map) {
+        artistName = nameField['display'] ?? 'Unknown Artist';
+      }
+      
+      // Image is in images.portrait or image object
+      final images = artistData['images'] as Map<String, dynamic>?;
+      final legacyImage = artistData['image'] as Map<String, dynamic>?;
+      String? imageUrl;
+      if (images != null && images['portrait'] != null) {
+        final portrait = images['portrait'];
+        if (portrait is String) {
+          imageUrl = portrait;
+        } else if (portrait is Map) {
+          imageUrl = portrait['large'] ?? portrait['small'] ?? portrait['thumbnail'];
+        }
+      } else {
+        imageUrl = _extractCoverUrl(legacyImage);
+      }
+      
       final albums = <Album>[];
       final topTracks = <Track>[];
       
-      // Parse albums from releases array (API structure: releases[{type:'album', items:[...]}])
+      // Parse albums from releases array
+      // API structure: releases: [{type: 'album', items: [...]}, {type: 'live', items: []}, ...]
       final releases = artistData['releases'] as List? ?? [];
       for (final release in releases) {
-        if (release is Map<String, dynamic> && release['type'] == 'album') {
-          final items = release['items'] as List? ?? [];
-          for (final album in items) {
-            try {
-              albums.add(_albumFromJson(album as Map<String, dynamic>));
-            } catch (e) {
-              print('[Qobuz] Failed to parse album: $e');
+        if (release is Map<String, dynamic>) {
+          final releaseType = release['type'];
+          // Include albums, EPs, singles
+          if (releaseType == 'album' || releaseType == 'epSingle' || releaseType == 'live') {
+            final items = release['items'] as List? ?? [];
+            for (final albumData in items) {
+              try {
+                if (albumData is Map<String, dynamic>) {
+                  albums.add(_albumFromQobuzArtist(albumData, artistName));
+                }
+              } catch (e) {
+                print('[Qobuz] Failed to parse album: $e');
+              }
             }
           }
         }
       }
       
-      // Fallback: try old structure (albums.items)
-      if (albums.isEmpty) {
-        final albumsData = artistData['albums']?['items'] as List? ?? [];
-        for (final album in albumsData) {
-          try {
-            albums.add(_albumFromJson(album as Map<String, dynamic>));
-          } catch (e) {
-            print('[Qobuz] Failed to parse album: $e');
+      // Parse top tracks - direct array under artist
+      final topTracksData = artistData['top_tracks'] as List? ?? [];
+      for (final trackData in topTracksData) {
+        try {
+          if (trackData is Map<String, dynamic>) {
+            topTracks.add(_trackFromQobuzArtist(trackData));
           }
+        } catch (e) {
+          print('[Qobuz] Failed to parse top track: $e');
         }
       }
       
-      // Try to get top tracks from API response first  
-      final tracksData = artistData['tracks']?['items'] as List? ?? 
-                         artistData['tracks_appears_on']?['items'] as List? ?? [];
-      for (final track in tracksData) {
-        topTracks.add(_trackFromJson(track as Map<String, dynamic>));
+      // Fallback: parse tracks_appears_on
+      if (topTracks.isEmpty) {
+        final appearsOnData = artistData['tracks_appears_on'] as List? ?? [];
+        for (final trackData in appearsOnData) {
+          try {
+            if (trackData is Map<String, dynamic>) {
+              topTracks.add(_trackFromQobuzArtist(trackData));
+            }
+          } catch (e) {
+            print('[Qobuz] Failed to parse appears_on track: $e');
+          }
+        }
       }
       
       // If no tracks from API, search for artist's popular tracks
@@ -323,16 +361,25 @@ class QobuzServiceImpl implements MusicService {
         }
       }
       
+      // Get bio from biography object
+      String? bio;
+      final biography = artistData['biography'];
+      if (biography is Map) {
+        bio = biography['content'] ?? biography['summary'];
+      } else if (biography is String) {
+        bio = biography;
+      }
+      
       print('[Qobuz] Artist loaded: $artistName - ${albums.length} albums, ${topTracks.length} tracks');
       
       return ArtistDetail(
         id: 'qobuz:$artistId',
         name: artistName,
-        imageUrl: _extractCoverUrl(image),
+        imageUrl: imageUrl,
         source: MusicSource.qobuz,
         albums: albums,
         topTracks: topTracks,
-        bio: artistData['biography']?['content'],
+        bio: bio,
       );
     } catch (e) {
       print('[Qobuz] Artist fetch error: $e');
@@ -595,6 +642,82 @@ class QobuzServiceImpl implements MusicService {
       coverArtUrl: cover,
       trackCount: json['tracks_count'] ?? 0,
       source: MusicSource.qobuz,
+    );
+  }
+
+  /// Parse album from artist endpoint response
+  /// Artist endpoint returns different structure: name can be {display: "..."} or string
+  Album _albumFromQobuzArtist(Map<String, dynamic> json, String artistName) {
+    final image = json['image'] as Map<String, dynamic>?;
+    
+    int? year;
+    final releaseDate = json['release_date_original'] ?? json['release_date'];
+    if (releaseDate is String && releaseDate.length >= 4) {
+      year = int.tryParse(releaseDate.substring(0, 4));
+    }
+    
+    // Artist in artist endpoint albums may not have full data
+    String albumArtist = artistName;
+    final artistData = json['artist'];
+    if (artistData is Map) {
+      final nameField = artistData['name'];
+      if (nameField is String) {
+        albumArtist = nameField;
+      } else if (nameField is Map) {
+        albumArtist = nameField['display'] ?? artistName;
+      }
+    }
+    
+    return Album(
+      id: 'qobuz:${json['id']}',
+      title: json['title'] ?? json['name'] ?? 'Unknown Album',
+      artist: albumArtist,
+      artistId: json['artist']?['id']?.toString() ?? '',
+      coverArtUrl: _extractCoverUrl(image),
+      year: year,
+      trackCount: json['tracks_count'] ?? 0,
+      source: MusicSource.qobuz,
+    );
+  }
+
+  /// Parse track from artist endpoint response (top_tracks, tracks_appears_on)
+  /// Has different structure: artist.name can be {display: "..."}
+  Track _trackFromQobuzArtist(Map<String, dynamic> json) {
+    // Extract cover from album.image
+    final albumImage = json['album']?['image'] as Map<String, dynamic>?;
+    final cover = _extractCoverUrl(albumImage);
+    
+    // Extract artist name - can be string or {display: "..."}
+    String artistName = 'Unknown Artist';
+    final artistData = json['artist'] ?? json['performer'];
+    if (artistData is Map) {
+      final nameField = artistData['name'];
+      if (nameField is String) {
+        artistName = nameField;
+      } else if (nameField is Map) {
+        artistName = nameField['display'] ?? 'Unknown Artist';
+      }
+    }
+    
+    // Get bit depth for quality
+    final audioInfo = json['audio_info'] as Map<String, dynamic>?;
+    final int bitDepth = audioInfo?['maximum_bit_depth'] ?? json['maximum_bit_depth'] ?? 16;
+    
+    return Track(
+      id: 'qobuz:${json['id']}',
+      title: json['title'] ?? 'Unknown',
+      artist: artistName,
+      artistId: json['artist']?['id']?.toString() ?? '',
+      album: json['album']?['title'] ?? 'Unknown Album',
+      albumId: 'qobuz:${json['album']?['id'] ?? ''}',
+      duration: Duration(seconds: json['duration'] ?? 0),
+      trackNumber: json['physical_support']?['track_number'] ?? json['track_number'] ?? 1,
+      coverArtUrl: cover,
+      isExplicit: json['parental_warning'] == true,
+      source: MusicSource.qobuz,
+      quality: bitDepth >= 24 
+          ? const AudioQuality(bitDepth: 24, sampleRate: 96000)
+          : const AudioQuality(bitDepth: 16, sampleRate: 44100),
     );
   }
 }

@@ -681,8 +681,8 @@ class TidalService {
       throw TidalApiException('Invalid track ID: $trackId');
     }
     
-    // Use LOSSLESS quality for reliability (most supported)
-    final requestedQuality = quality ?? TidalQuality.hifi;
+    // Use HI_RES_LOSSLESS (24-bit Master) quality by default for highest quality
+    final requestedQuality = quality ?? TidalQuality.master;
     
     print('🎵 TidalService: Getting stream for track $numericId (quality: ${requestedQuality.apiValue})');
     

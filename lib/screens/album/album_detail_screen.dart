@@ -466,6 +466,7 @@ class _AlbumHeader extends StatelessWidget {
                       size: 640,
                       borderRadius: 0, // Already wrapped in ClipRRect
                       fit: BoxFit.cover,
+                      enableVideoCover: false, // Video covers require auth (403)
                     )
                   : albumDetail.coverArtUrl != null
                       ? CachedNetworkImage(
