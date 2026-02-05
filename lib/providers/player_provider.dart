@@ -59,14 +59,16 @@ class PlayerState {
   bool get hasQueue => queue.isNotEmpty;
   bool get shuffleEnabled => isShuffleOn;
   
-  /// Get quality label for display: MAX (24-bit), HIGH (16-bit), etc.
-  String get qualityLabel {
+  /// Get quality label for display: MAX (24-bit), HIGH (16-bit FLAC)
+  String? get qualityLabel {
+    if (currentQuality == null) return null; // Don't show badge until quality is known
     switch (currentQuality) {
-      case 'HI_RES_LOSSLESS': return 'MAX';
-      case 'LOSSLESS': return 'HIGH';
-      case 'HIGH': return 'AAC';
-      case 'LOW': return 'LOW';
-      default: return 'HIGH';
+      case 'HI_RES_LOSSLESS': return 'MAX';  // 24-bit Hi-Res
+      case 'MAX': return 'MAX';               // Alias
+      case 'LOSSLESS': return 'HIGH';         // 16-bit FLAC
+      case 'HIGH': return 'HIGH';             // Alias for FLAC quality
+      case 'OFFLINE': return 'OFFLINE';       // Cached files
+      default: return 'HIGH';                 // Default to HIGH for any FLAC
     }
   }
 
@@ -350,7 +352,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       print('🎵 Playing: ${track.title} (ID: ${track.id}, Source: ${track.source.name})');
       
       String? streamUrl;
-      String? quality = 'HIGH';
+      String? quality; // Don't set default - will be determined from stream info
       int? bitDepth = 16;
       int? sampleRate = 44100;
       bool isOffline = false;
@@ -402,10 +404,10 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
             
           case MusicSource.qobuz:
             streamUrl = await _musicService.getStreamUrl(track.id);
-            quality = 'HI_RES_LOSSLESS';
-            bitDepth = 24;
-            sampleRate = 96000;
-            print('📊 Qobuz Quality: $quality');
+            quality = 'LOSSLESS'; // Qobuz FLAC - shows HIGH badge
+            bitDepth = 16;
+            sampleRate = 44100;
+            print('📊 Qobuz Quality: FLAC ($quality)');
             break;
             
           default:

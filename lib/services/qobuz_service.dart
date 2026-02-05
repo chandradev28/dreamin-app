@@ -271,13 +271,34 @@ class QobuzServiceImpl implements MusicService {
       final albums = <Album>[];
       final topTracks = <Track>[];
       
-      // Parse albums if available
-      final albumsData = artistData['albums']?['items'] as List? ?? [];
-      for (final album in albumsData) {
-        albums.add(_albumFromJson(album as Map<String, dynamic>));
+      // Parse albums from releases array (API structure: releases[{type:'album', items:[...]}])
+      final releases = artistData['releases'] as List? ?? [];
+      for (final release in releases) {
+        if (release is Map<String, dynamic> && release['type'] == 'album') {
+          final items = release['items'] as List? ?? [];
+          for (final album in items) {
+            try {
+              albums.add(_albumFromJson(album as Map<String, dynamic>));
+            } catch (e) {
+              print('[Qobuz] Failed to parse album: $e');
+            }
+          }
+        }
       }
       
-      // Try to get top tracks from API response first
+      // Fallback: try old structure (albums.items)
+      if (albums.isEmpty) {
+        final albumsData = artistData['albums']?['items'] as List? ?? [];
+        for (final album in albumsData) {
+          try {
+            albums.add(_albumFromJson(album as Map<String, dynamic>));
+          } catch (e) {
+            print('[Qobuz] Failed to parse album: $e');
+          }
+        }
+      }
+      
+      // Try to get top tracks from API response first  
       final tracksData = artistData['tracks']?['items'] as List? ?? 
                          artistData['tracks_appears_on']?['items'] as List? ?? [];
       for (final track in tracksData) {
@@ -302,7 +323,7 @@ class QobuzServiceImpl implements MusicService {
         }
       }
       
-      print('[Qobuz] Artist loaded: ${albums.length} albums, ${topTracks.length} tracks');
+      print('[Qobuz] Artist loaded: $artistName - ${albums.length} albums, ${topTracks.length} tracks');
       
       return ArtistDetail(
         id: 'qobuz:$artistId',

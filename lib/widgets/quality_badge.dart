@@ -3,10 +3,9 @@ import '../models/music_source.dart';
 
 /// Quality Badge Widget
 /// 
-/// Displays audio quality with service-specific styling:
-/// - Qobuz MAX (HI_RES_LOSSLESS): Gold badge
-/// - Qobuz/Tidal HIGH (LOSSLESS): Platinum/Silver badge
-/// - Default: Subtle white badge
+/// Simple FLAC-only quality display:
+/// - 24-bit Hi-Res FLAC: MAX (Gold badge)
+/// - 16-bit CD Quality FLAC: HIGH (Platinum badge)
 class QualityBadge extends StatelessWidget {
   final String? qualityCode;
   final MusicSource? source;
@@ -21,6 +20,11 @@ class QualityBadge extends StatelessWidget {
   
   @override
   Widget build(BuildContext context) {
+    // Don't show badge until quality is determined
+    if (qualityCode == null || qualityCode!.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    
     final config = _getBadgeConfig();
     
     return Container(
@@ -45,11 +49,10 @@ class QualityBadge extends StatelessWidget {
   }
   
   _BadgeConfig _getBadgeConfig() {
-    final quality = qualityCode ?? 'HIGH';
-    final isQobuz = source == MusicSource.qobuz;
+    final quality = qualityCode!;
     
-    // Qobuz MAX (24-bit Hi-Res) - Gold
-    if (quality == 'HI_RES_LOSSLESS' && isQobuz) {
+    // 24-bit Hi-Res FLAC - Gold MAX badge
+    if (quality == 'HI_RES_LOSSLESS' || quality == 'MAX') {
       return _BadgeConfig(
         label: 'MAX',
         backgroundColor: const Color(0xFFFFD700), // Gold
@@ -58,42 +61,13 @@ class QualityBadge extends StatelessWidget {
       );
     }
     
-    // Qobuz HIGH or Tidal LOSSLESS - Platinum
-    if (quality == 'LOSSLESS' || (quality == 'HI_RES_LOSSLESS' && !isQobuz)) {
-      return _BadgeConfig(
-        label: 'HIGH',
-        backgroundColor: const Color(0xFFE5E4E2), // Platinum
-        textColor: const Color(0xFF1A1A1A), // Dark text
-        borderColor: const Color(0xFFC0C0C0), // Silver border
-      );
-    }
-    
-    // Tidal HI_RES_LOSSLESS (Master) - Platinum
-    if (quality == 'HI_RES_LOSSLESS') {
-      return _BadgeConfig(
-        label: 'MAX',
-        backgroundColor: const Color(0xFFE5E4E2), // Platinum
-        textColor: const Color(0xFF1A1A1A),
-        borderColor: const Color(0xFFC0C0C0),
-      );
-    }
-    
-    // Default HIGH - Subtle
+    // 16-bit CD Quality FLAC - Platinum HIGH badge (default for all FLAC)
     return _BadgeConfig(
-      label: _getLabel(quality),
-      backgroundColor: Colors.white.withOpacity(0.2),
-      textColor: Colors.white,
+      label: 'HIGH',
+      backgroundColor: const Color(0xFFE5E4E2), // Platinum
+      textColor: const Color(0xFF1A1A1A), // Dark text
+      borderColor: const Color(0xFFC0C0C0), // Silver border
     );
-  }
-  
-  String _getLabel(String quality) {
-    switch (quality) {
-      case 'HI_RES_LOSSLESS': return 'MAX';
-      case 'LOSSLESS': return 'HIGH';
-      case 'HIGH': return 'AAC';
-      case 'LOW': return 'LOW';
-      default: return 'HIGH';
-    }
   }
 }
 

@@ -9,7 +9,7 @@ final _videoCoverCache = <String, bool>{};
 
 /// Tidal Cover Widget - Shows video cover if available, falls back to static image
 /// 
-/// Usage:
+/// Usage with UUID:
 /// ```dart
 /// TidalCover(
 ///   coverUuid: album.cover,
@@ -17,9 +17,22 @@ final _videoCoverCache = <String, bool>{};
 ///   borderRadius: 12,
 /// )
 /// ```
+/// 
+/// Usage with full URL:
+/// ```dart
+/// TidalCover(
+///   coverUrl: album.coverArtUrl,
+///   size: 640,
+///   borderRadius: 12,
+/// )
+/// ```
 class TidalCover extends StatefulWidget {
   /// The cover UUID from Tidal album/track data (e.g., "a1b2c3d4-e5f6-7890-abcd-ef1234567890")
   final String? coverUuid;
+  
+  /// Full cover URL (e.g., "https://resources.tidal.com/images/a1b2/c3d4/.../640x640.jpg")
+  /// If provided and coverUuid is null, UUID will be extracted from this URL
+  final String? coverUrl;
   
   /// Size of the cover (default 640, options: 160, 320, 480, 640, 750, 1280)
   final int size;
@@ -41,7 +54,8 @@ class TidalCover extends StatefulWidget {
 
   const TidalCover({
     super.key,
-    required this.coverUuid,
+    this.coverUuid,
+    this.coverUrl,
     this.size = 640,
     this.borderRadius = 8,
     this.enableVideoCover = true,
@@ -49,6 +63,26 @@ class TidalCover extends StatefulWidget {
     this.errorWidget,
     this.fit = BoxFit.cover,
   });
+  
+  /// Extract UUID from a full Tidal image URL
+  /// e.g., "https://resources.tidal.com/images/a1b2/c3d4/e5f6/7890/640x640.jpg" 
+  /// returns "a1b2c3d4-e5f6-7890" (with dashes)
+  static String? extractUuidFromUrl(String? url) {
+    if (url == null || url.isEmpty) return null;
+    
+    // Pattern: https://resources.tidal.com/images/{uuid_parts}/size.jpg
+    final regex = RegExp(r'resources\.tidal\.com/images/([a-f0-9/]+)/\d+x\d+');
+    final match = regex.firstMatch(url);
+    if (match != null) {
+      final uuidParts = match.group(1);
+      if (uuidParts != null) {
+        // Convert slashes back to dashes: a1b2/c3d4/e5f6/7890 -> a1b2c3d4-e5f6-7890
+        // Note: Tidal UUIDs are typically like dbbf4ed8-5e71-48f2-a50a-3f1c8b3f4d82
+        return uuidParts.replaceAll('/', '-');
+      }
+    }
+    return null;
+  }
 
   @override
   State<TidalCover> createState() => _TidalCoverState();
@@ -58,31 +92,41 @@ class _TidalCoverState extends State<TidalCover> {
   VideoPlayerController? _videoController;
   bool _hasVideo = false;
   bool _videoInitialized = false;
+  String? _resolvedUuid;
   
   final TidalService _tidalService = TidalService();
 
   @override
   void initState() {
     super.initState();
-    _initCover();
+    _resolveUuidAndInit();
   }
 
   @override
   void didUpdateWidget(TidalCover oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.coverUuid != widget.coverUuid) {
+    if (oldWidget.coverUuid != widget.coverUuid || oldWidget.coverUrl != widget.coverUrl) {
       _disposeVideo();
-      _initCover();
+      _resolveUuidAndInit();
     }
+  }
+  
+  /// Resolve UUID from either coverUuid or by extracting from coverUrl
+  void _resolveUuidAndInit() {
+    _resolvedUuid = widget.coverUuid;
+    if (_resolvedUuid == null && widget.coverUrl != null) {
+      _resolvedUuid = TidalCover.extractUuidFromUrl(widget.coverUrl);
+    }
+    _initCover();
   }
 
   Future<void> _initCover() async {
-    if (widget.coverUuid == null || widget.coverUuid!.isEmpty) {
+    if (_resolvedUuid == null || _resolvedUuid!.isEmpty) {
       return;
     }
 
     // Check cache first
-    final cacheKey = '${widget.coverUuid}_${widget.size}';
+    final cacheKey = '${_resolvedUuid}_${widget.size}';
     if (_videoCoverCache.containsKey(cacheKey)) {
       if (_videoCoverCache[cacheKey] == true && widget.enableVideoCover) {
         await _initializeVideo();
@@ -97,7 +141,7 @@ class _TidalCoverState extends State<TidalCover> {
   }
 
   Future<void> _tryLoadVideo(String cacheKey) async {
-    final videoUrl = _tidalService.getVideoCoverUrl(widget.coverUuid, size: widget.size);
+    final videoUrl = _tidalService.getVideoCoverUrl(_resolvedUuid, size: widget.size);
     if (videoUrl == null) {
       _videoCoverCache[cacheKey] = false;
       return;
@@ -139,7 +183,7 @@ class _TidalCoverState extends State<TidalCover> {
   }
 
   Future<void> _initializeVideo() async {
-    final videoUrl = _tidalService.getVideoCoverUrl(widget.coverUuid, size: widget.size);
+    final videoUrl = _tidalService.getVideoCoverUrl(_resolvedUuid, size: widget.size);
     if (videoUrl == null) return;
 
     try {
@@ -213,7 +257,7 @@ class _TidalCoverState extends State<TidalCover> {
   }
 
   Widget _buildStaticImage() {
-    final imageUrl = _tidalService.getStaticCoverUrl(widget.coverUuid, size: widget.size);
+    final imageUrl = _tidalService.getStaticCoverUrl(_resolvedUuid, size: widget.size);
     
     if (imageUrl == null || imageUrl.isEmpty) {
       return widget.errorWidget ?? _buildDefaultError();

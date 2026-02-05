@@ -6,6 +6,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/utils/responsive.dart';
 import '../../providers/providers.dart';
 import '../../models/models.dart';
+import '../../widgets/widgets.dart';
 import '../../widgets/track_options_sheet.dart';
 import '../artist/artist_detail_screen.dart';
 import '../scaffold_with_mini_player.dart';
@@ -459,16 +460,23 @@ class _AlbumHeader extends StatelessWidget {
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(8),
-              child: albumDetail.coverArtUrl != null
-                  ? CachedNetworkImage(
-                      imageUrl: albumDetail.coverArtUrl!,
+              child: albumDetail.source == MusicSource.tidal
+                  ? TidalCover(
+                      coverUrl: albumDetail.coverArtUrl,
+                      size: 640,
+                      borderRadius: 0, // Already wrapped in ClipRRect
                       fit: BoxFit.cover,
-                      placeholder: (_, __) => Container(color: AppTheme.surfaceColor),
                     )
-                  : Container(
-                      color: AppTheme.surfaceColor,
-                      child: const Icon(Icons.album, size: 80, color: AppTheme.secondaryColor),
-                    ),
+                  : albumDetail.coverArtUrl != null
+                      ? CachedNetworkImage(
+                          imageUrl: albumDetail.coverArtUrl!,
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) => Container(color: AppTheme.surfaceColor),
+                        )
+                      : Container(
+                          color: AppTheme.surfaceColor,
+                          child: const Icon(Icons.album, size: 80, color: AppTheme.secondaryColor),
+                        ),
             ),
           ),
           const SizedBox(height: 20),
