@@ -6,9 +6,7 @@ import 'dart:io';
 import '../models/models.dart';
 import '../services/tidal_service.dart';
 import '../services/music_service.dart';
-import '../services/subsonic_service.dart';
 import '../services/qobuz_service.dart';
-import '../services/recommendation_service.dart';
 import '../data/database.dart';
 import 'music_provider.dart';
 import 'source_provider.dart';
@@ -128,6 +126,8 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   List<Track> _originalQueue = [];
   DateTime? _playStartTime;
   int _consecutiveFailures = 0; // Track consecutive play failures
+  int _playRequestCounter = 0; // Prevent stale async play operations
+  DateTime? _lastAutoSkipAt; // Debounce duplicate auto-skip triggers
   static const _minimumPlayDuration = Duration(seconds: 30);
   static const _maxConsecutiveFailures = 3; // Stop skipping after 3 failures
 
@@ -219,7 +219,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
         // Auto-skip to next on error
         if (state.queue.isNotEmpty &&
             state.queueIndex < state.queue.length - 1) {
-          skipNext();
+          _autoSkipNext(reason: 'playbackEventStream error');
         } else {
           state = state.copyWith(
             status: PlaybackStatus.error,
@@ -241,7 +241,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       _playStartTime = DateTime.now();
       return PlaybackStatus.playing;
     } else if (state.queueIndex < state.queue.length - 1) {
-      skipNext();
+      _autoSkipNext(reason: 'track completed');
       return PlaybackStatus.loading;
     } else if (state.repeatMode == RepeatMode.all && state.queue.isNotEmpty) {
       playAtIndex(0);
@@ -348,11 +348,48 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     _playStartTime = null;
   }
 
+  bool _isSameTrack(Track a, Track b) {
+    return a.id == b.id && a.source == b.source;
+  }
+
+  void _syncQueueForDirectPlay(Track track) {
+    final index = state.queue.indexWhere((t) => _isSameTrack(t, track));
+    if (index == -1) {
+      _originalQueue = [track];
+      state = state.copyWith(
+        queue: [track],
+        queueIndex: 0,
+        queueSource: null,
+      );
+    } else if (state.queueIndex != index) {
+      state = state.copyWith(queueIndex: index);
+    }
+  }
+
+  Future<void> _autoSkipNext({required String reason}) async {
+    final now = DateTime.now();
+    if (_lastAutoSkipAt != null &&
+        now.difference(_lastAutoSkipAt!) < const Duration(milliseconds: 750)) {
+      print('⏭️ Ignoring duplicate auto-skip trigger ($reason)');
+      return;
+    }
+
+    _lastAutoSkipAt = now;
+    await skipNext();
+  }
+
   /// Play a track
   Future<void> play(Track track) async {
+    final playRequestId = ++_playRequestCounter;
+    _syncQueueForDirectPlay(track);
+
     // Record previous track if any
     if (state.currentTrack != null) {
       await _recordPlayToHistory();
+    }
+
+    if (playRequestId != _playRequestCounter) {
+      return;
     }
 
     state = state.copyWith(
@@ -368,6 +405,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
           '🎵 Playing: ${track.title} (ID: ${track.id}, Source: ${track.source.name})');
 
       String? streamUrl;
+      AudioSource? streamAudioSource;
       String?
           quality; // Don't set default - will be determined from stream info
       int bitDepth = 0;
@@ -396,6 +434,10 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
             if (tidalService != null) {
               final streamInfo = await tidalService.getStreamInfo(track.id);
               streamUrl = streamInfo.url;
+              if (streamInfo.isDashManifest) {
+                streamAudioSource =
+                    DashAudioSource(Uri.file(streamInfo.url), tag: track);
+              }
               quality = streamInfo.quality;
               bitDepth = streamInfo.bitDepth;
               sampleRate = streamInfo.sampleRate;
@@ -457,15 +499,29 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
         }
       }
 
-      if (streamUrl == null || streamUrl.isEmpty) {
+      if (streamAudioSource == null &&
+          (streamUrl == null || streamUrl.isEmpty)) {
         throw Exception('Failed to get stream URL');
       }
 
-      print(
-          '🔗 Stream URL: ${streamUrl.substring(0, 50.clamp(0, streamUrl.length))}...');
+      if (playRequestId != _playRequestCounter) {
+        return;
+      }
 
-      await _audioPlayer.setUrl(streamUrl);
+      if (streamAudioSource != null) {
+        print('🔗 Loading DASH audio source: $streamUrl');
+        await _audioPlayer.setAudioSource(streamAudioSource);
+      } else {
+        final resolvedStreamUrl = streamUrl!;
+        print(
+            '🔗 Stream URL: ${resolvedStreamUrl.substring(0, 50.clamp(0, resolvedStreamUrl.length))}...');
+        await _audioPlayer.setUrl(resolvedStreamUrl);
+      }
       print('✅ URL set successfully');
+
+      if (playRequestId != _playRequestCounter) {
+        return;
+      }
 
       // Apply volume normalization setting before playing
       await _applyVolumeNormalization();
@@ -474,12 +530,21 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       print('▶️ Play started');
       _playStartTime = DateTime.now();
 
+      if (playRequestId != _playRequestCounter) {
+        return;
+      }
+
       // Reset consecutive failures on successful play
       _consecutiveFailures = 0;
 
       // Update state with current quality
       state = state.copyWith(currentQuality: quality);
     } catch (e) {
+      if (playRequestId != _playRequestCounter) {
+        print('Ignoring stale play failure for "${track.title}"');
+        return;
+      }
+
       print('❌ Play error for "${track.title}": $e');
       _consecutiveFailures++;
 
@@ -500,7 +565,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
           error: 'Skipping "${track.title}" - not available',
         );
         await Future.delayed(const Duration(milliseconds: 500));
-        skipNext();
+        await _autoSkipNext(reason: 'track unavailable');
         return;
       }
 

@@ -14,7 +14,7 @@ class LibraryDownloadsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final database = ref.watch(databaseProvider);
-    
+
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
       appBar: AppBar(
@@ -41,13 +41,13 @@ class LibraryDownloadsScreen extends ConsumerWidget {
               child: CircularProgressIndicator(color: AppTheme.primaryColor),
             );
           }
-          
+
           final downloads = snapshot.data ?? [];
-          
+
           if (downloads.isEmpty) {
             return _buildEmptyState();
           }
-          
+
           return _buildDownloadsList(downloads, ref);
         },
       ),
@@ -109,12 +109,37 @@ class LibraryDownloadsScreen extends ConsumerWidget {
         try {
           final trackData = jsonDecode(cached.trackJson as String);
           final track = Track.fromJson(trackData);
-          
+
           return ListTile(
             onTap: () {
-              ref.read(playerProvider.notifier).play(track);
+              final tracks = downloads
+                  .map((item) {
+                    try {
+                      final data = jsonDecode(item.trackJson as String);
+                      return Track.fromJson(data);
+                    } catch (_) {
+                      return null;
+                    }
+                  })
+                  .whereType<Track>()
+                  .toList();
+
+              final startIndex = tracks.indexWhere(
+                (t) => t.id == track.id && t.source == track.source,
+              );
+
+              if (tracks.isNotEmpty && startIndex >= 0) {
+                ref.read(playerProvider.notifier).playQueue(
+                      tracks,
+                      startIndex: startIndex,
+                      source: 'Downloads',
+                    );
+              } else {
+                ref.read(playerProvider.notifier).play(track);
+              }
             },
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             leading: ClipRRect(
               borderRadius: BorderRadius.circular(4),
               child: track.coverArtUrl != null
@@ -146,7 +171,8 @@ class LibraryDownloadsScreen extends ConsumerWidget {
               overflow: TextOverflow.ellipsis,
             ),
             trailing: IconButton(
-              icon: const Icon(Icons.more_horiz, color: AppTheme.secondaryColor),
+              icon:
+                  const Icon(Icons.more_horiz, color: AppTheme.secondaryColor),
               onPressed: () => TrackOptionsSheet.show(context, track),
             ),
           );
@@ -162,7 +188,8 @@ class LibraryDownloadsScreen extends ConsumerWidget {
       width: 48,
       height: 48,
       color: AppTheme.surfaceLight,
-      child: const Icon(Icons.music_note, color: AppTheme.secondaryColor, size: 24),
+      child: const Icon(Icons.music_note,
+          color: AppTheme.secondaryColor, size: 24),
     );
   }
 }

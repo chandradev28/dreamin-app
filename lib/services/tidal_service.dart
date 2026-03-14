@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:dio/dio.dart';
 import '../core/constants/api_constants.dart';
 import '../models/models.dart';
@@ -8,10 +9,13 @@ import 'music_service.dart';
 enum TidalQuality {
   /// Standard quality (320kbps AAC)
   standard('LOW'),
+
   /// High quality (16-bit/44.1kHz FLAC)
   high('HIGH'),
+
   /// HiFi quality (16-bit/44.1kHz FLAC lossless)
   hifi('LOSSLESS'),
+
   /// Master quality (24-bit/up to 192kHz MQA)
   master('HI_RES_LOSSLESS');
 
@@ -19,38 +23,39 @@ enum TidalQuality {
   const TidalQuality(this.apiValue);
 }
 
-
 /// TIDAL API Service - PRODUCTION GRADE
 /// Uses hifi-api format with intelligent endpoint failover
 /// Features: Health tracking, DNS failure detection, fast failover
 class TidalService {
   final Dio _dio;
   int _currentEndpointIndex;
-  
+
   /// Per-endpoint health tracking
   /// Key: endpoint index, Value: failure count
   final Map<int, int> _endpointFailureCount = {};
-  
+
   /// Endpoints temporarily disabled due to DNS/connection failures
   /// Key: endpoint index, Value: timestamp when it can be retried
   final Map<int, DateTime> _endpointCooldown = {};
-  
-  /// Default to HiFi quality for reliability
-  TidalQuality preferredQuality = TidalQuality.hifi;
 
-  TidalService() : 
-    _dio = Dio(),
-    _currentEndpointIndex = 0 {
+  /// Prefer master first now that DASH manifests are supported.
+  TidalQuality preferredQuality = TidalQuality.master;
+
+  TidalService()
+      : _dio = Dio(),
+        _currentEndpointIndex = 0 {
     // Fast timeouts for quick failover (DNS failures detected in ~3s)
     _dio.options.connectTimeout = const Duration(seconds: 3);
     _dio.options.receiveTimeout = const Duration(seconds: 5);
     _dio.options.headers = {
       'Accept': 'application/json',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
     };
   }
 
-  String get _currentEndpoint => TidalEndpoints.endpoints[_currentEndpointIndex];
+  String get _currentEndpoint =>
+      TidalEndpoints.endpoints[_currentEndpointIndex];
 
   /// Check if endpoint is available (not in cooldown)
   bool _isEndpointAvailable(int index) {
@@ -81,14 +86,16 @@ class TidalService {
   void _markEndpointFailed(int index, {bool isDnsFailure = false}) {
     final failures = (_endpointFailureCount[index] ?? 0) + 1;
     _endpointFailureCount[index] = failures;
-    
+
     // DNS failures get longer cooldown (likely persistent issue)
-    final cooldownSeconds = isDnsFailure 
-        ? 60  // DNS failure: 60 seconds cooldown
-        : (failures * 5).clamp(5, 30);  // Other failures: 5-30 seconds
-    
-    _endpointCooldown[index] = DateTime.now().add(Duration(seconds: cooldownSeconds));
-    print('⚠️ Endpoint ${TidalEndpoints.endpoints[index]} failed (${isDnsFailure ? "DNS" : "connection"}) - cooldown ${cooldownSeconds}s');
+    final cooldownSeconds = isDnsFailure
+        ? 60 // DNS failure: 60 seconds cooldown
+        : (failures * 5).clamp(5, 30); // Other failures: 5-30 seconds
+
+    _endpointCooldown[index] =
+        DateTime.now().add(Duration(seconds: cooldownSeconds));
+    print(
+        'âš ï¸ Endpoint ${TidalEndpoints.endpoints[index]} failed (${isDnsFailure ? "DNS" : "connection"}) - cooldown ${cooldownSeconds}s');
   }
 
   /// Mark endpoint as successful - reset failure count
@@ -113,24 +120,24 @@ class TidalService {
       // Find next available endpoint
       _currentEndpointIndex = _findNextAvailableEndpoint(_currentEndpointIndex);
       final endpoint = TidalEndpoints.endpoints[_currentEndpointIndex];
-      
+
       try {
-        print('📡 Trying endpoint: $endpoint');
+        print('ðŸ“¡ Trying endpoint: $endpoint');
         final response = await request(endpoint);
         _markEndpointSuccess(_currentEndpointIndex);
         return response;
       } on DioException catch (e) {
         lastError = e;
-        
+
         // Detect DNS failures - immediate skip with long cooldown
-        if (e.type == DioExceptionType.unknown && 
+        if (e.type == DioExceptionType.unknown &&
             e.message?.contains('Failed host lookup') == true) {
           lastErrorType = 'DNS';
           _markEndpointFailed(_currentEndpointIndex, isDnsFailure: true);
-        } 
+        }
         // Connection timeout/refused
         else if (e.type == DioExceptionType.connectionTimeout ||
-                 e.type == DioExceptionType.connectionError) {
+            e.type == DioExceptionType.connectionError) {
           lastErrorType = 'Connection';
           _markEndpointFailed(_currentEndpointIndex, isDnsFailure: false);
         }
@@ -139,7 +146,7 @@ class TidalService {
           lastErrorType = 'Response';
           _markEndpointFailed(_currentEndpointIndex, isDnsFailure: false);
         }
-        
+
         attempts++;
         _currentEndpointIndex = (_currentEndpointIndex + 1) % endpointCount;
       } catch (e) {
@@ -151,7 +158,8 @@ class TidalService {
       }
     }
 
-    throw TidalApiException('All endpoints failed ($lastErrorType): $lastError');
+    throw TidalApiException(
+        'All endpoints failed ($lastErrorType): $lastError');
   }
 
   // ==================== SEARCH ====================
@@ -162,13 +170,13 @@ class TidalService {
       final response = await _executeWithFallback((baseUrl) {
         return _dio.get(
           '$baseUrl${TidalEndpoints.searchPath}',
-          queryParameters: {'s': query},  // hifi-api uses 's' for track search
+          queryParameters: {'s': query}, // hifi-api uses 's' for track search
         );
       });
 
       final data = response.data;
       List<dynamic> items = [];
-      
+
       if (data is Map<String, dynamic>) {
         if (data['data'] is Map && data['data']['items'] is List) {
           items = data['data']['items'] as List;
@@ -184,7 +192,7 @@ class TidalService {
       } else if (data is List) {
         items = data;
       }
-      
+
       final result = <Track>[];
       for (final t in items.take(limit)) {
         if (t is Map<String, dynamic>) {
@@ -213,7 +221,7 @@ class TidalService {
 
       final data = response.data;
       List<dynamic> items = [];
-      
+
       if (data is Map<String, dynamic>) {
         if (data['data'] is Map && data['data']['items'] is List) {
           items = data['data']['items'] as List;
@@ -226,7 +234,8 @@ class TidalService {
       for (final item in items) {
         if (item is Map<String, dynamic>) {
           final trackIsrc = item['isrc'] as String?;
-          if (trackIsrc != null && trackIsrc.toUpperCase() == isrc.toUpperCase()) {
+          if (trackIsrc != null &&
+              trackIsrc.toUpperCase() == isrc.toUpperCase()) {
             return Track.fromTidalJson(item);
           }
         }
@@ -249,18 +258,20 @@ class TidalService {
       final response = await _executeWithFallback((baseUrl) {
         return _dio.get(
           '$baseUrl${TidalEndpoints.searchPath}',
-          queryParameters: {'al': query},  // hifi-api uses 'al' for album search
+          queryParameters: {'al': query}, // hifi-api uses 'al' for album search
         );
       });
 
       final data = response.data;
       List<dynamic> items = [];
-      
+
       if (data is Map<String, dynamic>) {
         // Try various response structures
         if (data['data'] is Map && data['data']['albums'] is List) {
           items = data['data']['albums'] as List;
-        } else if (data['data'] is Map && data['data']['albums'] is Map && data['data']['albums']['items'] is List) {
+        } else if (data['data'] is Map &&
+            data['data']['albums'] is Map &&
+            data['data']['albums']['items'] is List) {
           items = data['data']['albums']['items'] as List;
         } else if (data['albums'] is Map && data['albums']['items'] is List) {
           items = data['albums']['items'] as List;
@@ -272,7 +283,7 @@ class TidalService {
       } else if (data is List) {
         items = data;
       }
-      
+
       final result = <Album>[];
       for (final a in items.take(limit)) {
         if (a is Map<String, dynamic>) {
@@ -293,13 +304,13 @@ class TidalService {
       final response = await _executeWithFallback((baseUrl) {
         return _dio.get(
           '$baseUrl${TidalEndpoints.searchPath}',
-          queryParameters: {'a': query},  // hifi-api uses 'a' for artist search
+          queryParameters: {'a': query}, // hifi-api uses 'a' for artist search
         );
       });
 
       final data = response.data;
       List<dynamic> items = [];
-      
+
       // Handle various response formats
       if (data is Map<String, dynamic>) {
         // Try different paths where artists might be
@@ -315,7 +326,7 @@ class TidalService {
       } else if (data is List) {
         items = data;
       }
-      
+
       final result = <Artist>[];
       for (final a in items.take(limit)) {
         if (a is Map<String, dynamic>) {
@@ -336,19 +347,22 @@ class TidalService {
       final response = await _executeWithFallback((baseUrl) {
         return _dio.get(
           '$baseUrl${TidalEndpoints.searchPath}',
-          queryParameters: {'p': query},  // 'p' for playlist search
+          queryParameters: {'p': query}, // 'p' for playlist search
         );
       });
 
       final data = response.data;
       List<dynamic> items = [];
-      
+
       if (data is Map<String, dynamic>) {
-        if (data['data'] is Map && data['data']['playlists'] is Map && data['data']['playlists']['items'] is List) {
+        if (data['data'] is Map &&
+            data['data']['playlists'] is Map &&
+            data['data']['playlists']['items'] is List) {
           items = data['data']['playlists']['items'] as List;
         } else if (data['data'] is Map && data['data']['playlists'] is List) {
           items = data['data']['playlists'] as List;
-        } else if (data['playlists'] is Map && data['playlists']['items'] is List) {
+        } else if (data['playlists'] is Map &&
+            data['playlists']['items'] is List) {
           items = data['playlists']['items'] as List;
         } else if (data['playlists'] is List) {
           items = data['playlists'] as List;
@@ -358,7 +372,7 @@ class TidalService {
       } else if (data is List) {
         items = data;
       }
-      
+
       final result = <Playlist>[];
       for (final p in items.take(limit)) {
         if (p is Map<String, dynamic>) {
@@ -388,7 +402,7 @@ class TidalService {
         searchArtists(query, limit: limit),
         searchPlaylists(query, limit: limit),
       ]);
-      
+
       return SearchResult(
         tracks: results[0] as List<Track>,
         albums: results[1] as List<Album>,
@@ -414,7 +428,7 @@ class TidalService {
       });
 
       final data = response.data as Map<String, dynamic>;
-      
+
       // Try multiple paths where album data might be
       Map<String, dynamic> albumData = {};
       if (data['data'] is Map) {
@@ -427,7 +441,7 @@ class TidalService {
       } else {
         albumData = data;
       }
-      
+
       // Try multiple paths where tracks might be
       List<dynamic> rawTracks = [];
       if (data['items'] is List) {
@@ -441,7 +455,7 @@ class TidalService {
       } else if (albumData['tracks'] is List) {
         rawTracks = albumData['tracks'] as List;
       }
-      
+
       // Process tracks - handle both direct track objects and wrapped items
       final List<Map<String, dynamic>> tracksData = [];
       for (final item in rawTracks) {
@@ -460,7 +474,7 @@ class TidalService {
           }
         }
       }
-      
+
       // If album data doesn't have id, try to extract from response
       if (albumData['id'] == null) {
         albumData['id'] = int.tryParse(albumId);
@@ -481,7 +495,7 @@ class TidalService {
     if (parsedId == null) {
       throw TidalApiException('Invalid artist ID: $artistId');
     }
-    
+
     try {
       // First get basic artist info with ?id= to get picture/cover
       final artistResponse = await _executeWithFallback((baseUrl) {
@@ -492,11 +506,12 @@ class TidalService {
       });
 
       final artistResponseData = artistResponse.data as Map<String, dynamic>;
-      
+
       // Extract artist data - API returns {artist: {...}, cover: {...}}
-      final artistData = artistResponseData['artist'] as Map<String, dynamic>? ?? {};
+      final artistData =
+          artistResponseData['artist'] as Map<String, dynamic>? ?? {};
       final coverData = artistResponseData['cover'] as Map<String, dynamic>?;
-      
+
       // Add cover URL to artist data if available (direct URL is better)
       if (coverData != null && coverData['750'] != null) {
         artistData['coverUrl'] = coverData['750'];
@@ -514,7 +529,8 @@ class TidalService {
       final albumsData = data['albums']?['items'] as List<dynamic>? ?? [];
       final tracksData = data['tracks'] as List<dynamic>? ?? [];
 
-      return ArtistDetail.fromTidalJson(artistData, albumsData, tracksJson: tracksData);
+      return ArtistDetail.fromTidalJson(artistData, albumsData,
+          tracksJson: tracksData);
     } catch (e) {
       throw TidalApiException('Failed to get artist: $e');
     }
@@ -526,7 +542,9 @@ class TidalService {
       final response = await _executeWithFallback((baseUrl) {
         return _dio.get(
           '$baseUrl${TidalEndpoints.artistPath}',
-          queryParameters: {'id': int.parse(artistId)},  // 'id' gives basic artist info
+          queryParameters: {
+            'id': int.parse(artistId)
+          }, // 'id' gives basic artist info
         );
       });
 
@@ -553,7 +571,7 @@ class TidalService {
       });
 
       final data = response.data as Map<String, dynamic>;
-      
+
       // Extract playlist metadata
       Map<String, dynamic> playlistData = {};
       if (data['playlist'] is Map) {
@@ -565,22 +583,23 @@ class TidalService {
       } else {
         playlistData = data;
       }
-      
+
       // Get total track count from playlist metadata
       final int totalTracks = playlistData['numberOfTracks'] as int? ?? 0;
-      
+
       // Collect all tracks with pagination
       List<Map<String, dynamic>> allTracksData = [];
       int offset = 0;
       const int pageSize = 100; // API returns max 100 per request
-      
+
       // Process first batch
       allTracksData.addAll(_extractTracksFromResponse(data, playlistData));
-      
+
       // Fetch remaining pages if needed
-      while (allTracksData.length < totalTracks && offset + pageSize < totalTracks) {
+      while (allTracksData.length < totalTracks &&
+          offset + pageSize < totalTracks) {
         offset += pageSize;
-        
+
         try {
           final pageResponse = await _executeWithFallback((baseUrl) {
             return _dio.get(
@@ -591,10 +610,10 @@ class TidalService {
               },
             );
           });
-          
+
           final pageData = pageResponse.data as Map<String, dynamic>;
           final pageTracks = _extractTracksFromResponse(pageData, {});
-          
+
           if (pageTracks.isEmpty) break; // No more tracks
           allTracksData.addAll(pageTracks);
         } catch (e) {
@@ -602,7 +621,7 @@ class TidalService {
           break;
         }
       }
-      
+
       // Ensure playlist has id
       if (playlistData['uuid'] == null && playlistData['id'] == null) {
         playlistData['uuid'] = playlistId;
@@ -616,7 +635,7 @@ class TidalService {
 
   /// Helper to extract tracks from API response (handles various formats)
   List<Map<String, dynamic>> _extractTracksFromResponse(
-    Map<String, dynamic> data, 
+    Map<String, dynamic> data,
     Map<String, dynamic> playlistData,
   ) {
     // Try multiple paths for tracks
@@ -632,7 +651,7 @@ class TidalService {
     } else if (playlistData['tracks'] is List) {
       rawTracks = playlistData['tracks'] as List;
     }
-    
+
     // Process tracks - handle nested wrappers
     final List<Map<String, dynamic>> tracksData = [];
     for (final item in rawTracks) {
@@ -648,7 +667,7 @@ class TidalService {
         }
       }
     }
-    
+
     return tracksData;
   }
 
@@ -672,47 +691,99 @@ class TidalService {
     }
   }
 
-  /// Get stream URL for a track - SIMPLIFIED VERSION
-  /// Uses LOSSLESS (16-bit FLAC) directly for reliability
-  Future<StreamInfo> getStreamInfo(String trackId, {TidalQuality? quality}) async {
+  /// Get stream URL for a track with quality fallback.
+  /// Avoids DASH segment URLs that can cause short playback and auto-skips.
+  Future<StreamInfo> getStreamInfo(String trackId,
+      {TidalQuality? quality}) async {
     // Parse track ID - ensure it's numeric
     final numericId = int.tryParse(trackId.replaceAll(RegExp(r'[^0-9]'), ''));
     if (numericId == null || numericId == 0) {
       throw TidalApiException('Invalid track ID: $trackId');
     }
-    
-    // Use HI_RES_LOSSLESS (24-bit Master) quality by default for highest quality
-    final requestedQuality = quality ?? TidalQuality.master;
-    
-    print('🎵 TidalService: Getting stream for track $numericId (quality: ${requestedQuality.apiValue})');
-    
-    try {
-      final response = await _executeWithFallback((baseUrl) {
-        print('📡 Trying endpoint: $baseUrl');
-        return _dio.get(
-          '$baseUrl${TidalEndpoints.trackPath}',
-          queryParameters: {
-            'id': numericId,
-            'quality': requestedQuality.apiValue,
-          },
-        );
-      });
 
-      final data = response.data as Map<String, dynamic>;
-      final streamInfo = StreamInfo.fromJson(data);
-      
-      // Validate URL
-      if (streamInfo.url.isEmpty) {
-        print('❌ Empty stream URL received');
-        throw TidalApiException('Empty stream URL for track: $trackId');
-      }
-      
-      print('✅ Got stream URL: ${streamInfo.url.substring(0, 50.clamp(0, streamInfo.url.length))}...');
-      return streamInfo;
+    // Default to preferredQuality (hifi/LOSSLESS by default).
+    final requestedQuality = quality ?? preferredQuality;
+
+    print(
+        '[TIDAL] Getting stream for track $numericId (quality: ${requestedQuality.apiValue})');
+
+    try {
+      final primary = await _fetchStreamInfo(numericId, requestedQuality);
+      print('[TIDAL] Got stream URL from primary quality');
+      return primary;
     } catch (e) {
-      print('❌ Stream error: $e');
+      // If higher quality fails (or returns non-playable DASH segments), retry LOSSLESS.
+      if (requestedQuality != TidalQuality.hifi) {
+        print(
+            '[TIDAL] ${requestedQuality.apiValue} failed, retrying LOSSLESS...');
+        try {
+          final fallback = await _fetchStreamInfo(numericId, TidalQuality.hifi);
+          print('[TIDAL] Got LOSSLESS fallback stream URL');
+          return fallback;
+        } catch (fallbackError) {
+          print('[TIDAL] LOSSLESS fallback failed: $fallbackError');
+          throw TidalApiException(
+            'Failed to get stream (primary + LOSSLESS fallback): $fallbackError',
+          );
+        }
+      }
+
+      print('[TIDAL] Stream error: $e');
       throw TidalApiException('Failed to get stream: $e');
     }
+  }
+
+  Future<StreamInfo> _fetchStreamInfo(
+      int numericId, TidalQuality quality) async {
+    final response = await _executeWithFallback((baseUrl) {
+      print('[TIDAL] Trying endpoint: $baseUrl');
+      return _dio.get(
+        '$baseUrl${TidalEndpoints.trackPath}',
+        queryParameters: {
+          'id': numericId,
+          'quality': quality.apiValue,
+        },
+      );
+    });
+
+    final data = response.data as Map<String, dynamic>;
+    var streamInfo = StreamInfo.fromJson(data);
+    if (streamInfo.url.isEmpty &&
+        streamInfo.isDashManifest &&
+        streamInfo.dashManifestContent != null) {
+      final dashPath = await _materializeDashManifest(
+        numericId,
+        streamInfo.dashManifestContent!,
+      );
+      streamInfo = StreamInfo(
+        url: dashPath,
+        codec: streamInfo.codec,
+        bitDepth: streamInfo.bitDepth,
+        sampleRate: streamInfo.sampleRate,
+        quality: streamInfo.quality,
+        bitrate: streamInfo.bitrate,
+        isDashManifest: true,
+        dashManifestContent: streamInfo.dashManifestContent,
+      );
+    }
+
+    if (streamInfo.url.isEmpty) {
+      throw TidalApiException('No playable stream URL in response');
+    }
+
+    return streamInfo;
+  }
+
+  Future<String> _materializeDashManifest(
+      int trackId, String manifestContent) async {
+    final dir = Directory('${Directory.systemTemp.path}\\dreamin_tidal_dash');
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
+    }
+
+    final file = File('${dir.path}\\$trackId.mpd');
+    await file.writeAsString(manifestContent, flush: true);
+    return file.path;
   }
 
   /// Get stream URL only (convenience method)
@@ -829,10 +900,10 @@ class TidalService {
   /// @return MP4 video URL or null if UUID invalid
   String? getVideoCoverUrl(String? coverUuid, {int size = 640}) {
     if (coverUuid == null || coverUuid.isEmpty) return null;
-    
+
     // Already a full URL? Return as-is
     if (coverUuid.startsWith('http')) return coverUuid;
-    
+
     // Convert UUID format: a1b2c3d4-e5f6-7890-abcd-ef1234567890 -> a1b2c3d4/e5f6/7890/abcd/ef1234567890
     final pathUuid = coverUuid.replaceAll('-', '/');
     return 'https://resources.tidal.com/videos/$pathUuid/${size}x$size.mp4';
@@ -845,10 +916,10 @@ class TidalService {
   /// @return JPG image URL or null if UUID invalid
   String? getStaticCoverUrl(String? coverUuid, {int size = 640}) {
     if (coverUuid == null || coverUuid.isEmpty) return null;
-    
+
     // Already a full URL? Return as-is
     if (coverUuid.startsWith('http')) return coverUuid;
-    
+
     // Convert UUID format: a1b2c3d4-e5f6-7890-abcd-ef1234567890 -> a1b2c3d4/e5f6/7890/abcd/ef1234567890
     final pathUuid = coverUuid.replaceAll('-', '/');
     return 'https://resources.tidal.com/images/$pathUuid/${size}x$size.jpg';
@@ -859,10 +930,10 @@ class TidalService {
   /// @param size Image size (default 750, options: 160, 320, 480, 640, 750)
   String? getArtistPictureUrl(String? pictureUuid, {int size = 750}) {
     if (pictureUuid == null || pictureUuid.isEmpty) return null;
-    
+
     // Already a full URL? Return as-is
     if (pictureUuid.startsWith('http')) return pictureUuid;
-    
+
     // Convert UUID format: a1b2c3d4-e5f6-7890-abcd-ef1234567890 -> a1b2c3d4/e5f6/7890/abcd/ef1234567890
     final pathUuid = pictureUuid.replaceAll('-', '/');
     return 'https://resources.tidal.com/images/$pathUuid/${size}x$size.jpg';
@@ -903,6 +974,8 @@ class StreamInfo {
   final int sampleRate;
   final String quality;
   final int bitrate;
+  final bool isDashManifest;
+  final String? dashManifestContent;
 
   StreamInfo({
     required this.url,
@@ -911,91 +984,104 @@ class StreamInfo {
     this.sampleRate = 44100,
     this.quality = 'LOSSLESS',
     this.bitrate = 1411,
+    this.isDashManifest = false,
+    this.dashManifestContent,
   });
 
   factory StreamInfo.fromJson(Map<String, dynamic> json) {
     // hifi-api returns the stream data in 'data' field
     final streamData = json['data'] as Map<String, dynamic>? ?? json;
-    
+
     // The manifest is base64-encoded (JSON or DASH XML)
     String streamUrl = '';
+    String? dashManifestContent;
     final manifestBase64 = streamData['manifest'] as String?;
     final manifestMimeType = streamData['manifestMimeType'] as String?;
-    
+
     if (manifestBase64 != null && manifestBase64.isNotEmpty) {
       try {
         // Decode base64 manifest
         final manifestContent = utf8.decode(base64Decode(manifestBase64));
-        
-        // Check if it's JSON format (vnd.tidal.bts) - LOSSLESS quality
-        if (manifestMimeType == 'application/vnd.tidal.bts' || 
+
+        // JSON manifest (vnd.tidal.bts) usually contains full direct URLs.
+        if (manifestMimeType == 'application/vnd.tidal.bts' ||
             manifestContent.startsWith('{')) {
           try {
-            final manifest = jsonDecode(manifestContent) as Map<String, dynamic>;
+            final manifest =
+                jsonDecode(manifestContent) as Map<String, dynamic>;
             final urls = manifest['urls'] as List<dynamic>?;
             if (urls != null && urls.isNotEmpty) {
-              streamUrl = urls.first as String;
+              final candidate = urls.first as String;
+              if (!_isLikelyDashSegmentUrl(candidate)) {
+                streamUrl = candidate;
+              }
             }
           } catch (_) {}
         }
-        
-        // Handle DASH manifest (HI_RES_LOSSLESS format) - same as hifi.ts
-        if (streamUrl.isEmpty && 
-            (manifestMimeType == 'application/dash+xml' || 
-             manifestContent.contains('<MPD'))) {
-          
-          // Try initialization URL (full audio file)
-          final initMatch = RegExp(r'initialization="([^"]+)"').firstMatch(manifestContent);
-          if (initMatch != null) {
-            String initUrl = initMatch.group(1)!
-                .replaceAll('&amp;', '&')
-                .replaceAll('&lt;', '<')
-                .replaceAll('&gt;', '>');
-            if (initUrl.startsWith('http')) {
-              streamUrl = initUrl;
-            }
-          }
-          
-          // Try media template URL (segments)
-          if (streamUrl.isEmpty) {
-            final mediaMatch = RegExp(r'media="([^"]+)"').firstMatch(manifestContent);
-            if (mediaMatch != null) {
-              String mediaUrl = mediaMatch.group(1)!
-                  .replaceAll('&amp;', '&')
-                  .replaceAll(RegExp(r'\$Number\$'), '1');
-              if (mediaUrl.startsWith('http')) {
-                streamUrl = mediaUrl;
-              }
-            }
-          }
-          
-          // Last resort: find any HTTPS URL ending in .mp4 or .flac
-          if (streamUrl.isEmpty) {
-            final urlMatch = RegExp(r'https://[^"<\s]+\.(mp4|flac)[^"<\s]*').firstMatch(manifestContent);
-            if (urlMatch != null) {
-              streamUrl = urlMatch.group(0)!.replaceAll('&amp;', '&');
+
+        // DASH manifest: do NOT use initialization/media segment URLs.
+        // Those are chunks (e.g., /0.mp4, /1.mp4) and lead to short playback/skips.
+        if (streamUrl.isEmpty &&
+            (manifestMimeType == 'application/dash+xml' ||
+                manifestContent.contains('<MPD'))) {
+          dashManifestContent = manifestContent;
+          final flacMatch = RegExp(r'https://[^"<\s]+\.flac[^"<\s]*')
+              .firstMatch(manifestContent);
+          if (flacMatch != null) {
+            final candidate = flacMatch.group(0)!.replaceAll('&amp;', '&');
+            if (!_isLikelyDashSegmentUrl(candidate)) {
+              streamUrl = candidate;
             }
           }
         }
-        
-      } catch (e) {
-        // If decoding fails completely, leave url empty
+      } catch (_) {
+        // Leave streamUrl empty; caller can retry with lower quality/other endpoint.
       }
     }
-    
-    // Fallback to direct url field if present
+
+    // Fallback to direct url field if present.
     if (streamUrl.isEmpty) {
-      streamUrl = streamData['url'] as String? ?? '';
+      final directUrl = streamData['url'] as String? ?? '';
+      if (!_isLikelyDashSegmentUrl(directUrl)) {
+        streamUrl = directUrl;
+      }
     }
-    
+
+    // Final guard against partial segment URLs.
+    if (_isLikelyDashSegmentUrl(streamUrl)) {
+      streamUrl = '';
+    }
+
     return StreamInfo(
       url: streamUrl,
       codec: streamData['codec'] as String? ?? 'FLAC',
-      bitDepth: streamData['bitDepth'] as int? ?? streamData['bit_depth'] as int? ?? 16,
-      sampleRate: streamData['sampleRate'] as int? ?? streamData['sample_rate'] as int? ?? 44100,
-      quality: streamData['audioQuality'] as String? ?? streamData['quality'] as String? ?? 'LOSSLESS',
+      bitDepth: streamData['bitDepth'] as int? ??
+          streamData['bit_depth'] as int? ??
+          16,
+      sampleRate: streamData['sampleRate'] as int? ??
+          streamData['sample_rate'] as int? ??
+          44100,
+      quality: streamData['audioQuality'] as String? ??
+          streamData['quality'] as String? ??
+          'LOSSLESS',
       bitrate: streamData['bitrate'] as int? ?? 1411,
+      isDashManifest: streamUrl.isEmpty &&
+          dashManifestContent != null &&
+          dashManifestContent.isNotEmpty,
+      dashManifestContent: dashManifestContent,
     );
+  }
+
+  static bool _isLikelyDashSegmentUrl(String? url) {
+    if (url == null || url.isEmpty || !url.startsWith('http')) {
+      return false;
+    }
+
+    final uri = Uri.tryParse(url);
+    if (uri == null) return false;
+
+    final fileName = uri.pathSegments.isNotEmpty ? uri.pathSegments.last : '';
+    return RegExp(r'^\d+\.(mp4|m4s)$').hasMatch(fileName.toLowerCase());
   }
 
   String get qualityLabel {
@@ -1024,17 +1110,17 @@ class Lyrics {
 
   factory Lyrics.fromJson(Map<String, dynamic> json) {
     // hifi-api returns lyrics in different format
-    final lyricsText = json['lyrics'] as String? ?? 
-                       json['subtitles'] as String? ?? '';
-    
+    final lyricsText =
+        json['lyrics'] as String? ?? json['subtitles'] as String? ?? '';
+
     final syncedData = json['subtitles'] as String?;
     List<LyricLine> syncedLines = [];
-    
+
     if (syncedData != null && syncedData.contains('[')) {
       // Parse LRC format
       syncedLines = _parseLrcLyrics(syncedData);
     }
-    
+
     return Lyrics(
       trackId: (json['trackId'] ?? '').toString(),
       lyrics: lyricsText,
@@ -1042,11 +1128,11 @@ class Lyrics {
       isSynced: syncedLines.isNotEmpty,
     );
   }
-  
+
   static List<LyricLine> _parseLrcLyrics(String lrc) {
     final lines = <LyricLine>[];
     final regex = RegExp(r'\[(\d+):(\d+)\.(\d+)\](.*)');
-    
+
     for (final line in lrc.split('\n')) {
       final match = regex.firstMatch(line);
       if (match != null) {
@@ -1054,12 +1140,12 @@ class Lyrics {
         final seconds = int.parse(match.group(2)!);
         final ms = int.parse(match.group(3)!);
         final text = match.group(4)?.trim() ?? '';
-        
+
         final timeMs = (minutes * 60 * 1000) + (seconds * 1000) + (ms * 10);
         lines.add(LyricLine(startTimeMs: timeMs, text: text));
       }
     }
-    
+
     return lines;
   }
 }
