@@ -10,7 +10,7 @@ import '../album/album_detail_screen.dart';
 import '../playlist/playlist_detail_screen.dart';
 import '../scaffold_with_mini_player.dart';
 
-/// See All Screen - Loads 30 results from API
+/// See All Screen - Loads up to 50 results from API
 /// For playlists: Pass searchQuery to search for playlists
 /// For albums: Pass searchQuery to search for albums  
 /// For tracks: Pass searchQuery to search for tracks
@@ -35,6 +35,8 @@ class SeeAllScreen extends ConsumerStatefulWidget {
 }
 
 class _SeeAllScreenState extends ConsumerState<SeeAllScreen> {
+  static const int _resultsLimit = 50;
+
   List<dynamic> _items = [];
   bool _isLoading = false;
   String? _error;
@@ -43,52 +45,65 @@ class _SeeAllScreenState extends ConsumerState<SeeAllScreen> {
   @override
   void initState() {
     super.initState();
-    // Show initial items immediately if available
+
     if (widget.initialItems != null && widget.initialItems!.isNotEmpty) {
       _items = List.from(widget.initialItems!);
-      _isLoading = false;
-    } else {
-      // Only load from API if no initial items passed
-      _loadData();
     }
+
+    _loadData(force: true);
   }
 
-  Future<void> _loadData() async {
-    if (_hasLoadedMore) return; // Already loaded more items
-    
+  Future<void> _loadData({bool force = false}) async {
+    if (_hasLoadedMore && !force) return;
+
     setState(() {
       _isLoading = true;
       _error = null;
+      if (force) {
+        _hasLoadedMore = false;
+      }
     });
 
     try {
       final tidalService = ref.read(tidalServiceProvider);
       List<dynamic> apiResults = [];
-      
+
       switch (widget.type) {
         case SeeAllType.playlist:
-          apiResults = await tidalService.searchPlaylists(widget.searchQuery, limit: 30);
+          apiResults = await tidalService.searchPlaylists(
+            widget.searchQuery,
+            limit: _resultsLimit,
+          );
           break;
-          
+
         case SeeAllType.album:
-          apiResults = await tidalService.searchAlbums(widget.searchQuery, limit: 30);
+          apiResults = await tidalService.searchAlbums(
+            widget.searchQuery,
+            limit: _resultsLimit,
+          );
           break;
-          
+
         case SeeAllType.track:
-          apiResults = await tidalService.searchTracks(widget.searchQuery, limit: 30);
+          apiResults = await tidalService.searchTracks(
+            widget.searchQuery,
+            limit: _resultsLimit,
+          );
           break;
       }
-      
+
       if (mounted) {
         setState(() {
-          // If we have initial items, keep them and only add NEW items from API
+          final existingIds = _items.map((e) => _getItemId(e)).toSet();
+          final newItems = apiResults
+              .where((item) => !existingIds.contains(_getItemId(item)))
+              .toList();
+
           if (widget.initialItems != null && widget.initialItems!.isNotEmpty) {
-            final existingIds = _items.map((e) => _getItemId(e)).toSet();
-            final newItems = apiResults.where((item) => !existingIds.contains(_getItemId(item))).toList();
-            _items = [..._items, ...newItems.take(20)]; // Add up to 20 more unique items
+            _items = [..._items, ...newItems];
           } else {
             _items = apiResults;
           }
+          _items = _items.take(_resultsLimit).toList();
           _isLoading = false;
           _hasLoadedMore = true;
         });
@@ -183,7 +198,7 @@ class _SeeAllScreenState extends ConsumerState<SeeAllScreen> {
     }
 
     return RefreshIndicator(
-      onRefresh: _loadData,
+      onRefresh: () => _loadData(force: true),
       color: AppTheme.primaryColor,
       child: ListView.builder(
         padding: EdgeInsets.only(

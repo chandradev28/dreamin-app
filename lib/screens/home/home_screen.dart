@@ -72,379 +72,765 @@ class HomeScreen extends ConsumerWidget {
                 SliverFillRemaining(
                   child: _ErrorWidget(
                     message: homeData.error!,
-                    onRetry: () => ref.read(homeDataProvider.notifier).refresh(),
+                    onRetry: () =>
+                        ref.read(homeDataProvider.notifier).refresh(),
                   ),
                 )
-            else ...[
-              // ============================================================
-              // SECTION 1: SONGS OF THE YEAR (TIDAL only - Qobuz has no playlists)
-              // ============================================================
-              if (!isQobuz && homeData.songsOfTheYear.isNotEmpty) ...[
-                SliverToBoxAdapter(
-                  child: _TidalSectionHeader(
-                    title: 'Songs of the Year',
-                    onSeeAll: () => Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => SeeAllScreen(
-                        title: 'Songs of the Year',
-                        searchQuery: 'songs of the year',
-                        type: SeeAllType.playlist,
-                        initialItems: homeData.songsOfTheYear,
-                      ),
-                    )),
-                  ),
-                ),
-                SliverToBoxAdapter(
-                  child: SizedBox(
-                    height: responsive.value(mobile: 220.0, tablet: 280.0),
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
-                      itemCount: homeData.songsOfTheYear.length.clamp(0, 10),
-                      itemBuilder: (context, index) {
-                        final playlist = homeData.songsOfTheYear[index];
-                        // Extract year from title (e.g., "2000! Songs of the Year" -> "2000")
-                        final yearMatch = RegExp(r'^(\d{4})').firstMatch(playlist.title);
-                        final year = yearMatch?.group(1) ?? '';
-                        return _SongsOfTheYearCard(
-                          playlist: playlist,
-                          year: year,
-                          width: responsive.value(mobile: 160.0, tablet: 200.0),
-                          onTap: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => PlaylistDetailScreen(
-                                  playlistId: playlist.id,
-                                  playlist: playlist,
-                                ),
-                              ),
-                            );
-                          },
-                        );
-                      },
-                    ),
-                  ),
-                ),
-              ],
-
-              // ============================================================
-              // SECTION 2: TRENDING/POPULAR TRACKS (Bento Box)
-              // ============================================================
-              if (homeData.trendingTracks.isNotEmpty) ...[
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      responsive.horizontalPadding,
-                      responsive.sectionSpacing,
-                      responsive.horizontalPadding,
-                      0,
-                    ),
-                    child: _RecommendedTracksBentoBox(
-                      tracks: homeData.trendingTracks.take(5).toList(),
-                      onTrackTap: (track, index) {
-                        ref.read(playerProvider.notifier).playQueue(
-                          homeData.trendingTracks,
-                          startIndex: index,
-                        );
-                      },
-                      onSeeAll: () => Navigator.push(context, MaterialPageRoute(
-                        builder: (_) => SeeAllScreen(
-                          title: 'Recommended new tracks',
-                          searchQuery: 'trending ${DateTime.now().year}',
-                          type: SeeAllType.track,
-                          initialItems: homeData.trendingTracks,
+              else ...[
+                // ============================================================
+                // SECTION 0: ESSENTIALS TO EXPLORE (TIDAL editorial)
+                // ============================================================
+                if (!isQobuz &&
+                    !isSubsonic &&
+                    homeData.essentialsPlaylists.isNotEmpty) ...[
+                  SliverToBoxAdapter(
+                    child: _TidalSectionHeader(
+                      title: 'Essentials to explore',
+                      onSeeAll: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => SeeAllScreen(
+                            title: 'Essentials to explore',
+                            searchQuery: 'essentials',
+                            type: SeeAllType.playlist,
+                            initialItems: homeData.essentialsPlaylists,
+                          ),
                         ),
-                      )),
+                      ),
                     ),
                   ),
-                ),
-              ],
-
-              // ============================================================
-              // SECTION 3: POPULAR PLAYLISTS (TIDAL only - Qobuz has no playlists)
-              // ============================================================
-              if (!isQobuz && homeData.popularPlaylists.isNotEmpty) ...[
-                SliverToBoxAdapter(
-                  child: _TidalSectionHeader(
-                    title: 'Popular playlists on TIDAL',
-                    onSeeAll: () => Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => SeeAllScreen(
-                        title: 'Popular playlists on TIDAL',
-                        searchQuery: 'top hits',
-                        type: SeeAllType.playlist,
-                        initialItems: homeData.popularPlaylists,
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: responsive.horizontalPadding,
                       ),
-                    )),
+                      child: _EditorialPlaylistGrid(
+                        playlists:
+                            homeData.essentialsPlaylists.take(6).toList(),
+                        onPlaylistTap: (playlist) {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => PlaylistDetailScreen(
+                                playlistId: playlist.id,
+                                playlist: playlist,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
                   ),
-                ),
+                ],
+
+                // ============================================================
+                // SECTION 0B: CUSTOM MIXES
+                // ============================================================
+                if (!isQobuz &&
+                    !isSubsonic &&
+                    homeData.customMixes.isNotEmpty) ...[
+                  SliverToBoxAdapter(
+                    child: _TidalSectionHeader(
+                      title: 'Custom mixes',
+                      onSeeAll: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => SeeAllScreen(
+                            title: 'Custom mixes',
+                            searchQuery: 'daily mix',
+                            type: SeeAllType.playlist,
+                            initialItems: homeData.customMixes,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  SliverToBoxAdapter(
+                    child: SizedBox(
+                      height: responsive.value(mobile: 200.0, tablet: 260.0),
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        padding: EdgeInsets.symmetric(
+                          horizontal: responsive.horizontalPadding,
+                        ),
+                        itemCount: homeData.customMixes.length.clamp(0, 10),
+                        itemBuilder: (context, index) {
+                          final playlist = homeData.customMixes[index];
+                          return _PlaylistCard(
+                            playlist: playlist,
+                            width:
+                                responsive.value(mobile: 150.0, tablet: 180.0),
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => PlaylistDetailScreen(
+                                    playlistId: playlist.id,
+                                    playlist: playlist,
+                                  ),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+
+                // ============================================================
+                // SECTION 0C: RECENTLY PLAYED
+                // ============================================================
+                if (homeData.recentlyPlayedTracks.isNotEmpty) ...[
+                  SliverToBoxAdapter(
+                    child: _TidalSectionHeader(
+                      title: 'Recently played',
+                    ),
+                  ),
+                  SliverToBoxAdapter(
+                    child: SizedBox(
+                      height: responsive.value(mobile: 210.0, tablet: 260.0),
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        padding: EdgeInsets.symmetric(
+                          horizontal: responsive.horizontalPadding,
+                        ),
+                        itemCount:
+                            homeData.recentlyPlayedTracks.length.clamp(0, 10),
+                        itemBuilder: (context, index) {
+                          final track = homeData.recentlyPlayedTracks[index];
+                          return _TrackCard(
+                            track: track,
+                            width:
+                                responsive.value(mobile: 150.0, tablet: 180.0),
+                            onTap: () {
+                              ref.read(playerProvider.notifier).playQueue(
+                                    homeData.recentlyPlayedTracks,
+                                    startIndex: index,
+                                  );
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+
+                // ============================================================
+                // SECTION 1: SONGS OF THE YEAR (TIDAL only - Qobuz has no playlists)
+                // ============================================================
+                if (!isQobuz && homeData.songsOfTheYear.isNotEmpty) ...[
+                  SliverToBoxAdapter(
+                    child: _TidalSectionHeader(
+                      title: 'Songs of the Year',
+                      onSeeAll: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => SeeAllScreen(
+                              title: 'Songs of the Year',
+                              searchQuery: 'songs of the year',
+                              type: SeeAllType.playlist,
+                              initialItems: homeData.songsOfTheYear,
+                            ),
+                          )),
+                    ),
+                  ),
+                  SliverToBoxAdapter(
+                    child: SizedBox(
+                      height: responsive.value(mobile: 220.0, tablet: 280.0),
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        padding: EdgeInsets.symmetric(
+                            horizontal: responsive.horizontalPadding),
+                        itemCount: homeData.songsOfTheYear.length.clamp(0, 10),
+                        itemBuilder: (context, index) {
+                          final playlist = homeData.songsOfTheYear[index];
+                          // Extract year from title (e.g., "2000! Songs of the Year" -> "2000")
+                          final yearMatch =
+                              RegExp(r'^(\d{4})').firstMatch(playlist.title);
+                          final year = yearMatch?.group(1) ?? '';
+                          return _SongsOfTheYearCard(
+                            playlist: playlist,
+                            year: year,
+                            width:
+                                responsive.value(mobile: 160.0, tablet: 200.0),
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => PlaylistDetailScreen(
+                                    playlistId: playlist.id,
+                                    playlist: playlist,
+                                  ),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+
+                // ============================================================
+                // SECTION 2: TRENDING/POPULAR TRACKS (Bento Box)
+                // ============================================================
+                if (homeData.trendingTracks.isNotEmpty) ...[
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        responsive.horizontalPadding,
+                        responsive.sectionSpacing,
+                        responsive.horizontalPadding,
+                        0,
+                      ),
+                      child: _RecommendedTracksBentoBox(
+                        tracks: homeData.trendingTracks.take(5).toList(),
+                        onTrackTap: (track, index) {
+                          ref.read(playerProvider.notifier).playQueue(
+                                homeData.trendingTracks,
+                                startIndex: index,
+                              );
+                        },
+                        onSeeAll: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => SeeAllScreen(
+                                title: 'Recommended new tracks',
+                                searchQuery: 'trending ${DateTime.now().year}',
+                                type: SeeAllType.track,
+                                initialItems: homeData.trendingTracks,
+                              ),
+                            )),
+                      ),
+                    ),
+                  ),
+                ],
+
+                // ============================================================
+                // SECTION 3: POPULAR PLAYLISTS (TIDAL only - Qobuz has no playlists)
+                // ============================================================
+                if (!isQobuz && homeData.popularPlaylists.isNotEmpty) ...[
+                  SliverToBoxAdapter(
+                    child: _TidalSectionHeader(
+                      title: 'Popular playlists on TIDAL',
+                      onSeeAll: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => SeeAllScreen(
+                              title: 'Popular playlists on TIDAL',
+                              searchQuery: 'top hits',
+                              type: SeeAllType.playlist,
+                              initialItems: homeData.popularPlaylists,
+                            ),
+                          )),
+                    ),
+                  ),
+                  SliverToBoxAdapter(
+                    child: SizedBox(
+                      height: responsive.value(mobile: 200.0, tablet: 260.0),
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        padding: EdgeInsets.symmetric(
+                            horizontal: responsive.horizontalPadding),
+                        itemCount:
+                            homeData.popularPlaylists.length.clamp(0, 10),
+                        itemBuilder: (context, index) {
+                          final playlist = homeData.popularPlaylists[index];
+                          return _PlaylistCard(
+                            playlist: playlist,
+                            width:
+                                responsive.value(mobile: 150.0, tablet: 180.0),
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => PlaylistDetailScreen(
+                                    playlistId: playlist.id,
+                                    playlist: playlist,
+                                  ),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+
+                // ============================================================
+                // SECTION 4: FEATURED/SUGGESTED NEW ALBUMS
+                // ============================================================
+                if (homeData.newAlbums.isNotEmpty) ...[
+                  SliverToBoxAdapter(
+                    child: _TidalSectionHeader(
+                      title: isQobuz
+                          ? 'Featured Albums'
+                          : 'Suggested new albums for you',
+                      onSeeAll: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => SeeAllScreen(
+                              title: isQobuz
+                                  ? 'Featured Albums'
+                                  : 'Suggested new albums for you',
+                              searchQuery: isQobuz
+                                  ? 'pop'
+                                  : 'new album ${DateTime.now().year}',
+                              type: SeeAllType.album,
+                              initialItems: homeData.newAlbums,
+                            ),
+                          )),
+                    ),
+                  ),
+                  SliverToBoxAdapter(
+                    child: SizedBox(
+                      height: responsive.value(mobile: 220.0, tablet: 280.0),
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        padding: EdgeInsets.symmetric(
+                            horizontal: responsive.horizontalPadding),
+                        itemCount: homeData.newAlbums.length.clamp(0, 10),
+                        itemBuilder: (context, index) {
+                          final album = homeData.newAlbums[index];
+                          return _AlbumCard(
+                            album: album,
+                            width:
+                                responsive.value(mobile: 150.0, tablet: 180.0),
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => AlbumDetailScreen(
+                                    albumId: album.id,
+                                    album: album,
+                                  ),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+
+                // ============================================================
+                // SECTION 4B: SET THE TONE
+                // ============================================================
+                if (!isQobuz &&
+                    !isSubsonic &&
+                    homeData.moodPlaylists.isNotEmpty) ...[
+                  SliverToBoxAdapter(
+                    child: _TidalSectionHeader(
+                      title: 'Set the Tone',
+                      onSeeAll: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => SeeAllScreen(
+                            title: 'Set the Tone',
+                            searchQuery: 'mood',
+                            type: SeeAllType.playlist,
+                            initialItems: homeData.moodPlaylists,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  SliverToBoxAdapter(
+                    child: SizedBox(
+                      height: responsive.value(mobile: 200.0, tablet: 260.0),
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        padding: EdgeInsets.symmetric(
+                          horizontal: responsive.horizontalPadding,
+                        ),
+                        itemCount: homeData.moodPlaylists.length.clamp(0, 10),
+                        itemBuilder: (context, index) {
+                          final playlist = homeData.moodPlaylists[index];
+                          return _PlaylistCard(
+                            playlist: playlist,
+                            width:
+                                responsive.value(mobile: 150.0, tablet: 180.0),
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => PlaylistDetailScreen(
+                                    playlistId: playlist.id,
+                                    playlist: playlist,
+                                  ),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+
+                // ============================================================
+                // SECTION 5: NEW RELEASES / ALBUMS YOU'LL ENJOY
+                // ============================================================
+                if (homeData.albumsYouLlEnjoy.isNotEmpty) ...[
+                  SliverToBoxAdapter(
+                    child: _TidalSectionHeader(
+                      title: isQobuz ? 'New Releases' : "Albums you'll enjoy",
+                      onSeeAll: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => SeeAllScreen(
+                              title: isQobuz
+                                  ? 'New Releases'
+                                  : "Albums you'll enjoy",
+                              searchQuery: isQobuz ? 'new' : 'best albums',
+                              type: SeeAllType.album,
+                              initialItems: homeData.albumsYouLlEnjoy,
+                            ),
+                          )),
+                    ),
+                  ),
+                  SliverToBoxAdapter(
+                    child: SizedBox(
+                      height: responsive.value(mobile: 220.0, tablet: 280.0),
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        padding: EdgeInsets.symmetric(
+                            horizontal: responsive.horizontalPadding),
+                        itemCount:
+                            homeData.albumsYouLlEnjoy.length.clamp(0, 10),
+                        itemBuilder: (context, index) {
+                          final album = homeData.albumsYouLlEnjoy[index];
+                          return _AlbumCard(
+                            album: album,
+                            width:
+                                responsive.value(mobile: 150.0, tablet: 180.0),
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => AlbumDetailScreen(
+                                    albumId: album.id,
+                                    album: album,
+                                  ),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+
+                // ============================================================
+                // SECTION 5B: PERSONAL RADIO STATIONS
+                // ============================================================
+                if (!isQobuz &&
+                    !isSubsonic &&
+                    homeData.personalRadioPlaylists.isNotEmpty) ...[
+                  SliverToBoxAdapter(
+                    child: _TidalSectionHeader(
+                      title: 'Personal radio stations',
+                      onSeeAll: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => SeeAllScreen(
+                            title: 'Personal radio stations',
+                            searchQuery: 'artist radio',
+                            type: SeeAllType.playlist,
+                            initialItems: homeData.personalRadioPlaylists,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  SliverToBoxAdapter(
+                    child: SizedBox(
+                      height: responsive.value(mobile: 200.0, tablet: 260.0),
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        padding: EdgeInsets.symmetric(
+                          horizontal: responsive.horizontalPadding,
+                        ),
+                        itemCount:
+                            homeData.personalRadioPlaylists.length.clamp(0, 10),
+                        itemBuilder: (context, index) {
+                          final playlist =
+                              homeData.personalRadioPlaylists[index];
+                          return _PlaylistCard(
+                            playlist: playlist,
+                            width:
+                                responsive.value(mobile: 150.0, tablet: 180.0),
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => PlaylistDetailScreen(
+                                    playlistId: playlist.id,
+                                    playlist: playlist,
+                                  ),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+
+                // ============================================================
+                // SECTION 5C: MADE FOR YOU
+                // ============================================================
+                if (!isQobuz &&
+                    !isSubsonic &&
+                    homeData.madeForYouPlaylists.isNotEmpty) ...[
+                  SliverToBoxAdapter(
+                    child: _TidalSectionHeader(
+                      title: 'Made for you',
+                      onSeeAll: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => SeeAllScreen(
+                            title: 'Made for you',
+                            searchQuery: 'made for you',
+                            type: SeeAllType.playlist,
+                            initialItems: homeData.madeForYouPlaylists,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  SliverToBoxAdapter(
+                    child: SizedBox(
+                      height: responsive.value(mobile: 200.0, tablet: 260.0),
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        padding: EdgeInsets.symmetric(
+                          horizontal: responsive.horizontalPadding,
+                        ),
+                        itemCount:
+                            homeData.madeForYouPlaylists.length.clamp(0, 10),
+                        itemBuilder: (context, index) {
+                          final playlist = homeData.madeForYouPlaylists[index];
+                          return _PlaylistCard(
+                            playlist: playlist,
+                            width:
+                                responsive.value(mobile: 150.0, tablet: 180.0),
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => PlaylistDetailScreen(
+                                    playlistId: playlist.id,
+                                    playlist: playlist,
+                                  ),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+
+                // ============================================================
+                // SECTION 5D: YOUR LISTENING HISTORY
+                // ============================================================
+                if (homeData.listeningHistoryAlbums.isNotEmpty) ...[
+                  SliverToBoxAdapter(
+                    child: _TidalSectionHeader(
+                      title: 'Your listening history',
+                    ),
+                  ),
+                  SliverToBoxAdapter(
+                    child: SizedBox(
+                      height: responsive.value(mobile: 220.0, tablet: 280.0),
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        padding: EdgeInsets.symmetric(
+                          horizontal: responsive.horizontalPadding,
+                        ),
+                        itemCount:
+                            homeData.listeningHistoryAlbums.length.clamp(0, 10),
+                        itemBuilder: (context, index) {
+                          final album = homeData.listeningHistoryAlbums[index];
+                          return _AlbumCard(
+                            album: album,
+                            width:
+                                responsive.value(mobile: 150.0, tablet: 180.0),
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => AlbumDetailScreen(
+                                    albumId: album.id,
+                                    album: album,
+                                  ),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+
+                // ============================================================
+                // SECTION 6: JAZZ COLLECTION (Qobuz only)
+                // ============================================================
+                if (isQobuz && homeData.jazzAlbums.isNotEmpty) ...[
+                  SliverToBoxAdapter(
+                    child: _TidalSectionHeader(
+                      title: 'Jazz Collection',
+                      onSeeAll: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => SeeAllScreen(
+                              title: 'Jazz Collection',
+                              searchQuery: 'jazz',
+                              type: SeeAllType.album,
+                              initialItems: homeData.jazzAlbums,
+                            ),
+                          )),
+                    ),
+                  ),
+                  SliverToBoxAdapter(
+                    child: SizedBox(
+                      height: responsive.value(mobile: 220.0, tablet: 280.0),
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        padding: EdgeInsets.symmetric(
+                            horizontal: responsive.horizontalPadding),
+                        itemCount: homeData.jazzAlbums.length.clamp(0, 10),
+                        itemBuilder: (context, index) {
+                          final album = homeData.jazzAlbums[index];
+                          return _AlbumCard(
+                            album: album,
+                            width:
+                                responsive.value(mobile: 150.0, tablet: 180.0),
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => AlbumDetailScreen(
+                                    albumId: album.id,
+                                    album: album,
+                                  ),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+
+                // ============================================================
+                // SECTION 7: CLASSICAL PICKS (Qobuz only)
+                // ============================================================
+                if (isQobuz && homeData.classicalAlbums.isNotEmpty) ...[
+                  SliverToBoxAdapter(
+                    child: _TidalSectionHeader(
+                      title: 'Classical Picks',
+                      onSeeAll: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => SeeAllScreen(
+                              title: 'Classical Picks',
+                              searchQuery: 'classical',
+                              type: SeeAllType.album,
+                              initialItems: homeData.classicalAlbums,
+                            ),
+                          )),
+                    ),
+                  ),
+                  SliverToBoxAdapter(
+                    child: SizedBox(
+                      height: responsive.value(mobile: 220.0, tablet: 280.0),
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        padding: EdgeInsets.symmetric(
+                            horizontal: responsive.horizontalPadding),
+                        itemCount: homeData.classicalAlbums.length.clamp(0, 10),
+                        itemBuilder: (context, index) {
+                          final album = homeData.classicalAlbums[index];
+                          return _AlbumCard(
+                            album: album,
+                            width:
+                                responsive.value(mobile: 150.0, tablet: 180.0),
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => AlbumDetailScreen(
+                                    albumId: album.id,
+                                    album: album,
+                                  ),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+
+                // ============================================================
+                // SECTION 8: ROCK ESSENTIALS (Qobuz only)
+                // ============================================================
+                if (isQobuz && homeData.rockAlbums.isNotEmpty) ...[
+                  SliverToBoxAdapter(
+                    child: _TidalSectionHeader(
+                      title: 'Rock Essentials',
+                      onSeeAll: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => SeeAllScreen(
+                              title: 'Rock Essentials',
+                              searchQuery: 'rock',
+                              type: SeeAllType.album,
+                              initialItems: homeData.rockAlbums,
+                            ),
+                          )),
+                    ),
+                  ),
+                  SliverToBoxAdapter(
+                    child: SizedBox(
+                      height: responsive.value(mobile: 220.0, tablet: 280.0),
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        padding: EdgeInsets.symmetric(
+                            horizontal: responsive.horizontalPadding),
+                        itemCount: homeData.rockAlbums.length.clamp(0, 10),
+                        itemBuilder: (context, index) {
+                          final album = homeData.rockAlbums[index];
+                          return _AlbumCard(
+                            album: album,
+                            width:
+                                responsive.value(mobile: 150.0, tablet: 180.0),
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => AlbumDetailScreen(
+                                    albumId: album.id,
+                                    album: album,
+                                  ),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+
+                // Bottom spacing for mini player (minimal)
                 SliverToBoxAdapter(
                   child: SizedBox(
-                    height: responsive.value(mobile: 200.0, tablet: 260.0),
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
-                      itemCount: homeData.popularPlaylists.length.clamp(0, 10),
-                      itemBuilder: (context, index) {
-                        final playlist = homeData.popularPlaylists[index];
-                        return _PlaylistCard(
-                          playlist: playlist,
-                          width: responsive.value(mobile: 150.0, tablet: 180.0),
-                          onTap: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => PlaylistDetailScreen(
-                                  playlistId: playlist.id,
-                                  playlist: playlist,
-                                ),
-                              ),
-                            );
-                          },
-                        );
-                      },
-                    ),
+                    height: responsive.miniPlayerHeight + 16,
                   ),
                 ),
               ],
-
-              // ============================================================
-              // SECTION 4: FEATURED/SUGGESTED NEW ALBUMS
-              // ============================================================
-              if (homeData.newAlbums.isNotEmpty) ...[
-                SliverToBoxAdapter(
-                  child: _TidalSectionHeader(
-                    title: isQobuz ? 'Featured Albums' : 'Suggested new albums for you',
-                    onSeeAll: () => Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => SeeAllScreen(
-                        title: isQobuz ? 'Featured Albums' : 'Suggested new albums for you',
-                        searchQuery: isQobuz ? 'pop' : 'new album ${DateTime.now().year}',
-                        type: SeeAllType.album,
-                        initialItems: homeData.newAlbums,
-                      ),
-                    )),
-                  ),
-                ),
-                SliverToBoxAdapter(
-                  child: SizedBox(
-                    height: responsive.value(mobile: 220.0, tablet: 280.0),
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
-                      itemCount: homeData.newAlbums.length.clamp(0, 10),
-                      itemBuilder: (context, index) {
-                        final album = homeData.newAlbums[index];
-                        return _AlbumCard(
-                          album: album,
-                          width: responsive.value(mobile: 150.0, tablet: 180.0),
-                          onTap: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => AlbumDetailScreen(
-                                  albumId: album.id,
-                                  album: album,
-                                ),
-                              ),
-                            );
-                          },
-                        );
-                      },
-                    ),
-                  ),
-                ),
-              ],
-
-              // ============================================================
-              // SECTION 5: NEW RELEASES / ALBUMS YOU'LL ENJOY
-              // ============================================================
-              if (homeData.albumsYouLlEnjoy.isNotEmpty) ...[
-                SliverToBoxAdapter(
-                  child: _TidalSectionHeader(
-                    title: isQobuz ? 'New Releases' : "Albums you'll enjoy",
-                    onSeeAll: () => Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => SeeAllScreen(
-                        title: isQobuz ? 'New Releases' : "Albums you'll enjoy",
-                        searchQuery: isQobuz ? 'new' : 'best albums',
-                        type: SeeAllType.album,
-                        initialItems: homeData.albumsYouLlEnjoy,
-                      ),
-                    )),
-                  ),
-                ),
-                SliverToBoxAdapter(
-                  child: SizedBox(
-                    height: responsive.value(mobile: 220.0, tablet: 280.0),
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
-                      itemCount: homeData.albumsYouLlEnjoy.length.clamp(0, 10),
-                      itemBuilder: (context, index) {
-                        final album = homeData.albumsYouLlEnjoy[index];
-                        return _AlbumCard(
-                          album: album,
-                          width: responsive.value(mobile: 150.0, tablet: 180.0),
-                          onTap: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => AlbumDetailScreen(
-                                  albumId: album.id,
-                                  album: album,
-                                ),
-                              ),
-                            );
-                          },
-                        );
-                      },
-                    ),
-                  ),
-                ),
-              ],
-
-              // ============================================================
-              // SECTION 6: JAZZ COLLECTION (Qobuz only)
-              // ============================================================
-              if (isQobuz && homeData.jazzAlbums.isNotEmpty) ...[
-                SliverToBoxAdapter(
-                  child: _TidalSectionHeader(
-                    title: 'Jazz Collection',
-                    onSeeAll: () => Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => SeeAllScreen(
-                        title: 'Jazz Collection',
-                        searchQuery: 'jazz',
-                        type: SeeAllType.album,
-                        initialItems: homeData.jazzAlbums,
-                      ),
-                    )),
-                  ),
-                ),
-                SliverToBoxAdapter(
-                  child: SizedBox(
-                    height: responsive.value(mobile: 220.0, tablet: 280.0),
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
-                      itemCount: homeData.jazzAlbums.length.clamp(0, 10),
-                      itemBuilder: (context, index) {
-                        final album = homeData.jazzAlbums[index];
-                        return _AlbumCard(
-                          album: album,
-                          width: responsive.value(mobile: 150.0, tablet: 180.0),
-                          onTap: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => AlbumDetailScreen(
-                                  albumId: album.id,
-                                  album: album,
-                                ),
-                              ),
-                            );
-                          },
-                        );
-                      },
-                    ),
-                  ),
-                ),
-              ],
-
-              // ============================================================
-              // SECTION 7: CLASSICAL PICKS (Qobuz only)
-              // ============================================================
-              if (isQobuz && homeData.classicalAlbums.isNotEmpty) ...[
-                SliverToBoxAdapter(
-                  child: _TidalSectionHeader(
-                    title: 'Classical Picks',
-                    onSeeAll: () => Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => SeeAllScreen(
-                        title: 'Classical Picks',
-                        searchQuery: 'classical',
-                        type: SeeAllType.album,
-                        initialItems: homeData.classicalAlbums,
-                      ),
-                    )),
-                  ),
-                ),
-                SliverToBoxAdapter(
-                  child: SizedBox(
-                    height: responsive.value(mobile: 220.0, tablet: 280.0),
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
-                      itemCount: homeData.classicalAlbums.length.clamp(0, 10),
-                      itemBuilder: (context, index) {
-                        final album = homeData.classicalAlbums[index];
-                        return _AlbumCard(
-                          album: album,
-                          width: responsive.value(mobile: 150.0, tablet: 180.0),
-                          onTap: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => AlbumDetailScreen(
-                                  albumId: album.id,
-                                  album: album,
-                                ),
-                              ),
-                            );
-                          },
-                        );
-                      },
-                    ),
-                  ),
-                ),
-              ],
-
-              // ============================================================
-              // SECTION 8: ROCK ESSENTIALS (Qobuz only)
-              // ============================================================
-              if (isQobuz && homeData.rockAlbums.isNotEmpty) ...[
-                SliverToBoxAdapter(
-                  child: _TidalSectionHeader(
-                    title: 'Rock Essentials',
-                    onSeeAll: () => Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => SeeAllScreen(
-                        title: 'Rock Essentials',
-                        searchQuery: 'rock',
-                        type: SeeAllType.album,
-                        initialItems: homeData.rockAlbums,
-                      ),
-                    )),
-                  ),
-                ),
-                SliverToBoxAdapter(
-                  child: SizedBox(
-                    height: responsive.value(mobile: 220.0, tablet: 280.0),
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
-                      itemCount: homeData.rockAlbums.length.clamp(0, 10),
-                      itemBuilder: (context, index) {
-                        final album = homeData.rockAlbums[index];
-                        return _AlbumCard(
-                          album: album,
-                          width: responsive.value(mobile: 150.0, tablet: 180.0),
-                          onTap: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => AlbumDetailScreen(
-                                  albumId: album.id,
-                                  album: album,
-                                ),
-                              ),
-                            );
-                          },
-                        );
-                      },
-                    ),
-                  ),
-                ),
-              ],
-
-              // Bottom spacing for mini player (minimal)
-              SliverToBoxAdapter(
-                child: SizedBox(
-                  height: responsive.miniPlayerHeight + 16,
-                ),
-              ),
             ],
-          ],
+          ),
         ),
-      ),
       ),
     );
   }
@@ -505,6 +891,106 @@ class _TidalSectionHeader extends StatelessWidget {
   }
 }
 
+/// Compact editorial playlist grid used for top-of-home discovery
+class _EditorialPlaylistGrid extends StatelessWidget {
+  final List<Playlist> playlists;
+  final void Function(Playlist playlist) onPlaylistTap;
+
+  const _EditorialPlaylistGrid({
+    required this.playlists,
+    required this.onPlaylistTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (playlists.isEmpty) return const SizedBox.shrink();
+
+    return SizedBox(
+      height: 128,
+      child: GridView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: playlists.length,
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          mainAxisSpacing: 10,
+          crossAxisSpacing: 10,
+          childAspectRatio: 2.6,
+        ),
+        itemBuilder: (context, index) {
+          final playlist = playlists[index];
+          return InkWell(
+            borderRadius: BorderRadius.circular(AppTheme.radiusM),
+            onTap: () => onPlaylistTap(playlist),
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(AppTheme.radiusM),
+                color: AppTheme.surfaceLight,
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      playlist.title,
+                      style: AppTheme.bodyMedium.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: playlist.coverArtUrl != null
+                        ? CachedNetworkImage(
+                            imageUrl: playlist.coverArtUrl!,
+                            width: 42,
+                            height: 42,
+                            fit: BoxFit.cover,
+                            placeholder: (_, __) => Container(
+                              width: 42,
+                              height: 42,
+                              color: AppTheme.surfaceLighter,
+                              child: const Icon(
+                                Icons.queue_music,
+                                color: Colors.white70,
+                                size: 18,
+                              ),
+                            ),
+                            errorWidget: (_, __, ___) => Container(
+                              width: 42,
+                              height: 42,
+                              color: AppTheme.surfaceLighter,
+                              child: const Icon(
+                                Icons.queue_music,
+                                color: Colors.white70,
+                                size: 18,
+                              ),
+                            ),
+                          )
+                        : Container(
+                            width: 42,
+                            height: 42,
+                            color: AppTheme.surfaceLighter,
+                            child: const Icon(
+                              Icons.queue_music,
+                              color: Colors.white70,
+                              size: 18,
+                            ),
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
 /// Songs of the Year card (large with year number overlay)
 class _SongsOfTheYearCard extends StatelessWidget {
   final Playlist playlist;
@@ -549,17 +1035,20 @@ class _SongsOfTheYearCard extends StatelessWidget {
                       fit: BoxFit.cover,
                       placeholder: (_, __) => Container(
                         color: AppTheme.surfaceLight,
-                        child: const Center(child: Icon(Icons.queue_music, size: 40)),
+                        child: const Center(
+                            child: Icon(Icons.queue_music, size: 40)),
                       ),
                       errorWidget: (_, __, ___) => Container(
                         color: AppTheme.surfaceLight,
-                        child: const Center(child: Icon(Icons.queue_music, size: 40)),
+                        child: const Center(
+                            child: Icon(Icons.queue_music, size: 40)),
                       ),
                     )
                   else
                     Container(
                       color: AppTheme.surfaceLight,
-                      child: const Center(child: Icon(Icons.queue_music, size: 40)),
+                      child: const Center(
+                          child: Icon(Icons.queue_music, size: 40)),
                     ),
                   // Year overlay (top left)
                   if (year.isNotEmpty)
@@ -627,7 +1116,8 @@ class _SongsOfTheYearCard extends StatelessWidget {
             ),
             Text(
               'by TIDAL',
-              style: AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor),
+              style:
+                  AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor),
             ),
           ],
         ),
@@ -780,7 +1270,8 @@ class _BentoTrackTile extends StatelessWidget {
                       if (track.isExplicit) ...[
                         const SizedBox(width: 6),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 4, vertical: 1),
                           decoration: BoxDecoration(
                             color: Colors.white.withOpacity(0.3),
                             borderRadius: BorderRadius.circular(2),
@@ -813,6 +1304,83 @@ class _BentoTrackTile extends StatelessWidget {
               icon: const Icon(Icons.more_horiz),
               onPressed: () => TrackOptionsSheet.show(context, track),
               color: Colors.white.withOpacity(0.7),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Square card for track-based shelves like Recently played
+class _TrackCard extends StatelessWidget {
+  final Track track;
+  final double width;
+  final VoidCallback onTap;
+
+  const _TrackCard({
+    required this.track,
+    required this.width,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: width,
+        margin: const EdgeInsets.only(right: AppTheme.spacingM),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: width,
+              height: width,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(AppTheme.radiusM),
+                color: AppTheme.surfaceColor,
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: track.coverArtUrl != null
+                  ? CachedNetworkImage(
+                      imageUrl: track.coverArtUrl!,
+                      width: width,
+                      height: width,
+                      fit: BoxFit.cover,
+                      placeholder: (_, __) => Container(
+                        color: AppTheme.surfaceLight,
+                        child: const Center(
+                          child: Icon(Icons.music_note, size: 40),
+                        ),
+                      ),
+                      errorWidget: (_, __, ___) => Container(
+                        color: AppTheme.surfaceLight,
+                        child: const Center(
+                          child: Icon(Icons.music_note, size: 40),
+                        ),
+                      ),
+                    )
+                  : Container(
+                      color: AppTheme.surfaceLight,
+                      child: const Center(
+                        child: Icon(Icons.music_note, size: 40),
+                      ),
+                    ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              track.title,
+              style: AppTheme.bodyMedium.copyWith(fontWeight: FontWeight.w600),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            Text(
+              track.artist,
+              style:
+                  AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ],
         ),
@@ -862,17 +1430,20 @@ class _PlaylistCard extends StatelessWidget {
                       fit: BoxFit.cover,
                       placeholder: (_, __) => Container(
                         color: AppTheme.surfaceLight,
-                        child: const Center(child: Icon(Icons.queue_music, size: 40)),
+                        child: const Center(
+                            child: Icon(Icons.queue_music, size: 40)),
                       ),
                       errorWidget: (_, __, ___) => Container(
                         color: AppTheme.surfaceLight,
-                        child: const Center(child: Icon(Icons.queue_music, size: 40)),
+                        child: const Center(
+                            child: Icon(Icons.queue_music, size: 40)),
                       ),
                     )
                   else
                     Container(
                       color: AppTheme.surfaceLight,
-                      child: const Center(child: Icon(Icons.queue_music, size: 40)),
+                      child: const Center(
+                          child: Icon(Icons.queue_music, size: 40)),
                     ),
                   // TIDAL badge
                   Positioned(
@@ -904,7 +1475,8 @@ class _PlaylistCard extends StatelessWidget {
             ),
             Text(
               'by TIDAL',
-              style: AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor),
+              style:
+                  AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor),
             ),
           ],
         ),
@@ -972,7 +1544,8 @@ class _AlbumCard extends StatelessWidget {
                       bottom: 8,
                       left: 8,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
                           color: Colors.black.withOpacity(0.7),
                           borderRadius: BorderRadius.circular(2),
@@ -1000,7 +1573,8 @@ class _AlbumCard extends StatelessWidget {
             ),
             Text(
               album.artist,
-              style: AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor),
+              style:
+                  AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -1042,7 +1616,8 @@ class _ErrorWidget extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               message,
-              style: AppTheme.bodyMedium.copyWith(color: AppTheme.secondaryColor),
+              style:
+                  AppTheme.bodyMedium.copyWith(color: AppTheme.secondaryColor),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 24),

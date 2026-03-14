@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
 import '../data/database.dart';
@@ -94,7 +96,8 @@ class SearchNotifier extends StateNotifier<SearchState> {
 }
 
 /// Search Provider - Uses the active music source
-final searchProvider = StateNotifierProvider<SearchNotifier, SearchState>((ref) {
+final searchProvider =
+    StateNotifierProvider<SearchNotifier, SearchState>((ref) {
   final musicService = ref.watch(musicServiceProvider);
   return SearchNotifier(musicService);
 });
@@ -107,29 +110,43 @@ final searchProvider = StateNotifierProvider<SearchNotifier, SearchState>((ref) 
 class HomeDataState {
   final bool isLoading;
   // New TIDAL sections
-  final List<Playlist> songsOfTheYear;       // Songs of the Year playlists
-  final List<Track> trendingTracks;           // Recommended new tracks (bento box)
-  final List<Playlist> popularPlaylists;      // Popular playlists on TIDAL
-  final List<Album> newAlbums;                // Suggested new albums for you
-  final List<Album> albumsYouLlEnjoy;         // Albums you'll enjoy
+  final List<Playlist> essentialsPlaylists; // Essentials to explore
+  final List<Playlist> customMixes; // Custom mixes
+  final List<Track> recentlyPlayedTracks; // Local history-backed recent tracks
+  final List<Playlist> songsOfTheYear; // Songs of the Year playlists
+  final List<Track> trendingTracks; // Recommended new tracks (bento box)
+  final List<Playlist> moodPlaylists; // Set the Tone
+  final List<Playlist> personalRadioPlaylists; // Personal radio stations
+  final List<Playlist> madeForYouPlaylists; // Made for you
+  final List<Playlist> popularPlaylists; // Popular playlists on TIDAL
+  final List<Album> newAlbums; // Suggested new albums for you
+  final List<Album> albumsYouLlEnjoy; // Albums you'll enjoy
+  final List<Album> listeningHistoryAlbums; // Derived from recent history
   // Qobuz genre sections (filled only for Qobuz source)
-  final List<Album> jazzAlbums;               // Jazz collection
-  final List<Album> classicalAlbums;          // Classical collection
-  final List<Album> rockAlbums;               // Rock collection
+  final List<Album> jazzAlbums; // Jazz collection
+  final List<Album> classicalAlbums; // Classical collection
+  final List<Album> rockAlbums; // Rock collection
   // Legacy fields for backward compatibility with other screens
-  final List<Track> recommendations;          // Alias for trendingTracks
-  final List<Playlist> playlistsForYou;       // Alias for songsOfTheYear
-  final List<String> topGenres;               // Default genres
-  final List<Artist> recentlyPlayedArtists;   // Empty for now
+  final List<Track> recommendations; // Alias for trendingTracks
+  final List<Playlist> playlistsForYou; // Alias for songsOfTheYear
+  final List<String> topGenres; // Default genres
+  final List<Artist> recentlyPlayedArtists; // Empty for now
   final String? error;
 
   const HomeDataState({
     this.isLoading = false,
+    this.essentialsPlaylists = const [],
+    this.customMixes = const [],
+    this.recentlyPlayedTracks = const [],
     this.songsOfTheYear = const [],
     this.trendingTracks = const [],
+    this.moodPlaylists = const [],
+    this.personalRadioPlaylists = const [],
+    this.madeForYouPlaylists = const [],
     this.popularPlaylists = const [],
     this.newAlbums = const [],
     this.albumsYouLlEnjoy = const [],
+    this.listeningHistoryAlbums = const [],
     this.jazzAlbums = const [],
     this.classicalAlbums = const [],
     this.rockAlbums = const [],
@@ -142,11 +159,18 @@ class HomeDataState {
 
   HomeDataState copyWith({
     bool? isLoading,
+    List<Playlist>? essentialsPlaylists,
+    List<Playlist>? customMixes,
+    List<Track>? recentlyPlayedTracks,
     List<Playlist>? songsOfTheYear,
     List<Track>? trendingTracks,
+    List<Playlist>? moodPlaylists,
+    List<Playlist>? personalRadioPlaylists,
+    List<Playlist>? madeForYouPlaylists,
     List<Playlist>? popularPlaylists,
     List<Album>? newAlbums,
     List<Album>? albumsYouLlEnjoy,
+    List<Album>? listeningHistoryAlbums,
     List<Album>? jazzAlbums,
     List<Album>? classicalAlbums,
     List<Album>? rockAlbums,
@@ -158,18 +182,28 @@ class HomeDataState {
   }) {
     return HomeDataState(
       isLoading: isLoading ?? this.isLoading,
+      essentialsPlaylists: essentialsPlaylists ?? this.essentialsPlaylists,
+      customMixes: customMixes ?? this.customMixes,
+      recentlyPlayedTracks: recentlyPlayedTracks ?? this.recentlyPlayedTracks,
       songsOfTheYear: songsOfTheYear ?? this.songsOfTheYear,
       trendingTracks: trendingTracks ?? this.trendingTracks,
+      moodPlaylists: moodPlaylists ?? this.moodPlaylists,
+      personalRadioPlaylists:
+          personalRadioPlaylists ?? this.personalRadioPlaylists,
+      madeForYouPlaylists: madeForYouPlaylists ?? this.madeForYouPlaylists,
       popularPlaylists: popularPlaylists ?? this.popularPlaylists,
       newAlbums: newAlbums ?? this.newAlbums,
       albumsYouLlEnjoy: albumsYouLlEnjoy ?? this.albumsYouLlEnjoy,
+      listeningHistoryAlbums:
+          listeningHistoryAlbums ?? this.listeningHistoryAlbums,
       jazzAlbums: jazzAlbums ?? this.jazzAlbums,
       classicalAlbums: classicalAlbums ?? this.classicalAlbums,
       rockAlbums: rockAlbums ?? this.rockAlbums,
       recommendations: recommendations ?? this.recommendations,
       playlistsForYou: playlistsForYou ?? this.playlistsForYou,
       topGenres: topGenres ?? this.topGenres,
-      recentlyPlayedArtists: recentlyPlayedArtists ?? this.recentlyPlayedArtists,
+      recentlyPlayedArtists:
+          recentlyPlayedArtists ?? this.recentlyPlayedArtists,
       error: error,
     );
   }
@@ -179,14 +213,14 @@ class HomeDataState {
 /// Uses LOCAL DATABASE for personalization when user has history
 /// Falls back to active music source for new users
 class HomeDataNotifier extends StateNotifier<HomeDataState> {
+  static const int _homeSeeAllLimit = 50;
+
   final MusicService _musicService;
-  final LastFmService _lastFmService;
   final AppDatabase _database;
   final RecommendationService _recommendationService;
 
   HomeDataNotifier(
-    this._musicService, 
-    this._lastFmService,
+    this._musicService,
     this._database,
     this._recommendationService,
   ) : super(const HomeDataState()) {
@@ -201,7 +235,8 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
     print('🏠 HOME: _musicService.runtimeType = ${_musicService.runtimeType}');
     print('🏠 HOME: _musicService.source = ${_musicService.source}');
     print('🏠 HOME: MusicSource.qobuz = ${MusicSource.qobuz}');
-    print('🏠 HOME: Check result = ${_musicService.source == MusicSource.qobuz}');
+    print(
+        '🏠 HOME: Check result = ${_musicService.source == MusicSource.qobuz}');
 
     try {
       // Check if using Qobuz - it needs different curated content loading
@@ -210,7 +245,6 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
         await _loadQobuzDiscovery();
         return;
       }
-      
 
       // Check if using Subsonic/HiFi Server
       if (_musicService.source == MusicSource.subsonic) {
@@ -218,12 +252,13 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
         await _loadSubsonicDiscovery();
         return;
       }
-      
+
       // Check if user has enough listening history for personalization
       final totalPlays = await _database.getTotalPlayCount();
       final hasPersonalization = totalPlays >= 10;
-      
-      print('🎵 Home: User has $totalPlays plays. Personalization: $hasPersonalization');
+
+      print(
+          '🎵 Home: User has $totalPlays plays. Personalization: $hasPersonalization');
 
       if (hasPersonalization) {
         await _loadPersonalizedData();
@@ -236,68 +271,203 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
     }
   }
 
+  Future<List<Playlist>> _loadCuratedPlaylists(
+    List<String> queries, {
+    int limitPerQuery = 4,
+    int maxItems = 12,
+  }) async {
+    final queryResults = await Future.wait(
+      queries.where((query) => query.trim().isNotEmpty).map(
+            (query) => _musicService
+                .searchPlaylists(query, limit: limitPerQuery)
+                .catchError((_) => <Playlist>[]),
+          ),
+    );
+
+    final curated = <Playlist>[];
+    final seenIds = <String>{};
+
+    for (final playlist in queryResults.expand((items) => items)) {
+      final key = '${playlist.source.name}:${playlist.id}';
+      if (playlist.id.isEmpty || seenIds.contains(key)) continue;
+      seenIds.add(key);
+      curated.add(playlist);
+      if (curated.length >= maxItems) break;
+    }
+
+    return curated;
+  }
+
+  Future<List<Track>> _loadRecentlyPlayedTracks({int limit = 12}) async {
+    final history = await _database.getRecentlyPlayed(limit: limit * 4);
+    final tracks = <Track>[];
+    final seenIds = <String>{};
+
+    for (final entry in history) {
+      try {
+        final track = Track.fromJson(
+          jsonDecode(entry.trackJson) as Map<String, dynamic>,
+        );
+        final key = '${track.source.name}:${track.id}';
+        if (track.id.isEmpty || seenIds.contains(key)) continue;
+        seenIds.add(key);
+        tracks.add(track);
+        if (tracks.length >= limit) break;
+      } catch (_) {}
+    }
+
+    return tracks;
+  }
+
+  List<Album> _buildAlbumsFromTracks(List<Track> tracks, {int limit = 10}) {
+    final albums = <Album>[];
+    final seenIds = <String>{};
+
+    for (final track in tracks) {
+      if (track.albumId.isEmpty || track.album.isEmpty) continue;
+
+      final key = '${track.source.name}:${track.albumId}';
+      if (seenIds.contains(key)) continue;
+      seenIds.add(key);
+
+      albums.add(
+        Album(
+          id: track.albumId,
+          title: track.album,
+          artist: track.artist,
+          artistId: track.artistId,
+          coverArtUrl: track.coverArtUrl,
+          year: track.year,
+          trackCount: 0,
+          source: track.source,
+          isExplicit: track.isExplicit,
+        ),
+      );
+
+      if (albums.length >= limit) break;
+    }
+
+    return albums;
+  }
+
   /// Load personalized content based on user's listening history
   /// OPTIMIZED: Uses parallel API calls
   Future<void> _loadPersonalizedData() async {
+    final currentYear = DateTime.now().year;
+
     // Get user preferences from local database (fast, local)
     final dbResults = await Future.wait([
       _database.getTopArtistNames(limit: 10),
       _database.getTopGenres(limit: 5),
-      _recommendationService.getRecommendations(limit: 15),
+      _recommendationService.getRecommendations(limit: _homeSeeAllLimit),
+      _loadRecentlyPlayedTracks(limit: 12),
     ]);
 
     final topArtistNames = dbResults[0] as List<String>;
     final topGenres = dbResults[1] as List<String>;
     final personalizedTracks = dbResults[2] as List<Track>;
-    
-    print('📊 User prefs - Artists: ${topArtistNames.take(3)}, Genres: ${topGenres.take(3)}');
+    final recentlyPlayedTracks = dbResults[3] as List<Track>;
+
+    print(
+        '📊 User prefs - Artists: ${topArtistNames.take(3)}, Genres: ${topGenres.take(3)}');
 
     // PARALLEL: All API searches run concurrently
-    final albumByArtistFutures = topArtistNames.take(5).map((name) =>
-      _musicService.searchAlbums(name, limit: 3)
-        .catchError((_) => <Album>[])
-    ).toList();
+    final albumByArtistFutures = topArtistNames
+        .take(5)
+        .map((name) => _musicService
+            .searchAlbums(name, limit: 3)
+            .catchError((_) => <Album>[]))
+        .toList();
 
-    final albumByGenreFutures = topGenres.take(3).map((genre) =>
-      _musicService.searchAlbums('$genre new 2024', limit: 4)
-        .catchError((_) => <Album>[])
-    ).toList();
+    final albumByGenreFutures = topGenres
+        .take(3)
+        .map((genre) => _musicService
+            .searchAlbums('$genre new $currentYear', limit: 4)
+            .catchError((_) => <Album>[]))
+        .toList();
 
-    final playlistByGenreFutures = topGenres.take(2).map((genre) =>
-      _musicService.searchPlaylists('$genre playlist', limit: 5)
-        .catchError((_) => <Playlist>[])
-    ).toList();
+    final playlistByGenreFutures = topGenres
+        .take(2)
+        .map((genre) => _musicService
+            .searchPlaylists('$genre playlist', limit: 25)
+            .catchError((_) => <Playlist>[]))
+        .toList();
 
     // Execute all in parallel
     final results = await Future.wait([
       Future.wait(albumByArtistFutures),
       Future.wait(albumByGenreFutures),
       Future.wait(playlistByGenreFutures),
-      _musicService.searchPlaylists('songs of the year', limit: 10)
-        .catchError((_) => <Playlist>[]),
+      _musicService
+          .searchPlaylists(
+            'songs of the year',
+            limit: _homeSeeAllLimit,
+          )
+          .catchError((_) => <Playlist>[]),
+      _loadCuratedPlaylists([
+        ...topGenres.take(3).map((genre) => '$genre essentials'),
+        'essentials',
+      ]),
+      _loadCuratedPlaylists([
+        ...topGenres.take(3).map((genre) => '$genre mix'),
+        'daily mix',
+        'custom mix',
+      ]),
+      _loadCuratedPlaylists([
+        ...topGenres.take(2).map((genre) => '$genre mood'),
+        'set the tone',
+        'mood',
+      ]),
+      _loadCuratedPlaylists([
+        ...topArtistNames.take(3).map((artist) => '$artist radio'),
+        'artist radio',
+        'radio',
+      ]),
+      _loadCuratedPlaylists([
+        ...topGenres.take(2).map((genre) => '$genre for you'),
+        'made for you',
+        'for you',
+      ]),
     ]);
 
     final albumsForYou = (results[0] as List<List<Album>>)
-        .expand((x) => x.take(2)).take(10).toList();
-    final newAlbumsByFavorites = (results[1] as List<List<Album>>)
-        .expand((x) => x).take(10).toList();
+        .expand((x) => x.take(2))
+        .take(10)
+        .toList();
+    final newAlbumsByFavorites =
+        (results[1] as List<List<Album>>).expand((x) => x).take(10).toList();
     final playlistsForUser = (results[2] as List<List<Playlist>>)
-        .expand((x) => x).take(10).toList();
+        .expand((x) => x)
+        .take(_homeSeeAllLimit)
+        .toList();
     final songsOfYear = results[3] as List<Playlist>;
+    final essentialsPlaylists = results[4] as List<Playlist>;
+    final customMixes = results[5] as List<Playlist>;
+    final moodPlaylists = results[6] as List<Playlist>;
+    final personalRadioPlaylists = results[7] as List<Playlist>;
+    final madeForYouPlaylists = results[8] as List<Playlist>;
+    final listeningHistoryAlbums = _buildAlbumsFromTracks(recentlyPlayedTracks);
 
     // Display user's top genres nicely
-    final displayGenres = topGenres.isNotEmpty 
+    final displayGenres = topGenres.isNotEmpty
         ? topGenres.map((g) => _capitalizeTag(g)).toList()
         : const ['Pop', 'Rock', 'Hip Hop', 'R&B', 'Electronic', 'Jazz'];
 
     state = state.copyWith(
       isLoading: false,
+      essentialsPlaylists: essentialsPlaylists,
+      customMixes: customMixes,
+      recentlyPlayedTracks: recentlyPlayedTracks,
       songsOfTheYear: songsOfYear,
-      trendingTracks: personalizedTracks.take(10).toList(),
-      popularPlaylists: playlistsForUser.take(10).toList(),
+      trendingTracks: personalizedTracks.take(_homeSeeAllLimit).toList(),
+      moodPlaylists: moodPlaylists,
+      personalRadioPlaylists: personalRadioPlaylists,
+      madeForYouPlaylists: madeForYouPlaylists,
+      popularPlaylists: playlistsForUser.take(_homeSeeAllLimit).toList(),
       newAlbums: albumsForYou.take(10).toList(),
       albumsYouLlEnjoy: newAlbumsByFavorites.take(10).toList(),
-      recommendations: personalizedTracks.take(10).toList(),
+      listeningHistoryAlbums: listeningHistoryAlbums,
+      recommendations: personalizedTracks.take(_homeSeeAllLimit).toList(),
       playlistsForYou: songsOfYear,
       topGenres: displayGenres,
       recentlyPlayedArtists: const [],
@@ -308,28 +478,48 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
   /// SIMPLIFIED: Direct TIDAL searches only - fast and reliable
   Future<void> _loadDiscoveryData() async {
     try {
+      final currentYear = DateTime.now().year;
       print('🏠 Loading discovery data (new user mode)...');
-      
+
       // ALL searches run in parallel - single phase, fast loading
       final results = await Future.wait([
         // 1. Songs of the Year playlists
-        _musicService.searchPlaylists('songs of the year', limit: 10)
+        _musicService
+            .searchPlaylists('songs of the year', limit: _homeSeeAllLimit)
             .catchError((_) => <Playlist>[]),
-        // 2. Popular playlists 
-        _musicService.searchPlaylists('top hits 2024', limit: 10)
+        // 2. Popular playlists
+        _musicService
+            .searchPlaylists('top hits', limit: _homeSeeAllLimit)
             .catchError((_) => <Playlist>[]),
         // 3. Trending tracks
-        _musicService.searchTracks('trending 2024', limit: 12)
+        _musicService
+            .searchTracks('trending $currentYear', limit: _homeSeeAllLimit)
             .catchError((_) => <Track>[]),
         // 4. New albums
-        _musicService.searchAlbums('new releases 2024', limit: 10)
+        _musicService
+            .searchAlbums('new releases $currentYear', limit: 10)
             .catchError((_) => <Album>[]),
         // 5. Popular albums
-        _musicService.searchAlbums('best albums', limit: 10)
+        _musicService
+            .searchAlbums('best albums', limit: 10)
             .catchError((_) => <Album>[]),
         // 6. Top artists for genre display
-        _musicService.searchArtists('popular', limit: 6)
+        _musicService
+            .searchArtists('popular', limit: 6)
             .catchError((_) => <Artist>[]),
+        // 7. Essentials to explore
+        _loadCuratedPlaylists(
+            ['essentials', 'genre essentials', 'tidal essentials']),
+        // 8. Custom mixes
+        _loadCuratedPlaylists(['daily mix', 'custom mix', 'mix']),
+        // 9. Recently played from local history
+        _loadRecentlyPlayedTracks(limit: 12),
+        // 10. Mood playlists
+        _loadCuratedPlaylists(['set the tone', 'mood', 'chill']),
+        // 11. Personal radio stations
+        _loadCuratedPlaylists(['artist radio', 'radio', 'station']),
+        // 12. Made for you
+        _loadCuratedPlaylists(['made for you', 'for you', 'daily discovery']),
       ]);
 
       final songsOfYear = results[0] as List<Playlist>;
@@ -338,19 +528,42 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
       final newAlbums = results[3] as List<Album>;
       final albumsYouLlEnjoy = results[4] as List<Album>;
       final artists = results[5] as List<Artist>;
+      final essentialsPlaylists = results[6] as List<Playlist>;
+      final customMixes = results[7] as List<Playlist>;
+      final recentlyPlayedTracks = results[8] as List<Track>;
+      final moodPlaylists = results[9] as List<Playlist>;
+      final personalRadioPlaylists = results[10] as List<Playlist>;
+      final madeForYouPlaylists = results[11] as List<Playlist>;
+      final listeningHistoryAlbums =
+          _buildAlbumsFromTracks(recentlyPlayedTracks);
 
-      print('✅ Discovery loaded: ${songsOfYear.length} year playlists, ${popular.length} popular, ${trendingTracks.length} tracks, ${newAlbums.length} new albums');
+      print(
+          '✅ Discovery loaded: ${songsOfYear.length} year playlists, ${popular.length} popular, ${trendingTracks.length} tracks, ${newAlbums.length} new albums');
 
       state = state.copyWith(
         isLoading: false,
+        essentialsPlaylists: essentialsPlaylists,
+        customMixes: customMixes,
+        recentlyPlayedTracks: recentlyPlayedTracks,
         songsOfTheYear: songsOfYear,
-        trendingTracks: trendingTracks.take(10).toList(),
+        trendingTracks: trendingTracks.take(_homeSeeAllLimit).toList(),
+        moodPlaylists: moodPlaylists,
+        personalRadioPlaylists: personalRadioPlaylists,
+        madeForYouPlaylists: madeForYouPlaylists,
         popularPlaylists: popular,
         newAlbums: newAlbums.take(10).toList(),
         albumsYouLlEnjoy: albumsYouLlEnjoy.take(10).toList(),
-        recommendations: trendingTracks.take(10).toList(),
+        listeningHistoryAlbums: listeningHistoryAlbums,
+        recommendations: trendingTracks.take(_homeSeeAllLimit).toList(),
         playlistsForYou: songsOfYear,
-        topGenres: const ['Pop', 'Rock', 'Hip Hop', 'R&B', 'Electronic', 'Jazz'],
+        topGenres: const [
+          'Pop',
+          'Rock',
+          'Hip Hop',
+          'R&B',
+          'Electronic',
+          'Jazz'
+        ],
         recentlyPlayedArtists: artists,
       );
     } catch (e) {
@@ -364,9 +577,10 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
   /// Creates a Spotify-like experience with genre sections + Hi-Res focus
   Future<void> _loadQobuzDiscovery() async {
     String? firstError;
-    
+
     // Helper to wrap API calls with proper error logging
-    Future<List<T>> safeSearch<T>(Future<List<T>> Function() apiCall, String label) async {
+    Future<List<T>> safeSearch<T>(
+        Future<List<T>> Function() apiCall, String label) async {
       try {
         final result = await apiCall();
         print('✅ Qobuz $label: ${result.length} items');
@@ -380,23 +594,31 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
 
     try {
       print('🎧 Loading Qobuz curated content...');
-      
+
       // All curated searches run in parallel with proper error logging
       final results = await Future.wait([
         // 1. Featured Albums (pop search returns rich results)
-        safeSearch<Album>(() => _musicService.searchAlbums('pop', limit: 15), 'Featured'),
+        safeSearch<Album>(
+            () => _musicService.searchAlbums('pop', limit: 15), 'Featured'),
         // 2. New Releases
-        safeSearch<Album>(() => _musicService.searchAlbums('new releases', limit: 12), 'New'),
+        safeSearch<Album>(
+            () => _musicService.searchAlbums('new releases', limit: 12), 'New'),
         // 3. Trending Tracks
-        safeSearch<Track>(() => _musicService.searchTracks('hits', limit: 15), 'Tracks'),
+        safeSearch<Track>(
+            () => _musicService.searchTracks('hits', limit: 15), 'Tracks'),
         // 4. Jazz Collection
-        safeSearch<Album>(() => _musicService.searchAlbums('jazz', limit: 12), 'Jazz'),
+        safeSearch<Album>(
+            () => _musicService.searchAlbums('jazz', limit: 12), 'Jazz'),
         // 5. Classical Collection
-        safeSearch<Album>(() => _musicService.searchAlbums('classical', limit: 12), 'Classical'),
+        safeSearch<Album>(
+            () => _musicService.searchAlbums('classical', limit: 12),
+            'Classical'),
         // 6. Rock Collection
-        safeSearch<Album>(() => _musicService.searchAlbums('rock', limit: 12), 'Rock'),
+        safeSearch<Album>(
+            () => _musicService.searchAlbums('rock', limit: 12), 'Rock'),
         // 7. Featured Artists
-        safeSearch<Artist>(() => _musicService.searchArtists('artist', limit: 10), 'Artists'),
+        safeSearch<Artist>(
+            () => _musicService.searchArtists('artist', limit: 10), 'Artists'),
       ]);
 
       final popAlbums = results[0] as List<Album>;
@@ -407,7 +629,8 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
       final rockAlbums = results[5] as List<Album>;
       final artists = results[6] as List<Artist>;
 
-      final totalItems = popAlbums.length + newReleases.length + trendingTracks.length;
+      final totalItems =
+          popAlbums.length + newReleases.length + trendingTracks.length;
       print('✅ Qobuz home: $totalItems total items loaded');
 
       // If ALL results are empty and we had an error, surface it
@@ -420,17 +643,31 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
       state = state.copyWith(
         isLoading: false,
         error: null,
+        essentialsPlaylists: const [],
+        customMixes: const [],
+        recentlyPlayedTracks: const [],
         newAlbums: popAlbums.take(12).toList(),
         albumsYouLlEnjoy: newReleases.take(12).toList(),
         trendingTracks: trendingTracks.take(12).toList(),
         recommendations: trendingTracks.take(12).toList(),
+        moodPlaylists: const [],
+        personalRadioPlaylists: const [],
+        madeForYouPlaylists: const [],
         jazzAlbums: jazzAlbums.take(10).toList(),
         classicalAlbums: classicalAlbums.take(10).toList(),
         rockAlbums: rockAlbums.take(10).toList(),
         songsOfTheYear: const [],
         popularPlaylists: const [],
+        listeningHistoryAlbums: const [],
         playlistsForYou: const [],
-        topGenres: const ['Pop', 'Jazz', 'Classical', 'Rock', 'Electronic', 'New'],
+        topGenres: const [
+          'Pop',
+          'Jazz',
+          'Classical',
+          'Rock',
+          'Electronic',
+          'New'
+        ],
         recentlyPlayedArtists: artists,
       );
     } catch (e) {
@@ -439,14 +676,14 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
     }
   }
 
-
   /// Load content for Subsonic/HiFi Server
   /// Shows library content from the personal server
   Future<void> _loadSubsonicDiscovery() async {
     String? firstError;
-    
+
     // Helper to wrap API calls with proper error logging
-    Future<List<T>> safeCall<T>(Future<List<T>> Function() apiCall, String label) async {
+    Future<List<T>> safeCall<T>(
+        Future<List<T>> Function() apiCall, String label) async {
       try {
         final result = await apiCall();
         print('✅ HiFi $label: ${result.length} items');
@@ -460,18 +697,21 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
 
     try {
       print('🎵 Loading HiFi Server content...');
-      
+
       // Cast to SubsonicServiceImpl to access specific methods
       final subsonicService = _musicService as SubsonicServiceImpl;
-      
+
       // Use proper Subsonic discovery endpoints
       final results = await Future.wait([
         // New albums (getAlbumList2 type=newest)
-        safeCall<Album>(() => subsonicService.getNewAlbums(limit: 20), 'New Albums'),
+        safeCall<Album>(
+            () => subsonicService.getNewAlbums(limit: 20), 'New Albums'),
         // Random albums (getAlbumList2 type=random)
-        safeCall<Album>(() => subsonicService.getRandomAlbums(limit: 20), 'Random Albums'),
+        safeCall<Album>(
+            () => subsonicService.getRandomAlbums(limit: 20), 'Random Albums'),
         // Random tracks (getRandomSongs)
-        safeCall<Track>(() => subsonicService.getRandomSongs(count: 20), 'Random Songs'),
+        safeCall<Track>(
+            () => subsonicService.getRandomSongs(count: 20), 'Random Songs'),
         // All artists (getArtists)
         safeCall<Artist>(() => subsonicService.getArtists(), 'Artists'),
         // User playlists
@@ -484,7 +724,8 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
       final artists = results[3] as List<Artist>;
       final playlists = results[4] as List<Playlist>;
 
-      final totalItems = newAlbums.length + randomTracks.length + randomAlbums.length;
+      final totalItems =
+          newAlbums.length + randomTracks.length + randomAlbums.length;
       print('✅ HiFi Server: $totalItems total items loaded');
 
       // If ALL results are empty and we had an error, surface it
@@ -496,12 +737,19 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
       state = state.copyWith(
         isLoading: false,
         error: null,
+        essentialsPlaylists: const [],
+        customMixes: const [],
+        recentlyPlayedTracks: const [],
         newAlbums: newAlbums.take(12).toList(),
         albumsYouLlEnjoy: randomAlbums.take(12).toList(),
         trendingTracks: randomTracks.take(12).toList(),
         recommendations: randomTracks.take(12).toList(),
+        moodPlaylists: const [],
+        personalRadioPlaylists: const [],
+        madeForYouPlaylists: const [],
         songsOfTheYear: const [],
         popularPlaylists: playlists.take(10).toList(),
+        listeningHistoryAlbums: const [],
         playlistsForYou: const [],
         topGenres: const ['Your Library', 'Albums', 'Artists', 'Tracks'],
         recentlyPlayedArtists: artists.take(12).toList(),
@@ -522,31 +770,62 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
   /// Fallback: Load only from TIDAL if Last.fm is unavailable
   Future<void> _loadTidalOnly() async {
     try {
+      final currentYear = DateTime.now().year;
+
       final results = await Future.wait([
-        _musicService.searchPlaylists('songs of the year', limit: 10)
+        _musicService
+            .searchPlaylists('songs of the year', limit: _homeSeeAllLimit)
             .catchError((_) => <Playlist>[]),
-        _musicService.searchTracks('trending', limit: 8)
+        _musicService
+            .searchTracks('trending $currentYear', limit: _homeSeeAllLimit)
             .catchError((_) => <Track>[]),
-        _musicService.searchPlaylists('hip hop', limit: 10)
+        _musicService
+            .searchPlaylists('top hits', limit: _homeSeeAllLimit)
             .catchError((_) => <Playlist>[]),
-        _musicService.searchAlbums('new albums 2024', limit: 10)
+        _musicService
+            .searchAlbums('new albums $currentYear', limit: 10)
             .catchError((_) => <Album>[]),
-        _musicService.searchAlbums('pop hits', limit: 10)
+        _musicService
+            .searchAlbums('pop hits', limit: 10)
             .catchError((_) => <Album>[]),
-        _musicService.searchArtists('pop', limit: 6)
+        _musicService
+            .searchArtists('pop', limit: 6)
             .catchError((_) => <Artist>[]),
+        _loadCuratedPlaylists(
+            ['essentials', 'genre essentials', 'tidal essentials']),
+        _loadCuratedPlaylists(['daily mix', 'custom mix', 'mix']),
+        _loadRecentlyPlayedTracks(limit: 12),
+        _loadCuratedPlaylists(['set the tone', 'mood', 'chill']),
+        _loadCuratedPlaylists(['artist radio', 'radio', 'station']),
+        _loadCuratedPlaylists(['made for you', 'for you', 'daily discovery']),
       ]);
+
+      final recentlyPlayedTracks = results[8] as List<Track>;
 
       state = state.copyWith(
         isLoading: false,
+        essentialsPlaylists: results[6] as List<Playlist>,
+        customMixes: results[7] as List<Playlist>,
+        recentlyPlayedTracks: recentlyPlayedTracks,
         songsOfTheYear: results[0] as List<Playlist>,
         trendingTracks: results[1] as List<Track>,
+        moodPlaylists: results[9] as List<Playlist>,
+        personalRadioPlaylists: results[10] as List<Playlist>,
+        madeForYouPlaylists: results[11] as List<Playlist>,
         popularPlaylists: results[2] as List<Playlist>,
         newAlbums: results[3] as List<Album>,
         albumsYouLlEnjoy: results[4] as List<Album>,
+        listeningHistoryAlbums: _buildAlbumsFromTracks(recentlyPlayedTracks),
         recommendations: results[1] as List<Track>,
         playlistsForYou: results[0] as List<Playlist>,
-        topGenres: const ['Pop', 'Rock', 'Hip Hop', 'R&B', 'Electronic', 'Jazz'],
+        topGenres: const [
+          'Pop',
+          'Rock',
+          'Hip Hop',
+          'R&B',
+          'Electronic',
+          'Jazz'
+        ],
         recentlyPlayedArtists: results[5] as List<Artist>,
       );
     } catch (e) {
@@ -560,12 +839,12 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
 }
 
 /// Home Data Provider (with personalization + active source)
-final homeDataProvider = StateNotifierProvider<HomeDataNotifier, HomeDataState>((ref) {
+final homeDataProvider =
+    StateNotifierProvider<HomeDataNotifier, HomeDataState>((ref) {
   final musicService = ref.watch(musicServiceProvider);
-  final lastFmService = ref.watch(lastFmServiceProvider);
   final database = ref.watch(databaseProvider);
   final recommendationService = ref.watch(recommendationServiceProvider);
-  return HomeDataNotifier(musicService, lastFmService, database, recommendationService);
+  return HomeDataNotifier(musicService, database, recommendationService);
 });
 
 // ============================================================================
@@ -573,7 +852,8 @@ final homeDataProvider = StateNotifierProvider<HomeDataNotifier, HomeDataState>(
 // ============================================================================
 
 /// Album Detail Provider - Uses active music source
-final albumDetailProvider = FutureProvider.family<AlbumDetail?, String>((ref, albumId) async {
+final albumDetailProvider =
+    FutureProvider.family<AlbumDetail?, String>((ref, albumId) async {
   final musicService = ref.watch(musicServiceProvider);
   try {
     return await musicService.getAlbum(albumId);
@@ -583,7 +863,8 @@ final albumDetailProvider = FutureProvider.family<AlbumDetail?, String>((ref, al
 });
 
 /// Artist Detail Provider - Uses active music source
-final artistDetailProvider = FutureProvider.family<ArtistDetail?, String>((ref, artistId) async {
+final artistDetailProvider =
+    FutureProvider.family<ArtistDetail?, String>((ref, artistId) async {
   final musicService = ref.watch(musicServiceProvider);
   try {
     return await musicService.getArtist(artistId);
@@ -593,7 +874,8 @@ final artistDetailProvider = FutureProvider.family<ArtistDetail?, String>((ref, 
 });
 
 /// Playlist Detail Provider - Uses active music source
-final playlistDetailProvider = FutureProvider.family<PlaylistDetail?, String>((ref, playlistId) async {
+final playlistDetailProvider =
+    FutureProvider.family<PlaylistDetail?, String>((ref, playlistId) async {
   final musicService = ref.watch(musicServiceProvider);
   try {
     return await musicService.getPlaylist(playlistId);
