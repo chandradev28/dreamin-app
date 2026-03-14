@@ -350,6 +350,44 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
     return albums;
   }
 
+  List<String> _extractArtistNamesFromTracks(
+    List<Track> tracks, {
+    int limit = 6,
+  }) {
+    final counts = <String, int>{};
+
+    for (final track in tracks) {
+      final artist = track.artist.trim();
+      if (artist.isEmpty) continue;
+      counts.update(artist, (count) => count + 1, ifAbsent: () => 1);
+    }
+
+    final ranked = counts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    return ranked.take(limit).map((entry) => entry.key).toList();
+  }
+
+  List<String> _mergeSeedValues(
+    List<String> primary,
+    List<String> secondary, {
+    int limit = 6,
+  }) {
+    final merged = <String>[];
+    final seen = <String>{};
+
+    for (final value in [...primary, ...secondary]) {
+      final normalized = value.trim();
+      final key = normalized.toLowerCase();
+      if (normalized.isEmpty || seen.contains(key)) continue;
+      seen.add(key);
+      merged.add(normalized);
+      if (merged.length >= limit) break;
+    }
+
+    return merged;
+  }
+
   /// Load personalized content based on user's listening history
   /// OPTIMIZED: Uses parallel API calls
   Future<void> _loadPersonalizedData() async {
@@ -367,26 +405,32 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
     final topGenres = dbResults[1] as List<String>;
     final personalizedTracks = dbResults[2] as List<Track>;
     final recentlyPlayedTracks = dbResults[3] as List<Track>;
+    final artistSeeds = _mergeSeedValues(
+      _extractArtistNamesFromTracks(recentlyPlayedTracks),
+      topArtistNames,
+    );
+    final genreSeeds =
+        _mergeSeedValues(topGenres, const ['Pop', 'Rock'], limit: 4);
 
     print(
-        '📊 User prefs - Artists: ${topArtistNames.take(3)}, Genres: ${topGenres.take(3)}');
+        '📊 User prefs - Artists: ${artistSeeds.take(3)}, Genres: ${genreSeeds.take(3)}');
 
     // PARALLEL: All API searches run concurrently
-    final albumByArtistFutures = topArtistNames
+    final albumByArtistFutures = artistSeeds
         .take(5)
         .map((name) => _musicService
             .searchAlbums(name, limit: 3)
             .catchError((_) => <Album>[]))
         .toList();
 
-    final albumByGenreFutures = topGenres
+    final albumByGenreFutures = genreSeeds
         .take(3)
         .map((genre) => _musicService
             .searchAlbums('$genre new $currentYear', limit: 4)
             .catchError((_) => <Album>[]))
         .toList();
 
-    final playlistByGenreFutures = topGenres
+    final playlistByGenreFutures = genreSeeds
         .take(2)
         .map((genre) => _musicService
             .searchPlaylists('$genre playlist', limit: 25)
@@ -405,27 +449,28 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
           )
           .catchError((_) => <Playlist>[]),
       _loadCuratedPlaylists([
-        ...topGenres.take(3).map((genre) => '$genre essentials'),
+        ...artistSeeds.take(6).map((artist) => '$artist essentials'),
+        ...genreSeeds.take(2).map((genre) => '$genre essentials'),
         'essentials',
       ]),
       _loadCuratedPlaylists([
-        ...topGenres.take(3).map((genre) => '$genre mix'),
+        ...artistSeeds.take(4).map((artist) => '$artist mix'),
+        ...genreSeeds.take(2).map((genre) => '$genre mix'),
         'daily mix',
-        'custom mix',
       ]),
       _loadCuratedPlaylists([
-        ...topGenres.take(2).map((genre) => '$genre mood'),
+        ...artistSeeds.take(2).map((artist) => '$artist mood'),
+        ...genreSeeds.take(2).map((genre) => '$genre mood'),
         'set the tone',
         'mood',
       ]),
       _loadCuratedPlaylists([
-        ...topArtistNames.take(3).map((artist) => '$artist radio'),
+        ...artistSeeds.take(4).map((artist) => '$artist radio'),
         'artist radio',
-        'radio',
       ]),
       _loadCuratedPlaylists([
-        ...topGenres.take(2).map((genre) => '$genre for you'),
-        'made for you',
+        ...artistSeeds.take(3).map((artist) => '$artist mix'),
+        ...genreSeeds.take(2).map((genre) => '$genre playlist'),
         'for you',
       ]),
     ]);
@@ -449,8 +494,8 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
     final listeningHistoryAlbums = _buildAlbumsFromTracks(recentlyPlayedTracks);
 
     // Display user's top genres nicely
-    final displayGenres = topGenres.isNotEmpty
-        ? topGenres.map((g) => _capitalizeTag(g)).toList()
+    final displayGenres = genreSeeds.isNotEmpty
+        ? genreSeeds.map((g) => _capitalizeTag(g)).toList()
         : const ['Pop', 'Rock', 'Hip Hop', 'R&B', 'Electronic', 'Jazz'];
 
     state = state.copyWith(

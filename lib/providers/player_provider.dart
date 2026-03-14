@@ -336,6 +336,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
           playedDurationMs: playedDuration.inMilliseconds,
           genre: state.currentTrack!.genre,
           artistId: state.currentTrack!.artistId,
+          artistName: state.currentTrack!.artist,
         );
 
         // Refresh history in the provider
@@ -950,7 +951,7 @@ class HistoryNotifier extends StateNotifier<HistoryState> {
           .map((h) {
             try {
               final json = jsonDecode(h.trackJson) as Map<String, dynamic>;
-              return Track.fromTidalJson(json);
+              return Track.fromJson(json);
             } catch (_) {
               return null;
             }

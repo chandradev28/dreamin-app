@@ -905,88 +905,91 @@ class _EditorialPlaylistGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     if (playlists.isEmpty) return const SizedBox.shrink();
 
-    return SizedBox(
-      height: 128,
-      child: GridView.builder(
-        scrollDirection: Axis.horizontal,
-        itemCount: playlists.length,
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          mainAxisSpacing: 10,
-          crossAxisSpacing: 10,
-          childAspectRatio: 2.6,
-        ),
-        itemBuilder: (context, index) {
-          final playlist = playlists[index];
-          return InkWell(
-            borderRadius: BorderRadius.circular(AppTheme.radiusM),
-            onTap: () => onPlaylistTap(playlist),
-            child: Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
+    final items = playlists.take(6).toList();
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const spacing = 10.0;
+        final cardWidth = (constraints.maxWidth - spacing) / 2;
+
+        return Wrap(
+          spacing: spacing,
+          runSpacing: spacing,
+          children: items.map((playlist) {
+            return SizedBox(
+              width: cardWidth,
+              child: InkWell(
                 borderRadius: BorderRadius.circular(AppTheme.radiusM),
-                color: AppTheme.surfaceLight,
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      playlist.title,
-                      style: AppTheme.bodyMedium.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                onTap: () => onPlaylistTap(playlist),
+                child: Container(
+                  height: 72,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(AppTheme.radiusM),
+                    color: AppTheme.surfaceLight,
                   ),
-                  const SizedBox(width: 10),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: playlist.coverArtUrl != null
-                        ? CachedNetworkImage(
-                            imageUrl: playlist.coverArtUrl!,
-                            width: 42,
-                            height: 42,
-                            fit: BoxFit.cover,
-                            placeholder: (_, __) => Container(
-                              width: 42,
-                              height: 42,
-                              color: AppTheme.surfaceLighter,
-                              child: const Icon(
-                                Icons.queue_music,
-                                color: Colors.white70,
-                                size: 18,
-                              ),
-                            ),
-                            errorWidget: (_, __, ___) => Container(
-                              width: 42,
-                              height: 42,
-                              color: AppTheme.surfaceLighter,
-                              child: const Icon(
-                                Icons.queue_music,
-                                color: Colors.white70,
-                                size: 18,
-                              ),
-                            ),
-                          )
-                        : Container(
-                            width: 42,
-                            height: 42,
-                            color: AppTheme.surfaceLighter,
-                            child: const Icon(
-                              Icons.queue_music,
-                              color: Colors.white70,
-                              size: 18,
-                            ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          playlist.title,
+                          style: AppTheme.bodyMedium.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
                           ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: playlist.coverArtUrl != null
+                            ? CachedNetworkImage(
+                                imageUrl: playlist.coverArtUrl!,
+                                width: 46,
+                                height: 46,
+                                fit: BoxFit.cover,
+                                placeholder: (_, __) => Container(
+                                  width: 46,
+                                  height: 46,
+                                  color: AppTheme.surfaceLighter,
+                                  child: const Icon(
+                                    Icons.queue_music,
+                                    color: Colors.white70,
+                                    size: 18,
+                                  ),
+                                ),
+                                errorWidget: (_, __, ___) => Container(
+                                  width: 46,
+                                  height: 46,
+                                  color: AppTheme.surfaceLighter,
+                                  child: const Icon(
+                                    Icons.queue_music,
+                                    color: Colors.white70,
+                                    size: 18,
+                                  ),
+                                ),
+                              )
+                            : Container(
+                                width: 46,
+                                height: 46,
+                                color: AppTheme.surfaceLighter,
+                                child: const Icon(
+                                  Icons.queue_music,
+                                  color: Colors.white70,
+                                  size: 18,
+                                ),
+                              ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
-            ),
-          );
-        },
-      ),
+            );
+          }).toList(),
+        );
+      },
     );
   }
 }

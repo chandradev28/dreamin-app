@@ -148,6 +148,7 @@ class AppDatabase extends _$AppDatabase {
     required int playedDurationMs,
     String? genre,
     required String artistId,
+    required String artistName,
   }) async {
     await into(historyEntries).insert(HistoryEntriesCompanion.insert(
       trackId: trackId,
@@ -161,27 +162,28 @@ class AppDatabase extends _$AppDatabase {
 
     // Update play counts
     await _updatePlayCount(trackId, source, artistId, genre);
-    
+
     // Update genre frequency
     if (genre != null) {
       await _updateGenreFrequency(genre);
     }
-    
+
     // Update artist frequency
-    await _updateArtistFrequency(artistId, '');
+    await _updateArtistFrequency(artistId, artistName);
   }
 
-  Future<void> _updatePlayCount(String trackId, int source, String artistId, String? genre) async {
+  Future<void> _updatePlayCount(
+      String trackId, int source, String artistId, String? genre) async {
     final existing = await (select(playCounts)
-      ..where((t) => t.trackId.equals(trackId) & t.source.equals(source)))
-      .getSingleOrNull();
+          ..where((t) => t.trackId.equals(trackId) & t.source.equals(source)))
+        .getSingleOrNull();
 
     if (existing != null) {
       await (update(playCounts)..where((t) => t.id.equals(existing.id)))
-        .write(PlayCountsCompanion(
-          playCount: Value(existing.playCount + 1),
-          lastPlayedAt: Value(DateTime.now()),
-        ));
+          .write(PlayCountsCompanion(
+        playCount: Value(existing.playCount + 1),
+        lastPlayedAt: Value(DateTime.now()),
+      ));
     } else {
       await into(playCounts).insert(PlayCountsCompanion.insert(
         trackId: trackId,
@@ -196,15 +198,15 @@ class AppDatabase extends _$AppDatabase {
 
   Future<void> _updateGenreFrequency(String genre) async {
     final existing = await (select(genreFrequency)
-      ..where((t) => t.genre.equals(genre)))
-      .getSingleOrNull();
+          ..where((t) => t.genre.equals(genre)))
+        .getSingleOrNull();
 
     if (existing != null) {
       await (update(genreFrequency)..where((t) => t.id.equals(existing.id)))
-        .write(GenreFrequencyCompanion(
-          playCount: Value(existing.playCount + 1),
-          lastPlayedAt: Value(DateTime.now()),
-        ));
+          .write(GenreFrequencyCompanion(
+        playCount: Value(existing.playCount + 1),
+        lastPlayedAt: Value(DateTime.now()),
+      ));
     } else {
       await into(genreFrequency).insert(GenreFrequencyCompanion.insert(
         genre: genre,
@@ -214,17 +216,21 @@ class AppDatabase extends _$AppDatabase {
     }
   }
 
-  Future<void> _updateArtistFrequency(String artistId, String artistName) async {
+  Future<void> _updateArtistFrequency(
+      String artistId, String artistName) async {
     final existing = await (select(artistFrequency)
-      ..where((t) => t.artistId.equals(artistId)))
-      .getSingleOrNull();
+          ..where((t) => t.artistId.equals(artistId)))
+        .getSingleOrNull();
 
     if (existing != null) {
       await (update(artistFrequency)..where((t) => t.id.equals(existing.id)))
-        .write(ArtistFrequencyCompanion(
-          playCount: Value(existing.playCount + 1),
-          lastPlayedAt: Value(DateTime.now()),
-        ));
+          .write(ArtistFrequencyCompanion(
+        artistName: artistName.isNotEmpty && existing.artistName.isEmpty
+            ? Value(artistName)
+            : const Value.absent(),
+        playCount: Value(existing.playCount + 1),
+        lastPlayedAt: Value(DateTime.now()),
+      ));
     } else {
       await into(artistFrequency).insert(ArtistFrequencyCompanion.insert(
         artistId: artistId,
@@ -237,29 +243,29 @@ class AppDatabase extends _$AppDatabase {
 
   Future<void> recordSkip(String trackId, int source) async {
     final existing = await (select(playCounts)
-      ..where((t) => t.trackId.equals(trackId) & t.source.equals(source)))
-      .getSingleOrNull();
+          ..where((t) => t.trackId.equals(trackId) & t.source.equals(source)))
+        .getSingleOrNull();
 
     if (existing != null) {
       await (update(playCounts)..where((t) => t.id.equals(existing.id)))
-        .write(PlayCountsCompanion(
-          skipCount: Value(existing.skipCount + 1),
-        ));
+          .write(PlayCountsCompanion(
+        skipCount: Value(existing.skipCount + 1),
+      ));
     }
   }
 
   Future<List<HistoryEntry>> getRecentlyPlayed({int limit = 50}) async {
     return (select(historyEntries)
-      ..orderBy([(t) => OrderingTerm.desc(t.playedAt)])
-      ..limit(limit))
-      .get();
+          ..orderBy([(t) => OrderingTerm.desc(t.playedAt)])
+          ..limit(limit))
+        .get();
   }
 
   Future<List<PlayCount>> getMostPlayed({int limit = 50}) async {
     return (select(playCounts)
-      ..orderBy([(t) => OrderingTerm.desc(t.playCount)])
-      ..limit(limit))
-      .get();
+          ..orderBy([(t) => OrderingTerm.desc(t.playCount)])
+          ..limit(limit))
+        .get();
   }
 
   Future<int> getTotalPlayCount() async {
@@ -281,8 +287,8 @@ class AppDatabase extends _$AppDatabase {
     required String trackJson,
   }) async {
     final existing = await (select(favorites)
-      ..where((t) => t.trackId.equals(trackId) & t.source.equals(source)))
-      .getSingleOrNull();
+          ..where((t) => t.trackId.equals(trackId) & t.source.equals(source)))
+        .getSingleOrNull();
 
     if (existing == null) {
       await into(favorites).insert(FavoritesCompanion.insert(
@@ -296,21 +302,20 @@ class AppDatabase extends _$AppDatabase {
 
   Future<void> removeFavorite(String trackId, int source) async {
     await (delete(favorites)
-      ..where((t) => t.trackId.equals(trackId) & t.source.equals(source)))
-      .go();
+          ..where((t) => t.trackId.equals(trackId) & t.source.equals(source)))
+        .go();
   }
 
   Future<bool> isFavorite(String trackId, int source) async {
     final result = await (select(favorites)
-      ..where((t) => t.trackId.equals(trackId) & t.source.equals(source)))
-      .getSingleOrNull();
+          ..where((t) => t.trackId.equals(trackId) & t.source.equals(source)))
+        .getSingleOrNull();
     return result != null;
   }
 
   Future<List<Favorite>> getAllFavorites() async {
-    return (select(favorites)
-      ..orderBy([(t) => OrderingTerm.desc(t.addedAt)]))
-      .get();
+    return (select(favorites)..orderBy([(t) => OrderingTerm.desc(t.addedAt)]))
+        .get();
   }
 
   // ==================== PLAYLISTS ====================
@@ -324,7 +329,9 @@ class AppDatabase extends _$AppDatabase {
   }
 
   Future<void> deletePlaylist(int playlistId) async {
-    await (delete(playlistTracks)..where((t) => t.playlistId.equals(playlistId))).go();
+    await (delete(playlistTracks)
+          ..where((t) => t.playlistId.equals(playlistId)))
+        .go();
     await (delete(localPlaylists)..where((t) => t.id.equals(playlistId))).go();
   }
 
@@ -339,8 +346,8 @@ class AppDatabase extends _$AppDatabase {
     required String trackJson,
   }) async {
     final count = await (select(playlistTracks)
-      ..where((t) => t.playlistId.equals(playlistId)))
-      .get();
+          ..where((t) => t.playlistId.equals(playlistId)))
+        .get();
 
     await into(playlistTracks).insert(PlaylistTracksCompanion.insert(
       playlistId: playlistId,
@@ -351,61 +358,64 @@ class AppDatabase extends _$AppDatabase {
     ));
 
     await (update(localPlaylists)..where((t) => t.id.equals(playlistId)))
-      .write(LocalPlaylistsCompanion(updatedAt: Value(DateTime.now())));
+        .write(LocalPlaylistsCompanion(updatedAt: Value(DateTime.now())));
   }
 
   Future<List<PlaylistTrack>> getPlaylistTracks(int playlistId) async {
     return (select(playlistTracks)
-      ..where((t) => t.playlistId.equals(playlistId))
-      ..orderBy([(t) => OrderingTerm.asc(t.position)]))
-      .get();
+          ..where((t) => t.playlistId.equals(playlistId))
+          ..orderBy([(t) => OrderingTerm.asc(t.position)]))
+        .get();
   }
 
   // ==================== RECOMMENDATIONS ====================
 
   Future<List<String>> getTopGenres({int limit = 5}) async {
     final results = await (select(genreFrequency)
-      ..orderBy([(t) => OrderingTerm.desc(t.playCount)])
-      ..limit(limit))
-      .get();
+          ..orderBy([(t) => OrderingTerm.desc(t.playCount)])
+          ..limit(limit))
+        .get();
     return results.map((r) => r.genre).toList();
   }
 
   Future<List<String>> getTopArtistIds({int limit = 10}) async {
     final results = await (select(artistFrequency)
-      ..orderBy([(t) => OrderingTerm.desc(t.playCount)])
-      ..limit(limit))
-      .get();
+          ..orderBy([(t) => OrderingTerm.desc(t.playCount)])
+          ..limit(limit))
+        .get();
     return results.map((r) => r.artistId).toList();
   }
 
   /// Get top artist names for search queries (personalization)
   Future<List<String>> getTopArtistNames({int limit = 10}) async {
     final results = await (select(artistFrequency)
-      ..orderBy([(t) => OrderingTerm.desc(t.playCount)])
-      ..limit(limit))
-      .get();
-    return results.map((r) => r.artistName).toList();
+          ..orderBy([(t) => OrderingTerm.desc(t.playCount)])
+          ..limit(limit))
+        .get();
+    return results
+        .map((r) => r.artistName.trim())
+        .where((name) => name.isNotEmpty)
+        .toList();
   }
 
   /// Get top artist data with full info (for artists screen)
   Future<List<ArtistFrequencyData>> getTopArtistData({int limit = 50}) async {
     return (select(artistFrequency)
-      ..orderBy([(t) => OrderingTerm.desc(t.playCount)])
-      ..limit(limit))
-      .get();
+          ..orderBy([(t) => OrderingTerm.desc(t.playCount)])
+          ..limit(limit))
+        .get();
   }
 
   Future<Map<String, int>> getListeningPatterns() async {
     // Get hour-based listening patterns
     final entries = await select(historyEntries).get();
     final Map<String, int> hourCounts = {};
-    
+
     for (final entry in entries) {
       final hour = entry.playedAt.hour.toString().padLeft(2, '0');
       hourCounts[hour] = (hourCounts[hour] ?? 0) + 1;
     }
-    
+
     return hourCounts;
   }
 
@@ -430,23 +440,23 @@ class AppDatabase extends _$AppDatabase {
 
   Future<bool> isTrackCached(String trackId, int source) async {
     final result = await (select(cachedTracks)
-      ..where((t) => t.trackId.equals(trackId) & t.source.equals(source)))
-      .getSingleOrNull();
+          ..where((t) => t.trackId.equals(trackId) & t.source.equals(source)))
+        .getSingleOrNull();
     return result != null;
   }
 
   Future<String?> getCachedPath(String trackId, int source) async {
     final result = await (select(cachedTracks)
-      ..where((t) => t.trackId.equals(trackId) & t.source.equals(source)))
-      .getSingleOrNull();
+          ..where((t) => t.trackId.equals(trackId) & t.source.equals(source)))
+        .getSingleOrNull();
     return result?.filePath;
   }
 
   Future<void> removeCachedTrack(String trackId, int source) async {
     final cached = await (select(cachedTracks)
-      ..where((t) => t.trackId.equals(trackId) & t.source.equals(source)))
-      .getSingleOrNull();
-    
+          ..where((t) => t.trackId.equals(trackId) & t.source.equals(source)))
+        .getSingleOrNull();
+
     if (cached != null) {
       final file = File(cached.filePath);
       if (await file.exists()) {
@@ -487,9 +497,9 @@ class AppDatabase extends _$AppDatabase {
   }) async {
     // Check if already saved
     final existing = await (select(savedAlbums)
-      ..where((t) => t.albumId.equals(albumId) & t.source.equals(source)))
-      .getSingleOrNull();
-    
+          ..where((t) => t.albumId.equals(albumId) & t.source.equals(source)))
+        .getSingleOrNull();
+
     if (existing == null) {
       await into(savedAlbums).insert(SavedAlbumsCompanion.insert(
         albumId: albumId,
@@ -502,21 +512,20 @@ class AppDatabase extends _$AppDatabase {
 
   Future<void> removeSavedAlbum(String albumId, int source) async {
     await (delete(savedAlbums)
-      ..where((t) => t.albumId.equals(albumId) & t.source.equals(source)))
-      .go();
+          ..where((t) => t.albumId.equals(albumId) & t.source.equals(source)))
+        .go();
   }
 
   Future<bool> isAlbumSaved(String albumId, int source) async {
     final result = await (select(savedAlbums)
-      ..where((t) => t.albumId.equals(albumId) & t.source.equals(source)))
-      .getSingleOrNull();
+          ..where((t) => t.albumId.equals(albumId) & t.source.equals(source)))
+        .getSingleOrNull();
     return result != null;
   }
 
   Future<List<SavedAlbum>> getAllSavedAlbums() async {
-    return (select(savedAlbums)
-      ..orderBy([(t) => OrderingTerm.desc(t.addedAt)]))
-      .get();
+    return (select(savedAlbums)..orderBy([(t) => OrderingTerm.desc(t.addedAt)]))
+        .get();
   }
 
   // ==================== SAVED PLAYLISTS ====================
@@ -527,9 +536,10 @@ class AppDatabase extends _$AppDatabase {
     required String playlistJson,
   }) async {
     final existing = await (select(savedPlaylists)
-      ..where((t) => t.playlistId.equals(playlistId) & t.source.equals(source)))
-      .getSingleOrNull();
-    
+          ..where(
+              (t) => t.playlistId.equals(playlistId) & t.source.equals(source)))
+        .getSingleOrNull();
+
     if (existing == null) {
       await into(savedPlaylists).insert(SavedPlaylistsCompanion.insert(
         playlistId: playlistId,
@@ -542,21 +552,23 @@ class AppDatabase extends _$AppDatabase {
 
   Future<void> removeSavedPlaylist(String playlistId, int source) async {
     await (delete(savedPlaylists)
-      ..where((t) => t.playlistId.equals(playlistId) & t.source.equals(source)))
-      .go();
+          ..where(
+              (t) => t.playlistId.equals(playlistId) & t.source.equals(source)))
+        .go();
   }
 
   Future<bool> isPlaylistSaved(String playlistId, int source) async {
     final result = await (select(savedPlaylists)
-      ..where((t) => t.playlistId.equals(playlistId) & t.source.equals(source)))
-      .getSingleOrNull();
+          ..where(
+              (t) => t.playlistId.equals(playlistId) & t.source.equals(source)))
+        .getSingleOrNull();
     return result != null;
   }
 
   Future<List<SavedPlaylist>> getAllSavedPlaylists() async {
     return (select(savedPlaylists)
-      ..orderBy([(t) => OrderingTerm.desc(t.addedAt)]))
-      .get();
+          ..orderBy([(t) => OrderingTerm.desc(t.addedAt)]))
+        .get();
   }
 }
 
