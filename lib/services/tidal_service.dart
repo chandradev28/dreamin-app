@@ -691,6 +691,24 @@ class TidalService {
     }
   }
 
+  /// Get extended track metadata from the info endpoint.
+  Future<TrackInfo?> getTrackInfo(String trackId) async {
+    try {
+      final response = await _executeWithFallback((baseUrl) {
+        return _dio.get(
+          '$baseUrl${TidalEndpoints.infoPath}',
+          queryParameters: {'id': int.parse(trackId)},
+        );
+      });
+
+      final data = response.data as Map<String, dynamic>;
+      final trackData = data['data'] as Map<String, dynamic>? ?? data;
+      return TrackInfo.fromJson(trackData);
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Get stream URL for a track with quality fallback.
   /// Avoids DASH segment URLs that can cause short playback and auto-skips.
   Future<StreamInfo> getStreamInfo(String trackId,
@@ -1094,6 +1112,99 @@ class StreamInfo {
   bool get isHiFiQuality => codec == 'FLAC' && bitDepth == 16;
 }
 
+/// Extended track metadata from /info.
+class TrackInfo {
+  final String id;
+  final String title;
+  final String artist;
+  final String artistId;
+  final String album;
+  final String albumId;
+  final String? releaseDate;
+  final String? copyright;
+  final String? isrc;
+  final int? bpm;
+  final String? key;
+  final String? keyScale;
+  final String? audioQuality;
+  final List<String> tags;
+  final bool explicit;
+  final int? popularity;
+  final String? mixId;
+
+  const TrackInfo({
+    required this.id,
+    required this.title,
+    required this.artist,
+    required this.artistId,
+    required this.album,
+    required this.albumId,
+    this.releaseDate,
+    this.copyright,
+    this.isrc,
+    this.bpm,
+    this.key,
+    this.keyScale,
+    this.audioQuality,
+    this.tags = const [],
+    this.explicit = false,
+    this.popularity,
+    this.mixId,
+  });
+
+  factory TrackInfo.fromJson(Map<String, dynamic> json) {
+    final artists = json['artists'] as List<dynamic>? ?? [];
+    final artistMap =
+        artists.isNotEmpty && artists.first is Map<String, dynamic>
+            ? artists.first as Map<String, dynamic>
+            : (json['artist'] as Map<String, dynamic>? ?? const {});
+    final albumMap = json['album'] as Map<String, dynamic>? ?? const {};
+    final tags = (json['mediaMetadata']?['tags'] as List<dynamic>? ?? const [])
+        .map((tag) => tag.toString())
+        .where((tag) => tag.isNotEmpty)
+        .toList();
+
+    return TrackInfo(
+      id: json['id']?.toString() ?? '',
+      title: json['title'] as String? ?? 'Unknown Title',
+      artist: artistMap['name'] as String? ?? 'Unknown Artist',
+      artistId: artistMap['id']?.toString() ?? '',
+      album: albumMap['title'] as String? ?? 'Unknown Album',
+      albumId: albumMap['id']?.toString() ?? '',
+      releaseDate: albumMap['releaseDate'] as String?,
+      copyright: json['copyright'] as String?,
+      isrc: json['isrc'] as String?,
+      bpm: json['bpm'] as int?,
+      key: json['key'] as String?,
+      keyScale: json['keyScale'] as String?,
+      audioQuality: json['audioQuality'] as String?,
+      tags: tags,
+      explicit: json['explicit'] as bool? ?? false,
+      popularity: json['popularity'] as int?,
+      mixId: (json['mixes'] as Map<String, dynamic>?)?['TRACK_MIX'] as String?,
+    );
+  }
+
+  String? get musicalKey {
+    if (key == null || key!.isEmpty) return null;
+    if (keyScale == null || keyScale!.isEmpty) return key;
+    final scale = keyScale!.toLowerCase() == 'minor' ? 'minor' : 'major';
+    return '$key $scale';
+  }
+
+  String? get qualityLabel {
+    if (audioQuality == null || audioQuality!.isEmpty) return null;
+    switch (audioQuality) {
+      case 'HI_RES_LOSSLESS':
+        return 'MAX';
+      case 'LOSSLESS':
+        return 'HIGH';
+      default:
+        return audioQuality;
+    }
+  }
+}
+
 /// Lyrics data
 class Lyrics {
   final String trackId;
@@ -1278,5 +1389,9 @@ class TidalServiceImpl implements MusicService {
   /// Get lyrics (TIDAL-specific)
   Future<Lyrics?> getLyrics(String trackId) {
     return _service.getLyrics(trackId);
+  }
+
+  Future<TrackInfo?> getTrackInfo(String trackId) {
+    return _service.getTrackInfo(trackId);
   }
 }
