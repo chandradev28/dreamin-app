@@ -6,64 +6,78 @@ import '../services/tidal_service.dart';
 import 'music_provider.dart';
 import 'player_provider.dart';
 
-class PlayerInsights {
-  final Track track;
-  final TrackInfo? trackInfo;
-  final Lyrics? lyrics;
-  final List<Track> nextUpFromArtist;
-  final List<Track> suggestedTracks;
+final _trackInfoCache = <String, TrackInfo?>{};
+final _lyricsCache = <String, Lyrics?>{};
+final _nextUpCache = <String, List<Track>>{};
+final _suggestedCache = <String, List<Track>>{};
 
-  const PlayerInsights({
-    required this.track,
-    this.trackInfo,
-    this.lyrics,
-    this.nextUpFromArtist = const [],
-    this.suggestedTracks = const [],
-  });
-}
+final playerTrackInfoProvider =
+    FutureProvider.autoDispose.family<TrackInfo?, Track>((ref, track) async {
+  final cacheKey = _trackKey(track);
+  if (_trackInfoCache.containsKey(cacheKey)) {
+    return _trackInfoCache[cacheKey];
+  }
 
-final playerInsightsProvider = FutureProvider.autoDispose<PlayerInsights?>(
-  (ref) async {
-    final track =
-        ref.watch(playerProvider.select((state) => state.currentTrack));
-    if (track == null) return null;
+  final tidalService = ref.watch(tidalServiceProvider);
+  final result = track.source == MusicSource.tidal
+      ? await tidalService.getTrackInfo(track.id)
+      : null;
+  _trackInfoCache[cacheKey] = result;
+  return result;
+});
 
-    final tidalService = ref.watch(tidalServiceProvider);
-    final lastFmService = ref.watch(lastFmServiceProvider);
-    final recommendationService = ref.watch(recommendationServiceProvider);
-    final history = ref.watch(historyProvider).history;
+final playerLyricsProvider =
+    FutureProvider.autoDispose.family<Lyrics?, Track>((ref, track) async {
+  final cacheKey = _trackKey(track);
+  if (_lyricsCache.containsKey(cacheKey)) {
+    return _lyricsCache[cacheKey];
+  }
 
-    final trackInfoFuture = track.source == MusicSource.tidal
-        ? tidalService.getTrackInfo(track.id)
-        : Future<TrackInfo?>.value(null);
-    final lyricsFuture = track.source == MusicSource.tidal
-        ? tidalService.getLyrics(track.id)
-        : Future<Lyrics?>.value(null);
-    final nextUpFuture = _loadNextUpFromArtist(tidalService, track);
-    final suggestedFuture = _loadSuggestedTracks(
-      tidalService: tidalService,
-      lastFmService: lastFmService,
-      recommendationService: recommendationService,
-      history: history,
-      track: track,
-    );
+  final tidalService = ref.watch(tidalServiceProvider);
+  final result = track.source == MusicSource.tidal
+      ? await tidalService.getLyrics(track.id)
+      : null;
+  _lyricsCache[cacheKey] = result;
+  return result;
+});
 
-    final results = await Future.wait<dynamic>([
-      trackInfoFuture,
-      lyricsFuture,
-      nextUpFuture,
-      suggestedFuture,
-    ]);
+final playerNextUpProvider =
+    FutureProvider.autoDispose.family<List<Track>, Track>((ref, track) async {
+  final cacheKey = _trackKey(track);
+  if (_nextUpCache.containsKey(cacheKey)) {
+    return _nextUpCache[cacheKey]!;
+  }
 
-    return PlayerInsights(
-      track: track,
-      trackInfo: results[0] as TrackInfo?,
-      lyrics: results[1] as Lyrics?,
-      nextUpFromArtist: results[2] as List<Track>,
-      suggestedTracks: results[3] as List<Track>,
-    );
-  },
-);
+  final tidalService = ref.watch(tidalServiceProvider);
+  final result = await _loadNextUpFromArtist(tidalService, track);
+  _nextUpCache[cacheKey] = result;
+  return result;
+});
+
+final playerSuggestedTracksProvider =
+    FutureProvider.autoDispose.family<List<Track>, Track>((ref, track) async {
+  final cacheKey = _trackKey(track);
+  if (_suggestedCache.containsKey(cacheKey)) {
+    return _suggestedCache[cacheKey]!;
+  }
+
+  final tidalService = ref.watch(tidalServiceProvider);
+  final lastFmService = ref.watch(lastFmServiceProvider);
+  final recommendationService = ref.watch(recommendationServiceProvider);
+  final history = ref.watch(historyProvider).history;
+
+  final result = await _loadSuggestedTracks(
+    tidalService: tidalService,
+    lastFmService: lastFmService,
+    recommendationService: recommendationService,
+    history: history,
+    track: track,
+  );
+  _suggestedCache[cacheKey] = result;
+  return result;
+});
+
+String _trackKey(Track track) => '${track.id}_${track.source.name}';
 
 Future<List<Track>> _loadNextUpFromArtist(
   TidalService tidalService,
@@ -105,11 +119,7 @@ Future<List<Track>> _loadNextUpFromArtist(
     } catch (_) {}
   }
 
-  return _dedupeTracks(
-    collected,
-    exclude: track,
-    limit: 18,
-  );
+  return _dedupeTracks(collected, exclude: track, limit: 18);
 }
 
 Future<List<Track>> _loadSuggestedTracks({
@@ -165,11 +175,7 @@ Future<List<Track>> _loadSuggestedTracks({
     }
   }
 
-  return _dedupeTracks(
-    collected,
-    exclude: track,
-    limit: 18,
-  );
+  return _dedupeTracks(collected, exclude: track, limit: 18);
 }
 
 Future<List<Track>> _resolveLastFmTracks(

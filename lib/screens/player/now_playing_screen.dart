@@ -24,6 +24,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
   Color _dominantColor = AppTheme.backgroundColor;
   Color _secondaryColor = AppTheme.surfaceColor;
   String? _lastCoverUrl;
+  String? _lastPrefetchedTrackKey;
   _PlayerView _activeView = _PlayerView.player;
   final ScrollController _lyricsScrollController = ScrollController();
   int _lastLyricIndex = -1;
@@ -76,7 +77,6 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
     final playerState = ref.watch(playerProvider);
     final track = playerState.currentTrack;
     final responsive = Responsive(context);
-    final insightsAsync = ref.watch(playerInsightsProvider);
 
     if (track?.coverArtUrl != _lastCoverUrl) {
       _extractColors();
@@ -85,6 +85,8 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
     if (track == null) {
       return _buildEmptyState(context, responsive);
     }
+
+    _prefetchTrackDetails(track);
 
     return GestureDetector(
       onVerticalDragEnd: (details) {
@@ -115,14 +117,12 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                       responsive,
                       playerState,
                       track,
-                      insightsAsync.valueOrNull,
                     )
                   : _buildDetailView(
                       context,
                       responsive,
                       playerState,
                       track,
-                      insightsAsync,
                     ),
             ),
           ),
@@ -183,30 +183,48 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
     Responsive responsive,
     PlayerState playerState,
     Track track,
-    PlayerInsights? insights,
   ) {
     return Column(
       key: const ValueKey('player'),
       children: [
         _buildPlayerHeader(context, playerState, responsive),
         Expanded(
-          child: SingleChildScrollView(
-            padding:
-                EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
-            child: Column(
-              children: [
-                _buildAlbumCover(track, responsive),
-                const SizedBox(height: 28),
-                _buildTrackInfo(track),
-                const SizedBox(height: 24),
-                _buildProgressBar(playerState),
-                const SizedBox(height: 18),
-                _buildPlaybackControls(playerState),
-                const SizedBox(height: 26),
-                _buildPanelActions(insights),
-                const SizedBox(height: 28),
-              ],
-            ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxHeight < 660;
+              final coverSize =
+                  (constraints.maxHeight * (compact ? 0.34 : 0.39))
+                      .clamp(220.0, constraints.maxWidth - 12)
+                      .toDouble();
+              final sectionGap =
+                  (constraints.maxHeight * 0.022).clamp(12.0, 22.0).toDouble();
+
+              return Padding(
+                padding: EdgeInsets.symmetric(
+                    horizontal: responsive.horizontalPadding),
+                child: Column(
+                  children: [
+                    SizedBox(height: compact ? 4 : 10),
+                    Center(
+                      child: _buildAlbumCover(
+                        track,
+                        responsive,
+                        sizeOverride: coverSize,
+                      ),
+                    ),
+                    SizedBox(height: sectionGap),
+                    _buildTrackInfo(track, compact: compact),
+                    SizedBox(height: sectionGap),
+                    _buildProgressBar(playerState, compact: compact),
+                    SizedBox(height: compact ? 10 : sectionGap),
+                    _buildPlaybackControls(playerState, compact: compact),
+                    const Spacer(),
+                    _buildPanelActions(showLabels: false),
+                    SizedBox(height: compact ? 10 : 16),
+                  ],
+                ),
+              );
+            },
           ),
         ),
       ],
@@ -218,7 +236,6 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
     Responsive responsive,
     PlayerState playerState,
     Track track,
-    AsyncValue<PlayerInsights?> insightsAsync,
   ) {
     return Column(
       key: ValueKey(_activeView.name),
@@ -234,21 +251,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
           child: Padding(
             padding:
                 EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
-            child: insightsAsync.when(
-              data: (insights) => _buildDetailContent(
-                context,
-                track,
-                playerState,
-                insights,
-              ),
-              loading: () => const Center(
-                child: CircularProgressIndicator(color: Colors.white),
-              ),
-              error: (_, __) => _buildPanelEmptyState(
-                _panelTitle,
-                'This section is not available for the current track.',
-              ),
-            ),
+            child: _buildDetailContent(context, track, playerState),
           ),
         ),
         Padding(
@@ -347,8 +350,15 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
     );
   }
 
-  Widget _buildAlbumCover(Track track, Responsive responsive) {
-    final size = responsive.value(mobile: 300.0, tablet: 380.0);
+  Widget _buildAlbumCover(
+    Track track,
+    Responsive responsive, {
+    double? sizeOverride,
+  }) {
+    final size = (sizeOverride ??
+            responsive.value(mobile: 300.0, tablet: 380.0) ??
+            300.0)
+        .toDouble();
 
     return Container(
       width: size,
@@ -386,7 +396,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
     );
   }
 
-  Widget _buildTrackInfo(Track track) {
+  Widget _buildTrackInfo(Track track, {bool compact = false}) {
     final favorites = ref.watch(favoritesProvider);
     final isFavorite = favorites.isFavorite(track);
 
@@ -401,9 +411,9 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                 track.title,
                 style: AppTheme.headlineLarge.copyWith(
                   color: Colors.white,
-                  fontSize: 24,
+                  fontSize: compact ? 20 : 24,
                 ),
-                maxLines: 2,
+                maxLines: compact ? 1 : 2,
                 overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 4),
@@ -412,6 +422,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                 style: AppTheme.headlineSmall.copyWith(
                   color: Colors.white.withOpacity(0.84),
                   fontWeight: FontWeight.w500,
+                  fontSize: compact ? 16 : 20,
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -439,7 +450,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
     );
   }
 
-  Widget _buildProgressBar(PlayerState playerState) {
+  Widget _buildProgressBar(PlayerState playerState, {bool compact = false}) {
     final duration = playerState.duration;
     final position = playerState.position;
     final progress = duration.inMilliseconds > 0
@@ -450,8 +461,10 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
       children: [
         SliderTheme(
           data: SliderTheme.of(context).copyWith(
-            trackHeight: 4,
-            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+            trackHeight: compact ? 3 : 4,
+            thumbShape: RoundSliderThumbShape(
+              enabledThumbRadius: compact ? 6 : 7,
+            ),
             overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
             activeTrackColor: Colors.white,
             inactiveTrackColor: Colors.white.withOpacity(0.22),
@@ -482,6 +495,10 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
               QualityBadge(
                 qualityCode: playerState.currentQuality,
                 source: playerState.currentTrack?.source,
+                bitDepth: playerState.currentBitDepth,
+                sampleRate: playerState.currentSampleRate,
+                codec: playerState.currentCodec,
+                fontSize: compact ? 9 : 10,
               ),
               Text(
                 _formatDuration(duration),
@@ -496,8 +513,12 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
     );
   }
 
-  Widget _buildPlaybackControls(PlayerState playerState) {
+  Widget _buildPlaybackControls(PlayerState playerState,
+      {bool compact = false}) {
     final notifier = ref.read(playerProvider.notifier);
+    final sideIconSize = compact ? 34.0 : 40.0;
+    final centerSize = compact ? 76.0 : 88.0;
+    final centerIconSize = compact ? 38.0 : 44.0;
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -508,17 +529,18 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
             color: playerState.shuffleEnabled
                 ? Colors.white
                 : Colors.white.withOpacity(0.72),
-            size: 28,
+            size: compact ? 24 : 28,
           ),
           onPressed: () => notifier.toggleShuffle(),
         ),
         IconButton(
-          icon: const Icon(Icons.skip_previous, size: 40, color: Colors.white),
+          icon: Icon(Icons.skip_previous,
+              size: sideIconSize, color: Colors.white),
           onPressed: () => notifier.previous(),
         ),
         Container(
-          width: 88,
-          height: 88,
+          width: centerSize,
+          height: centerSize,
           decoration: const BoxDecoration(
             shape: BoxShape.circle,
             color: Colors.white,
@@ -526,14 +548,14 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
           child: IconButton(
             icon: Icon(
               playerState.isPlaying ? Icons.pause : Icons.play_arrow,
-              size: 44,
+              size: centerIconSize,
               color: Colors.black,
             ),
             onPressed: () => notifier.togglePlayPause(),
           ),
         ),
         IconButton(
-          icon: const Icon(Icons.skip_next, size: 40, color: Colors.white),
+          icon: Icon(Icons.skip_next, size: sideIconSize, color: Colors.white),
           onPressed: () => notifier.next(),
         ),
         IconButton(
@@ -544,7 +566,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
             color: playerState.repeatMode == RepeatMode.off
                 ? Colors.white.withOpacity(0.72)
                 : Colors.white,
-            size: 28,
+            size: compact ? 24 : 28,
           ),
           onPressed: () => notifier.cycleRepeatMode(),
         ),
@@ -552,31 +574,32 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
     );
   }
 
-  Widget _buildPanelActions(PlayerInsights? insights) {
-    final hasLyrics = insights?.lyrics != null;
-
+  Widget _buildPanelActions({bool showLabels = true}) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
         _buildPanelActionButton(
           icon: Icons.reorder_rounded,
           label: 'Next up',
+          showLabel: showLabels,
           onTap: () => setState(() => _activeView = _PlayerView.nextUp),
         ),
         _buildPanelActionButton(
           icon: Icons.music_note_outlined,
           label: 'Suggested',
+          showLabel: showLabels,
           onTap: () => setState(() => _activeView = _PlayerView.suggested),
         ),
         _buildPanelActionButton(
           icon: Icons.lyrics_outlined,
           label: 'Lyrics',
-          enabled: hasLyrics,
+          showLabel: showLabels,
           onTap: () => setState(() => _activeView = _PlayerView.lyrics),
         ),
         _buildPanelActionButton(
           icon: Icons.info_outline_rounded,
           label: 'Credits',
+          showLabel: showLabels,
           onTap: () => setState(() => _activeView = _PlayerView.credits),
         ),
       ],
@@ -588,6 +611,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
     required String label,
     required VoidCallback onTap,
     bool enabled = true,
+    bool showLabel = true,
   }) {
     final color = enabled ? Colors.white : Colors.white38;
 
@@ -599,11 +623,13 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
         child: Column(
           children: [
             Icon(icon, color: color, size: 28),
-            const SizedBox(height: 8),
-            Text(
-              label,
-              style: AppTheme.labelMedium.copyWith(color: color),
-            ),
+            if (showLabel) ...[
+              const SizedBox(height: 8),
+              Text(
+                label,
+                style: AppTheme.labelMedium.copyWith(color: color),
+              ),
+            ],
           ],
         ),
       ),
@@ -670,39 +696,72 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
     BuildContext context,
     Track track,
     PlayerState playerState,
-    PlayerInsights? insights,
   ) {
     switch (_activeView) {
       case _PlayerView.nextUp:
-        final items = insights?.nextUpFromArtist ?? const <Track>[];
-        if (items.isEmpty) {
-          return _buildPanelEmptyState(
+        final nextUpAsync = ref.watch(playerNextUpProvider(track));
+        return nextUpAsync.when(
+          data: (items) {
+            if (items.isEmpty) {
+              return _buildPanelEmptyState(
+                'Next Up from ${track.artist}',
+                'No same-artist tracks were found for this song yet.',
+              );
+            }
+            return _buildTrackPanel(
+              title: 'Next Up from ${track.artist}',
+              tracks: items,
+              trailingIcon: Icons.drag_handle_rounded,
+            );
+          },
+          loading: () => _buildPanelLoading('Next Up from ${track.artist}'),
+          error: (_, __) => _buildPanelEmptyState(
             'Next Up from ${track.artist}',
-            'No same-artist tracks were found for this song yet.',
-          );
-        }
-        return _buildTrackPanel(
-          title: 'Next Up from ${track.artist}',
-          tracks: items,
-          trailingIcon: Icons.drag_handle_rounded,
+            'This section is not available right now.',
+          ),
         );
       case _PlayerView.suggested:
-        final items = insights?.suggestedTracks ?? const <Track>[];
-        if (items.isEmpty) {
-          return _buildPanelEmptyState(
+        final suggestedAsync = ref.watch(playerSuggestedTracksProvider(track));
+        return suggestedAsync.when(
+          data: (items) {
+            if (items.isEmpty) {
+              return _buildPanelEmptyState(
+                'Suggested tracks',
+                'Recommendations are still warming up from your listening history.',
+              );
+            }
+            return _buildTrackPanel(
+              title: 'Suggested tracks',
+              tracks: items,
+              trailingIcon: Icons.playlist_add_rounded,
+            );
+          },
+          loading: () => _buildPanelLoading('Suggested tracks'),
+          error: (_, __) => _buildPanelEmptyState(
             'Suggested tracks',
-            'Recommendations are still warming up from your listening history.',
-          );
-        }
-        return _buildTrackPanel(
-          title: 'Suggested tracks',
-          tracks: items,
-          trailingIcon: Icons.playlist_add_rounded,
+            'This section is not available right now.',
+          ),
         );
       case _PlayerView.lyrics:
-        return _buildLyricsPanel(playerState, insights?.lyrics);
+        final lyricsAsync = ref.watch(playerLyricsProvider(track));
+        return lyricsAsync.when(
+          data: (lyrics) => _buildLyricsPanel(playerState, lyrics),
+          loading: () => _buildPanelLoading('Lyrics'),
+          error: (_, __) => _buildPanelEmptyState(
+            'Lyrics',
+            'Lyrics are not available for this track.',
+          ),
+        );
       case _PlayerView.credits:
-        return _buildCreditsPanel(context, track, insights?.trackInfo);
+        final trackInfoAsync = ref.watch(playerTrackInfoProvider(track));
+        return trackInfoAsync.when(
+          data: (info) => _buildCreditsPanel(context, track, info),
+          loading: () => _buildPanelLoading('Song credits'),
+          error: (_, __) => _buildPanelEmptyState(
+            'Song credits',
+            'Detailed metadata is not available for this track.',
+          ),
+        );
       case _PlayerView.player:
         return const SizedBox.shrink();
     }
@@ -1080,19 +1139,38 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
     );
   }
 
-  String get _panelTitle {
-    switch (_activeView) {
-      case _PlayerView.player:
-        return 'Now Playing';
-      case _PlayerView.nextUp:
-        return 'Next Up';
-      case _PlayerView.suggested:
-        return 'Suggested tracks';
-      case _PlayerView.lyrics:
-        return 'Lyrics';
-      case _PlayerView.credits:
-        return 'Song credits';
+  Widget _buildPanelLoading(String title) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: AppTheme.headlineMedium.copyWith(
+            color: Colors.white,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 24),
+        const Expanded(
+          child: Center(
+            child: CircularProgressIndicator(color: Colors.white),
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _prefetchTrackDetails(Track track) {
+    final trackKey = '${track.id}_${track.source.name}';
+    if (_lastPrefetchedTrackKey == trackKey) {
+      return;
     }
+
+    _lastPrefetchedTrackKey = trackKey;
+    ref.read(playerTrackInfoProvider(track).future);
+    ref.read(playerLyricsProvider(track).future);
+    ref.read(playerNextUpProvider(track).future);
+    ref.read(playerSuggestedTracksProvider(track).future);
   }
 
   int _findActiveLyricIndex(List<LyricLine> lines, int positionMs) {

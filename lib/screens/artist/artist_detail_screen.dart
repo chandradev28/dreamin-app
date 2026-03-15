@@ -8,8 +8,85 @@ import '../../models/models.dart';
 import '../../widgets/track_options_sheet.dart';
 import '../album/album_detail_screen.dart';
 import '../album/view_all_screen.dart';
+import '../playlist/playlist_detail_screen.dart';
 import '../scaffold_with_mini_player.dart';
 import 'top_tracks_view_all_screen.dart';
+
+class _ArtistExtrasArgs {
+  final String artistId;
+  final String artistName;
+
+  const _ArtistExtrasArgs({
+    required this.artistId,
+    required this.artistName,
+  });
+
+  @override
+  bool operator ==(Object other) {
+    return other is _ArtistExtrasArgs &&
+        other.artistId == artistId &&
+        other.artistName == artistName;
+  }
+
+  @override
+  int get hashCode => Object.hash(artistId, artistName);
+}
+
+class _ArtistPageExtras {
+  final String? bioSummary;
+  final List<Playlist> playlists;
+  final List<Artist> similarArtists;
+
+  const _ArtistPageExtras({
+    this.bioSummary,
+    this.playlists = const [],
+    this.similarArtists = const [],
+  });
+}
+
+final artistPageExtrasProvider =
+    FutureProvider.family<_ArtistPageExtras, _ArtistExtrasArgs>((
+  ref,
+  args,
+) async {
+  final tidalService = ref.watch(tidalServiceProvider);
+  final lastFmService = ref.watch(lastFmServiceProvider);
+
+  final results = await Future.wait<dynamic>([
+    lastFmService.getArtistInfo(args.artistName),
+    tidalService.searchPlaylists(args.artistName, limit: 12),
+    lastFmService.getSimilarArtists(args.artistName, limit: 10),
+  ]);
+
+  final artistInfo = results[0];
+  final playlists = (results[1] as List<Playlist>)
+      .where((playlist) {
+        final name = args.artistName.toLowerCase();
+        return playlist.title.toLowerCase().contains(name) ||
+            (playlist.creatorName?.toLowerCase().contains(name) ?? false) ||
+            (playlist.description?.toLowerCase().contains(name) ?? false);
+      })
+      .take(10)
+      .toList();
+
+  final similar = <Artist>[];
+  for (final item in (results[2] as List).take(8)) {
+    try {
+      final lastFmArtist = item;
+      final searchResults = await tidalService
+          .searchArtists(lastFmArtist.name as String, limit: 3);
+      if (searchResults.isNotEmpty) {
+        similar.add(searchResults.first);
+      }
+    } catch (_) {}
+  }
+
+  return _ArtistPageExtras(
+    bioSummary: artistInfo?.bioSummary as String?,
+    playlists: playlists,
+    similarArtists: similar,
+  );
+});
 
 /// Artist Detail Screen - TIDAL Style Design
 /// Sections: Header, Top Tracks (30), Albums, EP & Singles, Live Albums, Playlists
@@ -31,7 +108,8 @@ class ArtistDetailScreen extends ConsumerWidget {
     return ScaffoldWithMiniPlayer(
       body: artistDetail.when(
         loading: () => _buildLoadingState(context, responsive),
-        error: (error, _) => _buildErrorState(context, error.toString(), responsive),
+        error: (error, _) =>
+            _buildErrorState(context, error.toString(), responsive),
         data: (data) {
           if (data == null) {
             return _buildErrorState(context, 'Artist not found', responsive);
@@ -59,7 +137,8 @@ class ArtistDetailScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildErrorState(BuildContext context, String error, Responsive responsive) {
+  Widget _buildErrorState(
+      BuildContext context, String error, Responsive responsive) {
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
       appBar: AppBar(
@@ -74,11 +153,16 @@ class ArtistDetailScreen extends ConsumerWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.error_outline, color: AppTheme.secondaryColor, size: 48),
+            const Icon(Icons.error_outline,
+                color: AppTheme.secondaryColor, size: 48),
             const SizedBox(height: 16),
-            Text('Failed to load artist', style: AppTheme.titleMedium.copyWith(color: Colors.white)),
+            Text('Failed to load artist',
+                style: AppTheme.titleMedium.copyWith(color: Colors.white)),
             const SizedBox(height: 8),
-            Text(error, style: AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor), textAlign: TextAlign.center),
+            Text(error,
+                style:
+                    AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor),
+                textAlign: TextAlign.center),
           ],
         ),
       ),
@@ -92,138 +176,67 @@ class ArtistDetailScreen extends ConsumerWidget {
     Responsive responsive,
   ) {
     final playerState = ref.watch(playerProvider);
-    final screenWidth = MediaQuery.of(context).size.width;
-    final imageSize = screenWidth * 0.45;
-
-    // Filter albums by type (excluding compilations as per user request)
-    final albums = artistDetail.albums.where((a) => a.albumType == AlbumType.album).toList();
-    final epsSingles = artistDetail.albums.where((a) => 
-        a.albumType == AlbumType.ep || a.albumType == AlbumType.single).toList();
-    final liveAlbums = artistDetail.albums.where((a) => a.albumType == AlbumType.live).toList();
-
-    // Top 30 tracks
+    final extrasAsync = ref.watch(
+      artistPageExtrasProvider(
+        _ArtistExtrasArgs(
+          artistId: artistDetail.id,
+          artistName: artistDetail.name,
+        ),
+      ),
+    );
+    final albums = artistDetail.albums
+        .where((a) => a.albumType == AlbumType.album)
+        .toList();
+    final epsSingles = artistDetail.albums
+        .where(
+          (a) => a.albumType == AlbumType.ep || a.albumType == AlbumType.single,
+        )
+        .toList();
+    final compilations = artistDetail.albums
+        .where((a) => a.albumType == AlbumType.compilation)
+        .toList();
+    final liveAlbums = artistDetail.albums
+        .where((a) => a.albumType == AlbumType.live)
+        .toList();
     final topTracks = artistDetail.topTracks.take(30).toList();
+    final bioText = _cleanBio(
+      artistDetail.bio?.isNotEmpty == true
+          ? artistDetail.bio
+          : extrasAsync.valueOrNull?.bioSummary,
+    );
 
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
       body: CustomScrollView(
         slivers: [
-          // App Bar
-          SliverAppBar(
-            backgroundColor: AppTheme.backgroundColor,
-            elevation: 0,
-            pinned: true,
-            leading: IconButton(
-              icon: const Icon(Icons.arrow_back, color: Colors.white),
-              onPressed: () => Navigator.pop(context),
-            ),
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.search, color: Colors.white),
-                onPressed: () {},
-              ),
-              IconButton(
-                icon: const Icon(Icons.more_vert, color: Colors.white),
-                onPressed: () {},
-              ),
-            ],
-          ),
-
-          // ==================== HEADER SECTION ====================
+          _buildHeroHeader(context, artistDetail, bioText),
           SliverToBoxAdapter(
             child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
+              padding: EdgeInsets.fromLTRB(
+                responsive.horizontalPadding,
+                18,
+                responsive.horizontalPadding,
+                0,
+              ),
               child: Column(
                 children: [
-                  // Circular Artist Image
-                  Container(
-                    width: imageSize,
-                    height: imageSize,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.4),
-                          blurRadius: 20,
-                          offset: const Offset(0, 10),
-                        ),
-                      ],
-                    ),
-                    child: ClipOval(
-                      child: artistDetail.imageUrl != null
-                          ? CachedNetworkImage(
-                              imageUrl: artistDetail.imageUrl!,
-                              fit: BoxFit.cover,
-                              placeholder: (_, __) => _buildAvatarPlaceholder(artistDetail.name),
-                              errorWidget: (_, __, ___) => _buildAvatarPlaceholder(artistDetail.name),
-                            )
-                          : _buildAvatarPlaceholder(artistDetail.name),
-                    ),
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  // Artist Name
-                  Text(
-                    artistDetail.name,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-
-                  const SizedBox(height: 8),
-
-                  // Fans count placeholder (API may not provide this)
-                  Text(
-                    '${artistDetail.albumCount ?? artistDetail.albums.length} albums',
-                    style: const TextStyle(
-                      color: AppTheme.secondaryColor,
-                      fontSize: 14,
-                    ),
-                  ),
-
-                  // Bio (if available)
-                  if (artistDetail.bio != null && artistDetail.bio!.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Text(
-                        artistDetail.bio!,
-                        style: TextStyle(
-                          color: AppTheme.secondaryColor.withOpacity(0.8),
-                          fontSize: 13,
-                          height: 1.4,
-                        ),
-                        textAlign: TextAlign.center,
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-
-                  const SizedBox(height: 24),
-
-                  // Play / Shuffle Buttons (Tidal Style)
                   Row(
                     children: [
-                      // Play Button (Outlined)
                       Expanded(
                         child: OutlinedButton(
                           onPressed: topTracks.isNotEmpty
                               ? () {
                                   ref.read(playerProvider.notifier).playQueue(
-                                    topTracks,
-                                    startIndex: 0,
-                                    source: 'Artist: ${artistDetail.name}',
-                                  );
+                                        topTracks,
+                                        startIndex: 0,
+                                        source: 'Artist: ${artistDetail.name}',
+                                      );
                                 }
                               : null,
                           style: OutlinedButton.styleFrom(
                             foregroundColor: Colors.white,
-                            side: const BorderSide(color: Colors.white, width: 1),
+                            side: const BorderSide(
+                                color: Colors.white, width: 1.1),
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(24),
@@ -234,25 +247,27 @@ class ArtistDetailScreen extends ConsumerWidget {
                             children: const [
                               Icon(Icons.play_arrow, size: 22),
                               SizedBox(width: 6),
-                              Text('Play', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                              Text('Play',
+                                  style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600)),
                             ],
                           ),
                         ),
                       ),
-
                       const SizedBox(width: 12),
-
-                      // Shuffle Button (Filled)
                       Expanded(
                         child: ElevatedButton(
                           onPressed: topTracks.isNotEmpty
                               ? () {
-                                  final shuffled = List<Track>.from(topTracks)..shuffle();
+                                  final shuffled = List<Track>.from(topTracks)
+                                    ..shuffle();
                                   ref.read(playerProvider.notifier).playQueue(
-                                    shuffled,
-                                    startIndex: 0,
-                                    source: 'Artist: ${artistDetail.name} (Shuffled)',
-                                  );
+                                        shuffled,
+                                        startIndex: 0,
+                                        source:
+                                            'Artist: ${artistDetail.name} (Shuffled)',
+                                      );
                                 }
                               : null,
                           style: ElevatedButton.styleFrom(
@@ -268,17 +283,17 @@ class ArtistDetailScreen extends ConsumerWidget {
                             children: const [
                               Icon(Icons.shuffle, size: 20),
                               SizedBox(width: 6),
-                              Text('Shuffle', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                              Text('Shuffle',
+                                  style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600)),
                             ],
                           ),
                         ),
                       ),
                     ],
                   ),
-
-                  const SizedBox(height: 20),
-
-                  // Action Icons Row (Radio, Follow, Share)
+                  const SizedBox(height: 18),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -287,13 +302,13 @@ class ArtistDetailScreen extends ConsumerWidget {
                         label: 'Radio',
                         onTap: () {},
                       ),
-                      const SizedBox(width: 48),
+                      const SizedBox(width: 36),
                       _ActionIconButton(
                         icon: Icons.add,
                         label: 'Follow',
                         onTap: () {},
                       ),
-                      const SizedBox(width: 48),
+                      const SizedBox(width: 36),
                       _ActionIconButton(
                         icon: Icons.share_outlined,
                         label: 'Share',
@@ -301,14 +316,11 @@ class ArtistDetailScreen extends ConsumerWidget {
                       ),
                     ],
                   ),
-
-                  const SizedBox(height: 32),
                 ],
               ),
             ),
           ),
-
-          // ==================== TOP TRACKS SECTION ====================
+          const SliverToBoxAdapter(child: SizedBox(height: 28)),
           if (topTracks.isNotEmpty) ...[
             _buildSectionHeader(
               context,
@@ -328,7 +340,6 @@ class ArtistDetailScreen extends ConsumerWidget {
                     }
                   : null,
             ),
-
             SliverList(
               delegate: SliverChildBuilderDelegate(
                 (context, index) {
@@ -341,24 +352,22 @@ class ArtistDetailScreen extends ConsumerWidget {
                     isPlaying: isPlaying,
                     onTap: () {
                       ref.read(playerProvider.notifier).playQueue(
-                        topTracks,
-                        startIndex: index,
-                        source: 'Artist: ${artistDetail.name}',
-                      );
+                            topTracks,
+                            startIndex: index,
+                            source: 'Artist: ${artistDetail.name}',
+                          );
                     },
                     onMoreTap: () {
                       TrackOptionsSheet.show(context, track);
                     },
                   );
                 },
-                childCount: topTracks.length.clamp(0, 5), // Show only 5, See All for more
+                childCount: topTracks.length
+                    .clamp(0, 5), // Show only 5, See All for more
               ),
             ),
-
             const SliverToBoxAdapter(child: SizedBox(height: 24)),
           ],
-
-          // ==================== ALBUMS SECTION ====================
           if (albums.isNotEmpty) ...[
             _buildSectionHeader(
               context,
@@ -377,7 +386,6 @@ class ArtistDetailScreen extends ConsumerWidget {
                     }
                   : null,
             ),
-
             SliverToBoxAdapter(
               child: SizedBox(
                 height: 200,
@@ -390,11 +398,13 @@ class ArtistDetailScreen extends ConsumerWidget {
                       padding: const EdgeInsets.only(right: 12),
                       child: _AlbumCard(
                         album: albums[index],
+                        subtitle: albums[index].year?.toString(),
                         onTap: () {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => AlbumDetailScreen(albumId: albums[index].id),
+                              builder: (_) =>
+                                  AlbumDetailScreen(albumId: albums[index].id),
                             ),
                           );
                         },
@@ -404,11 +414,8 @@ class ArtistDetailScreen extends ConsumerWidget {
                 ),
               ),
             ),
-
             const SliverToBoxAdapter(child: SizedBox(height: 24)),
           ],
-
-          // ==================== EP & SINGLES SECTION ====================
           if (epsSingles.isNotEmpty) ...[
             _buildSectionHeader(
               context,
@@ -427,7 +434,6 @@ class ArtistDetailScreen extends ConsumerWidget {
                     }
                   : null,
             ),
-
             SliverToBoxAdapter(
               child: SizedBox(
                 height: 200,
@@ -440,11 +446,13 @@ class ArtistDetailScreen extends ConsumerWidget {
                       padding: const EdgeInsets.only(right: 12),
                       child: _AlbumCard(
                         album: epsSingles[index],
+                        subtitle: epsSingles[index].year?.toString(),
                         onTap: () {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => AlbumDetailScreen(albumId: epsSingles[index].id),
+                              builder: (_) => AlbumDetailScreen(
+                                  albumId: epsSingles[index].id),
                             ),
                           );
                         },
@@ -454,11 +462,57 @@ class ArtistDetailScreen extends ConsumerWidget {
                 ),
               ),
             ),
-
             const SliverToBoxAdapter(child: SizedBox(height: 24)),
           ],
-
-          // ==================== LIVE ALBUMS SECTION ====================
+          if (compilations.isNotEmpty) ...[
+            _buildSectionHeader(
+              context,
+              'Compilations',
+              onSeeAll: compilations.length > 4
+                  ? () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ViewAllScreen(
+                            title: 'Compilations by ${artistDetail.name}',
+                            albums: compilations,
+                          ),
+                        ),
+                      );
+                    }
+                  : null,
+            ),
+            SliverToBoxAdapter(
+              child: SizedBox(
+                height: 218,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: compilations.length.clamp(0, 10),
+                  itemBuilder: (context, index) {
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 12),
+                      child: _AlbumCard(
+                        album: compilations[index],
+                        subtitle: compilations[index].year?.toString(),
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => AlbumDetailScreen(
+                                albumId: compilations[index].id,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+            const SliverToBoxAdapter(child: SizedBox(height: 24)),
+          ],
           if (liveAlbums.isNotEmpty) ...[
             _buildSectionHeader(
               context,
@@ -477,7 +531,6 @@ class ArtistDetailScreen extends ConsumerWidget {
                     }
                   : null,
             ),
-
             SliverToBoxAdapter(
               child: SizedBox(
                 height: 200,
@@ -490,11 +543,13 @@ class ArtistDetailScreen extends ConsumerWidget {
                       padding: const EdgeInsets.only(right: 12),
                       child: _AlbumCard(
                         album: liveAlbums[index],
+                        subtitle: liveAlbums[index].year?.toString(),
                         onTap: () {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => AlbumDetailScreen(albumId: liveAlbums[index].id),
+                              builder: (_) => AlbumDetailScreen(
+                                  albumId: liveAlbums[index].id),
                             ),
                           );
                         },
@@ -504,20 +559,252 @@ class ArtistDetailScreen extends ConsumerWidget {
                 ),
               ),
             ),
-
             const SliverToBoxAdapter(child: SizedBox(height: 24)),
           ],
+          extrasAsync.when(
+            data: (extras) {
+              if (extras.playlists.isEmpty) {
+                return const SliverToBoxAdapter(child: SizedBox.shrink());
+              }
 
-          // ==================== PLAYLISTS SECTION ====================
-          // Note: This would require fetching artist-related playlists
-          // Placeholder for now - can be implemented when API supports it
-          // SliverToBoxAdapter(child: _buildPlaylistsSection(artistDetail)),
+              return SliverMainAxisGroup(
+                slivers: [
+                  _buildSectionHeader(
+                    context,
+                    'Playlists',
+                    onSeeAll: extras.playlists.length > 4
+                        ? () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => ViewAllScreen(
+                                  title: 'Playlists for ${artistDetail.name}',
+                                  playlists: extras.playlists,
+                                ),
+                              ),
+                            );
+                          }
+                        : null,
+                  ),
+                  SliverToBoxAdapter(
+                    child: SizedBox(
+                      height: 218,
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        itemCount: extras.playlists.length.clamp(0, 10),
+                        itemBuilder: (context, index) {
+                          final playlist = extras.playlists[index];
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 12),
+                            child: _PlaylistCard(
+                              playlist: playlist,
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => PlaylistDetailScreen(
+                                      playlistId: playlist.id,
+                                      playlist: playlist,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  const SliverToBoxAdapter(child: SizedBox(height: 24)),
+                ],
+              );
+            },
+            loading: () => const SliverToBoxAdapter(child: SizedBox.shrink()),
+            error: (_, __) =>
+                const SliverToBoxAdapter(child: SizedBox.shrink()),
+          ),
+          extrasAsync.when(
+            data: (extras) {
+              if (extras.similarArtists.isEmpty) {
+                return const SliverToBoxAdapter(child: SizedBox.shrink());
+              }
 
-          // Bottom Spacing
+              return SliverMainAxisGroup(
+                slivers: [
+                  _buildSectionHeader(
+                    context,
+                    'Fans Also Like',
+                    onSeeAll: extras.similarArtists.length > 4
+                        ? () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => ViewAllScreen(
+                                  title: 'Fans Also Like',
+                                  artists: extras.similarArtists,
+                                ),
+                              ),
+                            );
+                          }
+                        : null,
+                  ),
+                  SliverToBoxAdapter(
+                    child: SizedBox(
+                      height: 190,
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        itemCount: extras.similarArtists.length.clamp(0, 10),
+                        itemBuilder: (context, index) {
+                          final similarArtist = extras.similarArtists[index];
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 16),
+                            child: _ArtistCard(
+                              artist: similarArtist,
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => ArtistDetailScreen(
+                                      artistId: similarArtist.id,
+                                      artist: similarArtist,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  const SliverToBoxAdapter(child: SizedBox(height: 24)),
+                ],
+              );
+            },
+            loading: () => const SliverToBoxAdapter(child: SizedBox.shrink()),
+            error: (_, __) =>
+                const SliverToBoxAdapter(child: SizedBox.shrink()),
+          ),
           SliverToBoxAdapter(
-            child: SizedBox(height: responsive.miniPlayerHeight + responsive.bottomNavHeight + 20),
+            child: SizedBox(
+              height:
+                  responsive.miniPlayerHeight + responsive.bottomNavHeight + 28,
+            ),
           ),
         ],
+      ),
+    );
+  }
+
+  SliverAppBar _buildHeroHeader(
+    BuildContext context,
+    ArtistDetail artistDetail,
+    String? bioText,
+  ) {
+    return SliverAppBar(
+      backgroundColor: AppTheme.backgroundColor,
+      elevation: 0,
+      pinned: true,
+      expandedHeight: 360,
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back, color: Colors.white),
+        onPressed: () => Navigator.pop(context),
+      ),
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.search, color: Colors.white),
+          onPressed: () {},
+        ),
+        IconButton(
+          icon: const Icon(Icons.more_vert, color: Colors.white),
+          onPressed: () {},
+        ),
+      ],
+      flexibleSpace: FlexibleSpaceBar(
+        titlePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        title: Text(
+          artistDetail.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        background: Stack(
+          fit: StackFit.expand,
+          children: [
+            artistDetail.imageUrl != null
+                ? CachedNetworkImage(
+                    imageUrl: artistDetail.imageUrl!,
+                    fit: BoxFit.cover,
+                    placeholder: (_, __) =>
+                        _buildAvatarPlaceholder(artistDetail.name),
+                    errorWidget: (_, __, ___) =>
+                        _buildAvatarPlaceholder(artistDetail.name),
+                  )
+                : _buildAvatarPlaceholder(artistDetail.name),
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withOpacity(0.08),
+                    Colors.black.withOpacity(0.28),
+                    Colors.black.withOpacity(0.88),
+                    AppTheme.backgroundColor,
+                  ],
+                  stops: const [0.0, 0.35, 0.72, 1.0],
+                ),
+              ),
+            ),
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: 58,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    artistDetail.name,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 34,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.8,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${artistDetail.albumCount ?? artistDetail.albums.length} albums',
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (bioText != null && bioText.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      bioText,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 13,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -536,6 +823,19 @@ class ArtistDetailScreen extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  String? _cleanBio(String? text) {
+    if (text == null || text.trim().isEmpty) {
+      return null;
+    }
+
+    final withoutHtml = text.replaceAll(RegExp(r'<[^>]*>'), ' ');
+    final normalized = withoutHtml.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (normalized.isEmpty) {
+      return null;
+    }
+    return normalized;
   }
 
   SliverToBoxAdapter _buildSectionHeader(
@@ -562,7 +862,8 @@ class ArtistDetailScreen extends ConsumerWidget {
                 onTap: onSeeAll,
                 child: Row(
                   children: const [
-                    Icon(Icons.chevron_right, color: AppTheme.secondaryColor, size: 24),
+                    Icon(Icons.chevron_right,
+                        color: AppTheme.secondaryColor, size: 24),
                   ],
                 ),
               ),
@@ -640,16 +941,19 @@ class _TrackTile extends StatelessWidget {
                   fit: BoxFit.cover,
                   placeholder: (_, __) => Container(
                     color: AppTheme.surfaceColor,
-                    child: const Icon(Icons.music_note, color: AppTheme.secondaryColor, size: 20),
+                    child: const Icon(Icons.music_note,
+                        color: AppTheme.secondaryColor, size: 20),
                   ),
                   errorWidget: (_, __, ___) => Container(
                     color: AppTheme.surfaceColor,
-                    child: const Icon(Icons.music_note, color: AppTheme.secondaryColor, size: 20),
+                    child: const Icon(Icons.music_note,
+                        color: AppTheme.secondaryColor, size: 20),
                   ),
                 )
               : Container(
                   color: AppTheme.surfaceColor,
-                  child: const Icon(Icons.music_note, color: AppTheme.secondaryColor, size: 20),
+                  child: const Icon(Icons.music_note,
+                      color: AppTheme.secondaryColor, size: 20),
                 ),
         ),
       ),
@@ -677,7 +981,10 @@ class _TrackTile extends StatelessWidget {
               ),
               child: const Text(
                 'E',
-                style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 9,
+                    fontWeight: FontWeight.bold),
               ),
             ),
         ],
@@ -692,7 +999,8 @@ class _TrackTile extends StatelessWidget {
         onTap: onMoreTap,
         child: const Padding(
           padding: EdgeInsets.all(8),
-          child: Icon(Icons.more_vert, color: AppTheme.secondaryColor, size: 22),
+          child:
+              Icon(Icons.more_vert, color: AppTheme.secondaryColor, size: 22),
         ),
       ),
     );
@@ -702,10 +1010,12 @@ class _TrackTile extends StatelessWidget {
 /// Album Card for horizontal scroll
 class _AlbumCard extends StatelessWidget {
   final Album album;
+  final String? subtitle;
   final VoidCallback onTap;
 
   const _AlbumCard({
     required this.album,
+    this.subtitle,
     required this.onTap,
   });
 
@@ -732,14 +1042,17 @@ class _AlbumCard extends StatelessWidget {
                       imageUrl: album.coverArtUrl!,
                       fit: BoxFit.cover,
                       placeholder: (_, __) => const Center(
-                        child: Icon(Icons.album, color: AppTheme.secondaryColor, size: 40),
+                        child: Icon(Icons.album,
+                            color: AppTheme.secondaryColor, size: 40),
                       ),
                       errorWidget: (_, __, ___) => const Center(
-                        child: Icon(Icons.album, color: AppTheme.secondaryColor, size: 40),
+                        child: Icon(Icons.album,
+                            color: AppTheme.secondaryColor, size: 40),
                       ),
                     )
                   : const Center(
-                      child: Icon(Icons.album, color: AppTheme.secondaryColor, size: 40),
+                      child: Icon(Icons.album,
+                          color: AppTheme.secondaryColor, size: 40),
                     ),
             ),
 
@@ -753,20 +1066,154 @@ class _AlbumCard extends StatelessWidget {
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
               ),
-              maxLines: 1,
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
 
             const SizedBox(height: 2),
 
-            // Artist Name
             Text(
-              album.artist,
+              subtitle ?? album.artist,
               style: const TextStyle(
                 color: AppTheme.secondaryColor,
                 fontSize: 12,
               ),
               maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PlaylistCard extends StatelessWidget {
+  final Playlist playlist;
+  final VoidCallback onTap;
+
+  const _PlaylistCard({
+    required this.playlist,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: SizedBox(
+        width: 140,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 140,
+              height: 140,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(6),
+                color: AppTheme.surfaceColor,
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: playlist.coverArtUrl != null
+                  ? CachedNetworkImage(
+                      imageUrl: playlist.coverArtUrl!,
+                      fit: BoxFit.cover,
+                    )
+                  : const Center(
+                      child: Icon(
+                        Icons.queue_music,
+                        color: AppTheme.secondaryColor,
+                        size: 36,
+                      ),
+                    ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              playlist.title,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 2),
+            Text(
+              playlist.creatorName == null || playlist.creatorName!.isEmpty
+                  ? 'by TIDAL'
+                  : 'by ${playlist.creatorName}',
+              style: const TextStyle(
+                color: AppTheme.secondaryColor,
+                fontSize: 12,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ArtistCard extends StatelessWidget {
+  final Artist artist;
+  final VoidCallback onTap;
+
+  const _ArtistCard({
+    required this.artist,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: SizedBox(
+        width: 120,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Container(
+              width: 120,
+              height: 120,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppTheme.surfaceColor,
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: artist.imageUrl != null
+                  ? CachedNetworkImage(
+                      imageUrl: artist.imageUrl!,
+                      fit: BoxFit.cover,
+                    )
+                  : Container(
+                      color: AppTheme.surfaceLight,
+                      child: Center(
+                        child: Text(
+                          artist.name.isNotEmpty
+                              ? artist.name[0].toUpperCase()
+                              : '?',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 34,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              artist.name,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
           ],

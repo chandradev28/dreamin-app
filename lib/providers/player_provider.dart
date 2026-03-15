@@ -33,6 +33,9 @@ class PlayerState {
   final String? queueSource; // Playlist/album name for 'Playing From'
   final String? error;
   final String? currentQuality; // 'HI_RES_LOSSLESS', 'LOSSLESS', 'HIGH', etc.
+  final int? currentBitDepth;
+  final int? currentSampleRate;
+  final String? currentCodec;
 
   const PlayerState({
     this.currentTrack,
@@ -48,6 +51,9 @@ class PlayerState {
     this.queueSource,
     this.error,
     this.currentQuality,
+    this.currentBitDepth,
+    this.currentSampleRate,
+    this.currentCodec,
   });
 
   bool get isPlaying => status == PlaybackStatus.playing;
@@ -97,6 +103,9 @@ class PlayerState {
     String? queueSource,
     String? error,
     String? currentQuality,
+    int? currentBitDepth,
+    int? currentSampleRate,
+    String? currentCodec,
   }) {
     return PlayerState(
       currentTrack: currentTrack ?? this.currentTrack,
@@ -112,6 +121,9 @@ class PlayerState {
       queueSource: queueSource ?? this.queueSource,
       error: error,
       currentQuality: currentQuality ?? this.currentQuality,
+      currentBitDepth: currentBitDepth ?? this.currentBitDepth,
+      currentSampleRate: currentSampleRate ?? this.currentSampleRate,
+      currentCodec: currentCodec ?? this.currentCodec,
     );
   }
 }
@@ -399,6 +411,9 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       position: Duration.zero,
       error: null,
       currentQuality: '',
+      currentBitDepth: null,
+      currentSampleRate: null,
+      currentCodec: null,
     );
 
     try {
@@ -411,6 +426,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
           quality; // Don't set default - will be determined from stream info
       int bitDepth = 0;
       int sampleRate = 0;
+      String? codec;
       bool isOffline = false;
 
       // Check for cached local file first (offline playback)
@@ -423,6 +439,9 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
           streamUrl = cachedPath; // just_audio supports file paths directly
           isOffline = true;
           quality = 'OFFLINE';
+          codec = 'FLAC';
+          bitDepth = track.quality?.bitDepth ?? 16;
+          sampleRate = track.quality?.sampleRate ?? 44100;
           print('📱 Playing from local cache: $cachedPath');
         }
       }
@@ -442,6 +461,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
               quality = streamInfo.quality;
               bitDepth = streamInfo.bitDepth;
               sampleRate = streamInfo.sampleRate;
+              codec = streamInfo.codec;
               print(
                   '📊 TIDAL Quality: $quality, BitDepth: $bitDepth, SampleRate: $sampleRate');
             }
@@ -462,6 +482,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
             quality = 'LOSSLESS';
             bitDepth = 16;
             sampleRate = 44100;
+            codec = 'FLAC';
             print('📊 HiFi Server Quality: $quality (FLAC)');
             break;
 
@@ -479,11 +500,13 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
                 quality = qobuzInfo.qualityCode;
                 bitDepth = qobuzInfo.bitDepth;
                 sampleRate = qobuzInfo.sampleRate;
+                codec = 'FLAC';
               }
             }
 
             streamUrl ??= await _musicService.getStreamUrl(track.id);
             quality ??= fallbackBitDepth >= 24 ? 'HI_RES_LOSSLESS' : 'LOSSLESS';
+            codec ??= 'FLAC';
             if (bitDepth < 1) {
               bitDepth = fallbackBitDepth;
             }
@@ -539,7 +562,12 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       _consecutiveFailures = 0;
 
       // Update state with current quality
-      state = state.copyWith(currentQuality: quality);
+      state = state.copyWith(
+        currentQuality: quality,
+        currentBitDepth: bitDepth > 0 ? bitDepth : null,
+        currentSampleRate: sampleRate > 0 ? sampleRate : null,
+        currentCodec: codec,
+      );
     } catch (e) {
       if (playRequestId != _playRequestCounter) {
         print('Ignoring stale play failure for "${track.title}"');

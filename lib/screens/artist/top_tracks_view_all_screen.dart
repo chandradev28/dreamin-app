@@ -1,11 +1,11 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../../core/theme/app_theme.dart';
 import '../../models/models.dart';
 import '../../providers/providers.dart';
+import '../../widgets/track_options_sheet.dart';
 
-/// Top Tracks View All Screen - Shows artist's top 20 tracks in a list
 class TopTracksViewAllScreen extends ConsumerWidget {
   final String title;
   final List<Track> tracks;
@@ -21,7 +21,7 @@ class TopTracksViewAllScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final playerState = ref.watch(playerProvider);
-    
+
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
       appBar: AppBar(
@@ -33,38 +33,45 @@ class TopTracksViewAllScreen extends ConsumerWidget {
         ),
         title: Text(
           title,
-          style: const TextStyle(
+          style: AppTheme.headlineSmall.copyWith(
             color: Colors.white,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w700,
           ),
         ),
+        centerTitle: true,
         actions: [
           IconButton(
             icon: const Icon(Icons.shuffle, color: Colors.white),
-            onPressed: () {
-              final shuffled = List<Track>.from(tracks)..shuffle();
-              ref.read(playerProvider.notifier).playQueue(shuffled, startIndex: 0);
-            },
+            onPressed: tracks.isEmpty
+                ? null
+                : () {
+                    final shuffled = List<Track>.from(tracks)..shuffle();
+                    ref.read(playerProvider.notifier).playQueue(
+                          shuffled,
+                          startIndex: 0,
+                          source: 'Artist: $artistName (Shuffled)',
+                        );
+                  },
           ),
         ],
       ),
-      body: ListView.builder(
-        padding: const EdgeInsets.symmetric(vertical: 8),
+      body: ListView.separated(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 36),
         itemCount: tracks.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 2),
         itemBuilder: (context, index) {
           final track = tracks[index];
           final isPlaying = playerState.currentTrack?.id == track.id;
-          
           return _TrackListItem(
             track: track,
             index: index + 1,
             isPlaying: isPlaying,
             onTap: () {
               ref.read(playerProvider.notifier).playQueue(
-                tracks,
-                startIndex: index,
-              );
+                    tracks,
+                    startIndex: index,
+                    source: 'Artist: $artistName',
+                  );
             },
           );
         },
@@ -73,7 +80,7 @@ class TopTracksViewAllScreen extends ConsumerWidget {
   }
 }
 
-class _TrackListItem extends StatelessWidget {
+class _TrackListItem extends ConsumerWidget {
   final Track track;
   final int index;
   final bool isPlaying;
@@ -87,105 +94,127 @@ class _TrackListItem extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    return ListTile(
+  Widget build(BuildContext context, WidgetRef ref) {
+    final favorites = ref.watch(favoritesProvider);
+    final isFavorite = favorites.isFavorite(track);
+
+    return InkWell(
       onTap: onTap,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      leading: SizedBox(
-        width: 56,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
         child: Row(
           children: [
             SizedBox(
-              width: 24,
+              width: 26,
               child: Text(
                 '$index',
-                style: TextStyle(
-                  color: isPlaying ? AppTheme.accentColor : AppTheme.secondaryColor,
-                  fontSize: 14,
+                textAlign: TextAlign.center,
+                style: AppTheme.bodyLarge.copyWith(
+                  color: isPlaying ? Colors.white : AppTheme.secondaryColor,
                   fontWeight: FontWeight.w500,
                 ),
-                textAlign: TextAlign.center,
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 12),
             ClipRRect(
               borderRadius: BorderRadius.circular(4),
               child: SizedBox(
-                width: 48,
-                height: 48,
+                width: 56,
+                height: 56,
                 child: track.coverArtUrl != null
                     ? CachedNetworkImage(
                         imageUrl: track.coverArtUrl!,
                         fit: BoxFit.cover,
-                        placeholder: (_, __) => Container(
-                          color: AppTheme.surfaceColor,
-                          child: const Icon(Icons.music_note, color: Colors.white38, size: 20),
-                        ),
-                        errorWidget: (_, __, ___) => Container(
-                          color: AppTheme.surfaceColor,
-                          child: const Icon(Icons.music_note, color: Colors.white38, size: 20),
-                        ),
+                        placeholder: (_, __) => _placeholder(),
+                        errorWidget: (_, __, ___) => _placeholder(),
                       )
-                    : Container(
-                        color: AppTheme.surfaceColor,
-                        child: const Icon(Icons.music_note, color: Colors.white38, size: 20),
-                      ),
+                    : _placeholder(),
               ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          track.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTheme.titleLarge.copyWith(
+                            color: isPlaying ? Colors.white : Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      if (track.isExplicit) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 4,
+                            vertical: 1,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white24,
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                          child: const Text(
+                            'E',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    track.artist,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTheme.bodyMedium.copyWith(
+                      color: AppTheme.secondaryColor,
+                      fontSize: 15,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            IconButton(
+              icon: Icon(
+                isFavorite ? Icons.favorite : Icons.favorite_border,
+                size: 23,
+                color:
+                    isFavorite ? AppTheme.accentColor : AppTheme.secondaryColor,
+              ),
+              onPressed: () =>
+                  ref.read(favoritesProvider.notifier).toggleFavorite(track),
+            ),
+            IconButton(
+              icon: const Icon(
+                Icons.more_vert,
+                size: 22,
+                color: AppTheme.secondaryColor,
+              ),
+              onPressed: () => TrackOptionsSheet.show(context, track),
             ),
           ],
         ),
       ),
-      title: Text(
-        track.title,
-        style: TextStyle(
-          color: isPlaying ? AppTheme.accentColor : Colors.white,
-          fontSize: 15,
-          fontWeight: FontWeight.w500,
-        ),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      subtitle: Text(
-        track.artist,
-        style: TextStyle(
-          color: AppTheme.secondaryColor,
-          fontSize: 13,
-        ),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (track.isExplicit)
-            Container(
-              margin: const EdgeInsets.only(right: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade700,
-                borderRadius: BorderRadius.circular(2),
-              ),
-              child: const Text(
-                'E',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 9,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          IconButton(
-            icon: const Icon(Icons.favorite_border, size: 20),
-            onPressed: () {},
-            color: AppTheme.secondaryColor,
-          ),
-          IconButton(
-            icon: const Icon(Icons.more_vert, size: 20),
-            onPressed: () {},
-            color: AppTheme.secondaryColor,
-          ),
-        ],
-      ),
+    );
+  }
+
+  Widget _placeholder() {
+    return Container(
+      color: AppTheme.surfaceColor,
+      child: const Icon(Icons.music_note, color: Colors.white38, size: 22),
     );
   }
 }

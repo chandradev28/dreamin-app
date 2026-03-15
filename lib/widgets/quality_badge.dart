@@ -1,73 +1,115 @@
 import 'package:flutter/material.dart';
 import '../models/music_source.dart';
 
-/// Quality Badge Widget
-/// 
-/// Simple FLAC-only quality display:
-/// - 24-bit Hi-Res FLAC: MAX (Gold badge)
-/// - 16-bit CD Quality FLAC: HIGH (Platinum badge)
 class QualityBadge extends StatelessWidget {
   final String? qualityCode;
   final MusicSource? source;
+  final int? bitDepth;
+  final int? sampleRate;
+  final String? codec;
   final double fontSize;
-  
+
   const QualityBadge({
     super.key,
     this.qualityCode,
     this.source,
+    this.bitDepth,
+    this.sampleRate,
+    this.codec,
     this.fontSize = 10,
   });
-  
+
   @override
   Widget build(BuildContext context) {
-    // Don't show badge until quality is determined
     if (qualityCode == null || qualityCode!.isEmpty) {
       return const SizedBox.shrink();
     }
-    
+
     final config = _getBadgeConfig();
-    
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
         color: config.backgroundColor,
-        borderRadius: BorderRadius.circular(4),
-        border: config.borderColor != null 
-            ? Border.all(color: config.borderColor!, width: 0.5)
-            : null,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: config.borderColor, width: 0.8),
       ),
       child: Text(
         config.label,
         style: TextStyle(
           color: config.textColor,
           fontSize: fontSize,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.5,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.15,
         ),
       ),
     );
   }
-  
+
   _BadgeConfig _getBadgeConfig() {
-    final quality = qualityCode!;
-    
-    // 24-bit Hi-Res FLAC - Gold MAX badge
-    if (quality == 'HI_RES_LOSSLESS' || quality == 'MAX') {
-      return _BadgeConfig(
-        label: 'MAX',
-        backgroundColor: const Color(0xFFFFD700), // Gold
-        textColor: const Color(0xFF1A1A1A), // Dark text
-        borderColor: const Color(0xFFDAA520), // Darker gold border
+    final quality = qualityCode ?? '';
+
+    if (quality == 'LOW') {
+      return const _BadgeConfig(
+        label: 'LOW',
+        backgroundColor: Color(0xFF242424),
+        textColor: Colors.white,
+        borderColor: Color(0xFF303030),
       );
     }
-    
-    // 16-bit CD Quality FLAC - Platinum HIGH badge (default for all FLAC)
+
+    if (quality == 'OFFLINE') {
+      return _BadgeConfig(
+        label: _losslessLabel(bitDepth ?? 16, sampleRate ?? 44100),
+        backgroundColor: const Color(0xFF202020),
+        textColor: Colors.white,
+        borderColor: const Color(0xFF4A4A4A),
+      );
+    }
+
+    if (quality == 'HI_RES_LOSSLESS' || quality == 'MAX') {
+      return _BadgeConfig(
+        label: _hiResLabel(bitDepth ?? 24, sampleRate ?? 96000),
+        backgroundColor: const Color(0xFFB48A2D),
+        textColor: const Color(0xFF17120A),
+        borderColor: const Color(0xFFD9BE77),
+      );
+    }
+
+    if (quality == 'LOSSLESS' || quality == 'HIGH') {
+      return _BadgeConfig(
+        label: _losslessLabel(bitDepth ?? 16, sampleRate ?? 44100),
+        backgroundColor: const Color(0xFFE0E0E0),
+        textColor: const Color(0xFF141414),
+        borderColor: const Color(0xFFF5F5F5),
+      );
+    }
+
+    final fallbackLabel = codec == 'FLAC' || source == MusicSource.subsonic
+        ? _losslessLabel(bitDepth ?? 16, sampleRate ?? 44100)
+        : quality;
+
     return _BadgeConfig(
-      label: 'HIGH',
-      backgroundColor: const Color(0xFFE5E4E2), // Platinum
-      textColor: const Color(0xFF1A1A1A), // Dark text
-      borderColor: const Color(0xFFC0C0C0), // Silver border
+      label: fallbackLabel,
+      backgroundColor: const Color(0xFF242424),
+      textColor: Colors.white,
+      borderColor: const Color(0xFF303030),
     );
+  }
+
+  String _losslessLabel(int bitDepth, int hz) {
+    return '${bitDepth.toString()}-bit / ${_formatKhz(hz)} kHz';
+  }
+
+  String _hiResLabel(int bitDepth, int hz) {
+    return '${bitDepth.toString()}-bit / ${_formatKhz(hz)} kHz';
+  }
+
+  String _formatKhz(int hz) {
+    final khz = hz / 1000;
+    if (khz == khz.roundToDouble()) {
+      return khz.toStringAsFixed(0);
+    }
+    return khz.toStringAsFixed(1);
   }
 }
 
@@ -75,12 +117,12 @@ class _BadgeConfig {
   final String label;
   final Color backgroundColor;
   final Color textColor;
-  final Color? borderColor;
-  
+  final Color borderColor;
+
   const _BadgeConfig({
     required this.label,
     required this.backgroundColor,
     required this.textColor,
-    this.borderColor,
+    required this.borderColor,
   });
 }
