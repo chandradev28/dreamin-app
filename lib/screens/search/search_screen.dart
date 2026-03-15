@@ -41,12 +41,14 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   ];
 
   static const List<_BrowseTileData> moods = [
-    _BrowseTileData(label: 'Women\'s History Month', span: 2),
-    _BrowseTileData(label: 'For DJs'),
     _BrowseTileData(label: 'Chill'),
     _BrowseTileData(label: 'Workout'),
     _BrowseTileData(label: 'Party'),
     _BrowseTileData(label: 'Focus'),
+    _BrowseTileData(label: 'Sleep'),
+    _BrowseTileData(label: 'Romance'),
+    _BrowseTileData(label: 'Road Trip'),
+    _BrowseTileData(label: 'Meditation'),
   ];
 
   static const List<_BrowseTileData> decades = [
@@ -108,7 +110,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               padding: EdgeInsets.all(responsive.horizontalPadding),
               child: Container(
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: AppTheme.surfaceColor,
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: TextField(
@@ -117,21 +119,25 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   onTapOutside: (_) =>
                       FocusManager.instance.primaryFocus?.unfocus(),
                   style: AppTheme.titleMedium.copyWith(
-                    color: Colors.black,
+                    color: Colors.white,
                     fontWeight: FontWeight.w500,
                   ),
                   decoration: InputDecoration(
                     hintText: 'Search',
                     hintStyle: AppTheme.titleMedium.copyWith(
-                      color: const Color(0xFF6E6E73),
+                      color: Colors.white.withOpacity(0.46),
                       fontWeight: FontWeight.w500,
                     ),
-                    prefixIcon:
-                        const Icon(Icons.search, color: Color(0xFF111111)),
+                    prefixIcon: const Icon(
+                      Icons.search,
+                      color: AppTheme.secondaryColor,
+                    ),
                     suffixIcon: _isSearching
                         ? IconButton(
-                            icon: const Icon(Icons.close,
-                                color: Color(0xFF111111)),
+                            icon: const Icon(
+                              Icons.close,
+                              color: AppTheme.secondaryColor,
+                            ),
                             onPressed: () {
                               _searchController.clear();
                               ref.read(searchProvider.notifier).clear();
@@ -166,75 +172,92 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   Widget _buildBrowseSection(Responsive responsive) {
     final horizontal = responsive.horizontalPadding;
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final contentWidth = constraints.maxWidth - (horizontal * 2);
-
-        return ListView(
-          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          padding: EdgeInsets.fromLTRB(
-            horizontal,
-            8,
-            horizontal,
-            responsive.miniPlayerHeight + responsive.bottomNavHeight + 24,
+    return ListView(
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      padding: EdgeInsets.fromLTRB(
+        0,
+        8,
+        0,
+        responsive.miniPlayerHeight + responsive.bottomNavHeight + 24,
+      ),
+      children: [
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: horizontal),
+          child: _BrowseSectionHeader(title: 'Genres', onViewAll: () {}),
+        ),
+        const SizedBox(height: 14),
+        _buildSlidingBentoRow(
+          items: genres,
+          horizontalPadding: horizontal,
+          onTap: (item) => _onCategoryTap(item.label),
+        ),
+        const SizedBox(height: 34),
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: horizontal),
+          child: _BrowseSectionHeader(
+            title: 'Moods & Activities',
+            onViewAll: () {},
           ),
-          children: [
-            _BrowseSectionHeader(title: 'Genres', onViewAll: () {}),
-            const SizedBox(height: 14),
-            _buildBentoGrid(
-              items: genres,
-              width: contentWidth,
-              onTap: (item) => _onCategoryTap(item.label),
-            ),
-            const SizedBox(height: 34),
-            _BrowseSectionHeader(
-              title: 'Moods & Activities',
-              onViewAll: () {},
-            ),
-            const SizedBox(height: 14),
-            _buildBentoGrid(
-              items: moods,
-              width: contentWidth,
-              onTap: (item) => _onCategoryTap(item.label),
-            ),
-            const SizedBox(height: 34),
-            _BrowseSectionHeader(title: 'Decades', onViewAll: () {}),
-            const SizedBox(height: 14),
-            _buildBentoGrid(
-              items: decades,
-              width: contentWidth,
-              onTap: (item) => _onCategoryTap(item.label),
-            ),
-            const SizedBox(height: 34),
-            _buildShortcutList(shortcuts),
-          ],
-        );
-      },
+        ),
+        const SizedBox(height: 14),
+        _buildSlidingBentoRow(
+          items: moods,
+          horizontalPadding: horizontal,
+          onTap: (item) => _onCategoryTap(item.label),
+        ),
+        const SizedBox(height: 34),
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: horizontal),
+          child: _BrowseSectionHeader(title: 'Decades', onViewAll: () {}),
+        ),
+        const SizedBox(height: 14),
+        _buildSlidingBentoRow(
+          items: decades,
+          horizontalPadding: horizontal,
+          onTap: (item) => _onCategoryTap(item.label),
+        ),
+        const SizedBox(height: 34),
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: horizontal),
+          child: _buildShortcutList(shortcuts),
+        ),
+      ],
     );
   }
 
-  Widget _buildBentoGrid({
+  Widget _buildSlidingBentoRow({
     required List<_BrowseTileData> items,
-    required double width,
+    required double horizontalPadding,
     required ValueChanged<_BrowseTileData> onTap,
   }) {
-    const spacing = 12.0;
-    final tileWidth = (width - (spacing * 2)) / 3;
-
-    return Wrap(
-      spacing: spacing,
-      runSpacing: spacing,
-      children: items.map((item) {
-        final resolvedWidth =
-            (tileWidth * item.span) + (spacing * (item.span - 1));
-
-        return _BrowseBentoTile(
-          width: resolvedWidth,
-          label: item.label,
-          onTap: () => onTap(item),
-        );
-      }).toList(),
+    return SizedBox(
+      height: 58,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+        itemCount: items.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 10),
+        itemBuilder: (context, index) {
+          final item = items[index];
+          return _BrowseBentoTile(
+            width: _tileWidthFor(item),
+            height: 58,
+            label: item.label,
+            onTap: () => onTap(item),
+          );
+        },
+      ),
     );
+  }
+
+  double _tileWidthFor(_BrowseTileData item) {
+    if (item.label.length >= 14) {
+      return 142;
+    }
+    if (item.label.length >= 10) {
+      return 124;
+    }
+    return 98;
   }
 
   Widget _buildShortcutList(List<_BrowseShortcutData> items) {
@@ -684,11 +707,13 @@ class _BrowseSectionHeader extends StatelessWidget {
 
 class _BrowseBentoTile extends StatelessWidget {
   final double width;
+  final double height;
   final String label;
   final VoidCallback onTap;
 
   const _BrowseBentoTile({
     required this.width,
+    this.height = 68,
     required this.label,
     required this.onTap,
   });
@@ -700,7 +725,7 @@ class _BrowseBentoTile extends StatelessWidget {
       borderRadius: BorderRadius.circular(18),
       child: Ink(
         width: width,
-        height: 68,
+        height: height,
         decoration: BoxDecoration(
           color: const Color(0xFF2A2A31),
           borderRadius: BorderRadius.circular(18),
@@ -773,11 +798,9 @@ class _BrowseShortcutTile extends StatelessWidget {
 
 class _BrowseTileData {
   final String label;
-  final int span;
 
   const _BrowseTileData({
     required this.label,
-    this.span = 1,
   });
 }
 

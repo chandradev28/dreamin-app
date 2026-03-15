@@ -842,6 +842,48 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     );
   }
 
+  /// Reorder tracks inside the active queue
+  void reorderQueue(int oldIndex, int newIndex) {
+    if (oldIndex < 0 ||
+        oldIndex >= state.queue.length ||
+        newIndex < 0 ||
+        newIndex >= state.queue.length ||
+        oldIndex == newIndex) {
+      return;
+    }
+
+    final queue = List<Track>.from(state.queue);
+    final movedTrack = queue.removeAt(oldIndex);
+    queue.insert(newIndex, movedTrack);
+
+    var queueIndex = state.queueIndex;
+    if (oldIndex == state.queueIndex) {
+      queueIndex = newIndex;
+    } else if (oldIndex < state.queueIndex && newIndex >= state.queueIndex) {
+      queueIndex -= 1;
+    } else if (oldIndex > state.queueIndex && newIndex <= state.queueIndex) {
+      queueIndex += 1;
+    }
+
+    state = state.copyWith(
+      queue: queue,
+      queueIndex: queueIndex,
+    );
+  }
+
+  /// Clear upcoming tracks while keeping the current playback context
+  void clearUpcomingQueue() {
+    if (state.queue.isEmpty) return;
+
+    final keepCount = (state.queueIndex + 1).clamp(1, state.queue.length);
+    final queue = state.queue.take(keepCount).toList();
+
+    state = state.copyWith(
+      queue: queue,
+      queueIndex: queue.length - 1,
+    );
+  }
+
   /// Stop playback
   Future<void> stop() async {
     await _recordPlayToHistory();

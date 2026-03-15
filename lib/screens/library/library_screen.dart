@@ -19,7 +19,6 @@ class LibraryScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final responsive = Responsive(context);
     final favoritesState = ref.watch(favoritesProvider);
-    final historyState = ref.watch(historyProvider);
 
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
@@ -53,7 +52,8 @@ class LibraryScreen extends ConsumerWidget {
                           onPressed: () {
                             Navigator.push(
                               context,
-                              MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                              MaterialPageRoute(
+                                  builder: (_) => const SettingsScreen()),
                             );
                           },
                         ),
@@ -75,11 +75,12 @@ class LibraryScreen extends ConsumerWidget {
                     onTap: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => const LibraryPlaylistsScreen()),
+                        MaterialPageRoute(
+                            builder: (_) => const LibraryPlaylistsScreen()),
                       );
                     },
                   ),
-                  
+
                   // Albums
                   _TidalLibraryTile(
                     icon: Icons.album_outlined,
@@ -87,11 +88,12 @@ class LibraryScreen extends ConsumerWidget {
                     onTap: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => const LibraryAlbumsScreen()),
+                        MaterialPageRoute(
+                            builder: (_) => const LibraryAlbumsScreen()),
                       );
                     },
                   ),
-                  
+
                   // Tracks / Favorites
                   _TidalLibraryTile(
                     icon: Icons.music_note_outlined,
@@ -100,11 +102,12 @@ class LibraryScreen extends ConsumerWidget {
                     onTap: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => const LibraryTracksScreen()),
+                        MaterialPageRoute(
+                            builder: (_) => const LibraryTracksScreen()),
                       );
                     },
                   ),
-                  
+
                   // Artists
                   _TidalLibraryTile(
                     icon: Icons.person_outline,
@@ -112,11 +115,12 @@ class LibraryScreen extends ConsumerWidget {
                     onTap: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => const LibraryArtistsScreen()),
+                        MaterialPageRoute(
+                            builder: (_) => const LibraryArtistsScreen()),
                       );
                     },
                   ),
-                  
+
                   // Downloads
                   _TidalLibraryTile(
                     icon: Icons.download_outlined,
@@ -124,7 +128,8 @@ class LibraryScreen extends ConsumerWidget {
                     onTap: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => const LibraryDownloadsScreen()),
+                        MaterialPageRoute(
+                            builder: (_) => const LibraryDownloadsScreen()),
                       );
                     },
                   ),
@@ -132,129 +137,12 @@ class LibraryScreen extends ConsumerWidget {
               ),
             ),
 
-            // Divider
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.symmetric(vertical: 8),
-                child: Divider(
-                  height: 1,
-                  color: AppTheme.surfaceLight,
-                ),
-              ),
-            ),
-
-            // Recently Played Section
-            if (historyState.history.isNotEmpty) ...[
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    responsive.horizontalPadding,
-                    16,
-                    responsive.horizontalPadding,
-                    12,
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Recently Played',
-                        style: AppTheme.titleLarge.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: () {
-                          // See all recently played
-                        },
-                        child: Text(
-                          'See all',
-                          style: AppTheme.bodyMedium.copyWith(
-                            color: AppTheme.primaryColor,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) {
-                    if (index >= 5) return null;
-                    final track = historyState.history[index];
-                    final playerState = ref.watch(playerProvider);
-                    final favState = ref.watch(favoritesProvider);
-                    final isPlaying = playerState.currentTrack?.id == track.id;
-
-                    return ListTile(
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: responsive.horizontalPadding,
-                        vertical: 4,
-                      ),
-                      leading: Container(
-                        width: 48,
-                        height: 48,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(4),
-                          color: AppTheme.surfaceLight,
-                          image: track.coverArtUrl != null
-                              ? DecorationImage(
-                                  image: NetworkImage(track.coverArtUrl!),
-                                  fit: BoxFit.cover,
-                                )
-                              : null,
-                        ),
-                        child: track.coverArtUrl == null
-                            ? const Icon(Icons.music_note, color: AppTheme.secondaryColor)
-                            : null,
-                      ),
-                      title: Text(
-                        track.title,
-                        style: AppTheme.bodyLarge.copyWith(
-                          color: isPlaying ? AppTheme.primaryColor : Colors.white,
-                          fontWeight: FontWeight.w500,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      subtitle: Text(
-                        track.artist,
-                        style: AppTheme.bodySmall.copyWith(
-                          color: AppTheme.secondaryColor,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      trailing: IconButton(
-                        icon: Icon(
-                          favState.isFavorite(track)
-                              ? Icons.favorite
-                              : Icons.favorite_border,
-                          size: 20,
-                        ),
-                        color: favState.isFavorite(track)
-                            ? AppTheme.accentColor
-                            : AppTheme.secondaryColor,
-                        onPressed: () {
-                          ref.read(favoritesProvider.notifier).toggleFavorite(track);
-                        },
-                      ),
-                      onTap: () {
-                        ref.read(playerProvider.notifier).playQueue(
-                          historyState.history,
-                          startIndex: index,
-                        );
-                      },
-                    );
-                  },
-                  childCount: historyState.history.length.clamp(0, 5),
-                ),
-              ),
-            ],
-
             // Bottom spacing for mini player
             SliverToBoxAdapter(
-              child: SizedBox(height: responsive.miniPlayerHeight + responsive.bottomNavHeight + 20),
+              child: SizedBox(
+                  height: responsive.miniPlayerHeight +
+                      responsive.bottomNavHeight +
+                      20),
             ),
           ],
         ),

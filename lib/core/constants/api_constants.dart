@@ -4,10 +4,12 @@ class TidalEndpoints {
   /// All available endpoints - ordered by reliability
   /// Mixed endpoint set:
   /// - triton/kinoplus can return DASH master manifests for some tracks
+  /// - monochrome exposes hifi-api with confirmed 24-bit TIDAL stream metadata
   /// - qqdl cluster reliably returns direct playable URLs
   static const List<String> endpoints = [
     'https://triton.squid.wtf',
     'https://tidal.kinoplus.online',
+    'https://api.monochrome.tf',
     'https://hund.qqdl.site', // qqdl cluster (working)
     'https://katze.qqdl.site',
     'https://maus.qqdl.site',

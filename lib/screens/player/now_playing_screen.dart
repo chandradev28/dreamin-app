@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -772,16 +773,19 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
         final suggestedAsync = ref.watch(playerSuggestedTracksProvider(track));
         return suggestedAsync.when(
           data: (items) {
-            if (items.isEmpty) {
+            final queueTracks = _queueTracks(playerState);
+            if (items.isEmpty && queueTracks.length <= 1) {
               return _buildPanelEmptyState(
                 'Suggested tracks',
                 'Recommendations are still warming up from your listening history.',
               );
             }
-            return _buildTrackPanel(
-              title: 'Suggested tracks',
-              tracks: items,
-              trailingIcon: Icons.playlist_add_rounded,
+            return _buildSuggestedPanel(
+              context,
+              track,
+              playerState,
+              queueTracks,
+              items,
             );
           },
           loading: () => _buildPanelLoading('Suggested tracks'),
@@ -813,6 +817,131 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
       case _PlayerView.player:
         return const SizedBox.shrink();
     }
+  }
+
+  List<Track> _queueTracks(PlayerState playerState) {
+    if (playerState.queue.isEmpty ||
+        playerState.queueIndex < 0 ||
+        playerState.queueIndex >= playerState.queue.length) {
+      return const [];
+    }
+
+    return playerState.queue.sublist(playerState.queueIndex);
+  }
+
+  Widget _buildSuggestedPanel(
+    BuildContext context,
+    Track currentTrack,
+    PlayerState playerState,
+    List<Track> queueTracks,
+    List<Track> suggestedTracks,
+  ) {
+    return ListView(
+      padding: EdgeInsets.zero,
+      children: [
+        if (queueTracks.length > 1) ...[
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Your Queue',
+                  style: AppTheme.headlineMedium.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.more_vert, color: Colors.white),
+                onPressed: () => _showQueueActionsSheet(context, queueTracks),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          ReorderableListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            buildDefaultDragHandles: false,
+            itemCount: queueTracks.length,
+            onReorder: (oldIndex, newIndex) {
+              if (newIndex > oldIndex) {
+                newIndex -= 1;
+              }
+
+              ref.read(playerProvider.notifier).reorderQueue(
+                    playerState.queueIndex + oldIndex,
+                    playerState.queueIndex + newIndex,
+                  );
+            },
+            itemBuilder: (context, index) {
+              final item = queueTracks[index];
+              return Padding(
+                key: ValueKey('queue-${item.id}-${item.source.name}-$index'),
+                padding: EdgeInsets.only(
+                  bottom: index == queueTracks.length - 1 ? 0 : 16,
+                ),
+                child: _buildTrackRow(
+                  item,
+                  trailing: ReorderableDragStartListener(
+                    index: index,
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 4),
+                      child: Icon(
+                        Icons.drag_handle_rounded,
+                        color: Colors.white70,
+                      ),
+                    ),
+                  ),
+                  onTap: () => ref
+                      .read(playerProvider.notifier)
+                      .playAtIndex(playerState.queueIndex + index),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 30),
+        ],
+        Text(
+          'Suggested tracks',
+          style: AppTheme.headlineMedium.copyWith(
+            color: Colors.white,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 18),
+        if (suggestedTracks.isEmpty)
+          _buildPanelEmptyState(
+            'Suggested tracks',
+            'Recommendations are still warming up from your listening history.',
+          )
+        else
+          ...List.generate(suggestedTracks.length, (index) {
+            final item = suggestedTracks[index];
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: index == suggestedTracks.length - 1 ? 0 : 16,
+              ),
+              child: _buildTrackRow(
+                item,
+                trailing: const Icon(
+                  Icons.playlist_add_rounded,
+                  color: Colors.white70,
+                ),
+                onTrailingTap: () {
+                  ref.read(playerProvider.notifier).addToQueueNext(item);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Added "${item.title}" to play next'),
+                      duration: const Duration(seconds: 2),
+                    ),
+                  );
+                },
+                onTap: () => ref.read(playerProvider.notifier).play(item),
+              ),
+            );
+          }),
+      ],
+    );
   }
 
   Widget _buildTrackPanel({
@@ -860,8 +989,9 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
 
   Widget _buildTrackRow(
     Track track, {
-    required IconData trailingIcon,
-    required VoidCallback onTrailingTap,
+    IconData? trailingIcon,
+    VoidCallback? onTrailingTap,
+    Widget? trailing,
     required VoidCallback onTap,
   }) {
     return InkWell(
@@ -907,9 +1037,208 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
               ],
             ),
           ),
-          IconButton(
-            icon: Icon(trailingIcon, color: Colors.white70),
-            onPressed: onTrailingTap,
+          if (trailing != null)
+            trailing
+          else if (trailingIcon != null)
+            IconButton(
+              icon: Icon(trailingIcon, color: Colors.white70),
+              onPressed: onTrailingTap,
+            ),
+        ],
+      ),
+    );
+  }
+
+  void _showQueueActionsSheet(BuildContext context, List<Track> queueTracks) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: AppTheme.backgroundColor,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.symmetric(vertical: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.24),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(
+                    Icons.playlist_add_outlined,
+                    color: Colors.white,
+                  ),
+                  title: Text(
+                    'Add to playlist',
+                    style: AppTheme.titleLarge.copyWith(color: Colors.white),
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showAddTracksToPlaylistSheet(context, queueTracks);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(
+                    Icons.delete_outline_rounded,
+                    color: Colors.redAccent,
+                  ),
+                  title: Text(
+                    'Clear play queue',
+                    style: AppTheme.titleLarge.copyWith(color: Colors.white),
+                  ),
+                  onTap: () {
+                    ref.read(playerProvider.notifier).clearUpcomingQueue();
+                    Navigator.pop(context);
+                  },
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showAddTracksToPlaylistSheet(BuildContext context, List<Track> tracks) {
+    final database = ref.read(databaseProvider);
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTheme.surfaceColor,
+      builder: (context) => FutureBuilder(
+        future: database.getAllPlaylists(),
+        builder: (context, snapshot) {
+          final playlists = snapshot.data ?? [];
+
+          Future<void> addTracksToPlaylist(int playlistId) async {
+            for (final track in tracks) {
+              await database.addTrackToPlaylist(
+                playlistId: playlistId,
+                trackId: track.id,
+                source: track.source.index,
+                trackJson: jsonEncode(track.toJson()),
+              );
+            }
+          }
+
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text('Add to playlist', style: AppTheme.titleLarge),
+              ),
+              if (playlists.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    'No playlists yet',
+                    style: AppTheme.bodyMedium.copyWith(
+                      color: AppTheme.secondaryColor,
+                    ),
+                  ),
+                )
+              else
+                ...playlists.map(
+                  (playlist) => ListTile(
+                    leading: const Icon(
+                      Icons.playlist_play,
+                      color: AppTheme.secondaryColor,
+                    ),
+                    title: Text(playlist.name),
+                    onTap: () async {
+                      await addTracksToPlaylist(playlist.id);
+                      if (context.mounted) {
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Added ${tracks.length} tracks to "${playlist.name}"',
+                            ),
+                          ),
+                        );
+                      }
+                    },
+                  ),
+                ),
+              ListTile(
+                leading: const Icon(Icons.add, color: AppTheme.primaryColor),
+                title: Text(
+                  'Create new playlist',
+                  style: TextStyle(color: AppTheme.primaryColor),
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showCreatePlaylistDialog(context, tracks);
+                },
+              ),
+              SizedBox(height: MediaQuery.of(context).padding.bottom + 16),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  void _showCreatePlaylistDialog(BuildContext context, List<Track> tracks) {
+    final controller = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppTheme.surfaceColor,
+        title: const Text('Create Playlist'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          style: AppTheme.bodyLarge,
+          decoration: const InputDecoration(hintText: 'Playlist name'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (controller.text.isEmpty) return;
+
+              final database = ref.read(databaseProvider);
+              final playlistId = await database.createPlaylist(controller.text);
+
+              for (final track in tracks) {
+                await database.addTrackToPlaylist(
+                  playlistId: playlistId,
+                  trackId: track.id,
+                  source: track.source.index,
+                  trackJson: jsonEncode(track.toJson()),
+                );
+              }
+
+              if (context.mounted) {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'Created "${controller.text}" and added ${tracks.length} tracks',
+                    ),
+                  ),
+                );
+              }
+            },
+            child: const Text('Create'),
           ),
         ],
       ),
