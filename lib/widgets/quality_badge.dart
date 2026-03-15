@@ -27,19 +27,19 @@ class QualityBadge extends StatelessWidget {
 
     final config = _getBadgeConfig();
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
         color: config.backgroundColor,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: config.borderColor, width: 0.8),
+        borderRadius: BorderRadius.circular(7),
+        border: Border.all(color: config.borderColor, width: 0.7),
       ),
       child: Text(
         config.label,
         style: TextStyle(
           color: config.textColor,
           fontSize: fontSize,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.15,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.45,
         ),
       ),
     );
@@ -51,9 +51,9 @@ class QualityBadge extends StatelessWidget {
     if (quality == 'LOW') {
       return const _BadgeConfig(
         label: 'LOW',
-        backgroundColor: Color(0xFF242424),
+        backgroundColor: Color(0xFF232323),
         textColor: Colors.white,
-        borderColor: Color(0xFF303030),
+        borderColor: Color(0xFF343434),
       );
     }
 
@@ -69,18 +69,18 @@ class QualityBadge extends StatelessWidget {
     if (quality == 'HI_RES_LOSSLESS' || quality == 'MAX') {
       return _BadgeConfig(
         label: _hiResLabel(bitDepth ?? 24, sampleRate ?? 96000),
-        backgroundColor: const Color(0xFFB48A2D),
-        textColor: const Color(0xFF17120A),
-        borderColor: const Color(0xFFD9BE77),
+        backgroundColor: const Color(0xFFB38A2A),
+        textColor: const Color(0xFF18130A),
+        borderColor: const Color(0xFFD2B165),
       );
     }
 
     if (quality == 'LOSSLESS' || quality == 'HIGH') {
       return _BadgeConfig(
         label: _losslessLabel(bitDepth ?? 16, sampleRate ?? 44100),
-        backgroundColor: const Color(0xFFE0E0E0),
+        backgroundColor: const Color(0xFFD8D8D8),
         textColor: const Color(0xFF141414),
-        borderColor: const Color(0xFFF5F5F5),
+        borderColor: const Color(0xFFF1F1F1),
       );
     }
 
@@ -97,11 +97,11 @@ class QualityBadge extends StatelessWidget {
   }
 
   String _losslessLabel(int bitDepth, int hz) {
-    return '${bitDepth.toString()}-bit / ${_formatKhz(hz)} kHz';
+    return '${bitDepth.toString()}-BIT ${_formatKhz(hz)} KHZ';
   }
 
   String _hiResLabel(int bitDepth, int hz) {
-    return '${bitDepth.toString()}-bit / ${_formatKhz(hz)} kHz';
+    return '${bitDepth.toString()}-BIT ${_formatKhz(hz)} KHZ FLAC';
   }
 
   String _formatKhz(int hz) {

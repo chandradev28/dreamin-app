@@ -194,65 +194,49 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
           child: LayoutBuilder(
             builder: (context, constraints) {
               final compact = constraints.maxHeight < 660;
-              final maxCover = math.max(220.0, constraints.maxWidth - 6);
-              final minCover = math.min(maxCover, compact ? 252.0 : 280.0);
+              final maxCover = math.max(220.0, constraints.maxWidth - 8);
+              final minCover = math.min(maxCover, compact ? 244.0 : 276.0);
+              final targetCoverHeight =
+                  constraints.maxHeight - (compact ? 262.0 : 304.0);
               final coverSize =
-                  (constraints.maxHeight * (compact ? 0.40 : 0.45))
-                      .clamp(minCover, maxCover)
-                      .toDouble();
-              final infoGap = compact ? 12.0 : 18.0;
-              final progressGap = compact ? 10.0 : 14.0;
-              final actionsGap = compact ? 18.0 : 22.0;
-              final bottomInset =
-                  (constraints.maxHeight * 0.028).clamp(12.0, 24.0).toDouble();
+                  targetCoverHeight.clamp(minCover, maxCover).toDouble();
+              final infoGap = compact ? 8.0 : 10.0;
+              final progressGap = compact ? 6.0 : 8.0;
+              final controlsGap = compact ? 18.0 : 22.0;
+              final actionsGap = compact ? 28.0 : 34.0;
+              final bottomInset = compact ? 8.0 : 12.0;
 
               return Padding(
                 padding: EdgeInsets.symmetric(
                     horizontal: responsive.horizontalPadding),
                 child: Column(
                   children: [
-                    SizedBox(height: compact ? 2 : 6),
-                    Expanded(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Column(
-                            children: [
-                              Center(
-                                child: _buildAlbumCover(
-                                  track,
-                                  responsive,
-                                  sizeOverride: coverSize,
-                                ),
-                              ),
-                              SizedBox(height: infoGap),
-                              _buildTrackInfo(track, compact: compact),
-                              SizedBox(height: progressGap),
-                              _buildProgressBar(
-                                playerState,
-                                compact: compact,
-                              ),
-                            ],
-                          ),
-                          Padding(
-                            padding: EdgeInsets.only(bottom: bottomInset),
-                            child: Column(
-                              children: [
-                                _buildPlaybackControls(
-                                  playerState,
-                                  compact: compact,
-                                ),
-                                SizedBox(height: actionsGap),
-                                _buildPanelActions(
-                                  showLabels: false,
-                                  compact: compact,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
+                    SizedBox(height: compact ? 0 : 2),
+                    Center(
+                      child: _buildAlbumCover(
+                        track,
+                        responsive,
+                        sizeOverride: coverSize,
                       ),
                     ),
+                    SizedBox(height: infoGap),
+                    _buildTrackInfo(track, compact: compact),
+                    SizedBox(height: progressGap),
+                    _buildProgressBar(
+                      playerState,
+                      compact: compact,
+                    ),
+                    SizedBox(height: controlsGap),
+                    _buildPlaybackControls(
+                      playerState,
+                      compact: compact,
+                    ),
+                    SizedBox(height: actionsGap),
+                    _buildPanelActions(
+                      showLabels: false,
+                      compact: compact,
+                    ),
+                    SizedBox(height: bottomInset),
                   ],
                 ),
               );
@@ -316,7 +300,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
           GestureDetector(
             onTap: () => Navigator.of(context).pop(),
             child: Container(
-              width: 54,
+              width: 62,
               height: 5,
               decoration: BoxDecoration(
                 color: Colors.white.withOpacity(0.48),
@@ -324,7 +308,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
               ),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -345,7 +329,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                       style: AppTheme.titleLarge.copyWith(
                         color: Colors.white,
                         fontWeight: FontWeight.w500,
-                        fontSize: 17,
+                        fontSize: 16,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -442,7 +426,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
     final isFavorite = favorites.isFavorite(track);
 
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Expanded(
           child: Column(
@@ -452,7 +436,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                 track.title,
                 style: AppTheme.headlineLarge.copyWith(
                   color: Colors.white,
-                  fontSize: compact ? 20 : 24,
+                  fontSize: compact ? 18 : 22,
                   letterSpacing: -0.4,
                 ),
                 maxLines: compact ? 1 : 2,
@@ -464,7 +448,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                 style: AppTheme.headlineSmall.copyWith(
                   color: Colors.white.withOpacity(0.84),
                   fontWeight: FontWeight.w500,
-                  fontSize: compact ? 15 : 18,
+                  fontSize: compact ? 14 : 16,
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -472,23 +456,21 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
             ],
           ),
         ),
-        IconButton(
+        const SizedBox(width: 8),
+        _buildTrackActionButton(
           icon: Icon(
             isFavorite ? Icons.favorite : Icons.favorite_border,
             color: Colors.white,
           ),
-          visualDensity: VisualDensity.compact,
           onPressed: () =>
               ref.read(favoritesProvider.notifier).toggleFavorite(track),
         ),
-        IconButton(
+        _buildTrackActionButton(
           icon: const Icon(Icons.share_outlined, color: Colors.white),
-          visualDensity: VisualDensity.compact,
           onPressed: () {},
         ),
-        IconButton(
+        _buildTrackActionButton(
           icon: const Icon(Icons.more_vert, color: Colors.white),
-          visualDensity: VisualDensity.compact,
           onPressed: () => TrackOptionsSheet.show(context, track),
         ),
       ],
@@ -506,13 +488,13 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
       children: [
         SliderTheme(
           data: SliderTheme.of(context).copyWith(
-            trackHeight: compact ? 3 : 4,
+            trackHeight: compact ? 3 : 3.5,
             thumbShape: RoundSliderThumbShape(
-              enabledThumbRadius: compact ? 6 : 7,
+              enabledThumbRadius: compact ? 6 : 6.5,
             ),
             overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
             activeTrackColor: Colors.white,
-            inactiveTrackColor: Colors.white.withOpacity(0.22),
+            inactiveTrackColor: Colors.white.withOpacity(0.20),
             thumbColor: Colors.white,
             overlayColor: Colors.white.withOpacity(0.18),
           ),
@@ -527,7 +509,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
           ),
         ),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 6),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -535,6 +517,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                 _formatDuration(position),
                 style: AppTheme.labelMedium.copyWith(
                   color: Colors.white.withOpacity(0.78),
+                  fontSize: compact ? 12 : 13,
                 ),
               ),
               QualityBadge(
@@ -543,12 +526,13 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                 bitDepth: playerState.currentBitDepth,
                 sampleRate: playerState.currentSampleRate,
                 codec: playerState.currentCodec,
-                fontSize: compact ? 9 : 10,
+                fontSize: compact ? 7.6 : 8.2,
               ),
               Text(
                 _formatDuration(duration),
                 style: AppTheme.labelMedium.copyWith(
                   color: Colors.white.withOpacity(0.78),
+                  fontSize: compact ? 12 : 13,
                 ),
               ),
             ],
@@ -561,9 +545,9 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
   Widget _buildPlaybackControls(PlayerState playerState,
       {bool compact = false}) {
     final notifier = ref.read(playerProvider.notifier);
-    final sideIconSize = compact ? 34.0 : 40.0;
-    final centerSize = compact ? 76.0 : 88.0;
-    final centerIconSize = compact ? 38.0 : 44.0;
+    final sideIconSize = compact ? 30.0 : 36.0;
+    final centerSize = compact ? 78.0 : 86.0;
+    final centerIconSize = compact ? 36.0 : 42.0;
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -626,28 +610,28 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
         _buildPanelActionButton(
           icon: Icons.reorder_rounded,
           label: 'Next up',
-          iconSize: compact ? 25 : 28,
+          iconSize: compact ? 24 : 26,
           showLabel: showLabels,
           onTap: () => setState(() => _activeView = _PlayerView.nextUp),
         ),
         _buildPanelActionButton(
           icon: Icons.music_note_outlined,
           label: 'Suggested',
-          iconSize: compact ? 25 : 28,
+          iconSize: compact ? 24 : 26,
           showLabel: showLabels,
           onTap: () => setState(() => _activeView = _PlayerView.suggested),
         ),
         _buildPanelActionButton(
           icon: Icons.lyrics_outlined,
           label: 'Lyrics',
-          iconSize: compact ? 25 : 28,
+          iconSize: compact ? 24 : 26,
           showLabel: showLabels,
           onTap: () => setState(() => _activeView = _PlayerView.lyrics),
         ),
         _buildPanelActionButton(
           icon: Icons.info_outline_rounded,
           label: 'Credits',
-          iconSize: compact ? 25 : 28,
+          iconSize: compact ? 24 : 26,
           showLabel: showLabels,
           onTap: () => setState(() => _activeView = _PlayerView.credits),
         ),
@@ -669,7 +653,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
       onTap: enabled ? onTap : null,
       borderRadius: BorderRadius.circular(20),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
         child: Column(
           children: [
             Icon(icon, color: color, size: iconSize),
@@ -683,6 +667,20 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildTrackActionButton({
+    required Widget icon,
+    required VoidCallback onPressed,
+  }) {
+    return IconButton(
+      icon: icon,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints.tightFor(width: 34, height: 34),
+      splashRadius: 18,
+      visualDensity: VisualDensity.compact,
+      onPressed: onPressed,
     );
   }
 
