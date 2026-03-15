@@ -27,18 +27,45 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   Timer? _debounce;
   bool _isSearching = false;
 
-  static const List<String> genres = [
-    'Hip-Hop', 'Pop', 'R&B / Soul', 'Rock', 'Electronic', 
-    'Latin', 'Country', 'Jazz', 'Classical', 'Metal',
+  static const List<_BrowseTileData> genres = [
+    _BrowseTileData(label: 'Hip-Hop'),
+    _BrowseTileData(label: 'Pop'),
+    _BrowseTileData(label: 'R&B / Soul'),
+    _BrowseTileData(label: 'Rock'),
+    _BrowseTileData(label: 'Electronic'),
+    _BrowseTileData(label: 'Latin'),
+    _BrowseTileData(label: 'Country'),
+    _BrowseTileData(label: 'Jazz'),
+    _BrowseTileData(label: 'Classical'),
+    _BrowseTileData(label: 'Metal'),
   ];
 
-  static const List<String> moods = [
-    'Chill', 'Workout', 'Party', 'Focus', 'Sleep',
-    'Romance', 'Road Trip', 'Cooking', 'Meditation',
+  static const List<_BrowseTileData> moods = [
+    _BrowseTileData(label: 'Women\'s History Month', span: 2),
+    _BrowseTileData(label: 'For DJs'),
+    _BrowseTileData(label: 'Chill'),
+    _BrowseTileData(label: 'Workout'),
+    _BrowseTileData(label: 'Party'),
+    _BrowseTileData(label: 'Focus'),
   ];
 
-  static const List<String> decades = [
-    '1950s', '1960s', '1970s', '1980s', '1990s', '2000s', '2010s', '2020s',
+  static const List<_BrowseTileData> decades = [
+    _BrowseTileData(label: '1950s'),
+    _BrowseTileData(label: '1960s'),
+    _BrowseTileData(label: '1970s'),
+    _BrowseTileData(label: '1980s'),
+    _BrowseTileData(label: '1990s'),
+    _BrowseTileData(label: '2000s'),
+    _BrowseTileData(label: '2010s'),
+    _BrowseTileData(label: '2020s'),
+  ];
+
+  static const List<_BrowseShortcutData> shortcuts = [
+    _BrowseShortcutData(
+      label: 'HiRes',
+      icon: Icons.graphic_eq_rounded,
+      iconColor: AppTheme.hifiBadge,
+    ),
   ];
 
   @override
@@ -81,20 +108,30 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               padding: EdgeInsets.all(responsive.horizontalPadding),
               child: Container(
                 decoration: BoxDecoration(
-                  color: AppTheme.surfaceColor,
-                  borderRadius: BorderRadius.circular(12),
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(4),
                 ),
                 child: TextField(
                   controller: _searchController,
                   onChanged: _onSearchChanged,
-                  style: AppTheme.bodyLarge,
+                  onTapOutside: (_) =>
+                      FocusManager.instance.primaryFocus?.unfocus(),
+                  style: AppTheme.titleMedium.copyWith(
+                    color: Colors.black,
+                    fontWeight: FontWeight.w500,
+                  ),
                   decoration: InputDecoration(
                     hintText: 'Search',
-                    hintStyle: AppTheme.bodyLarge.copyWith(color: AppTheme.secondaryColor),
-                    prefixIcon: const Icon(Icons.search, color: AppTheme.secondaryColor),
+                    hintStyle: AppTheme.titleMedium.copyWith(
+                      color: const Color(0xFF6E6E73),
+                      fontWeight: FontWeight.w500,
+                    ),
+                    prefixIcon:
+                        const Icon(Icons.search, color: Color(0xFF111111)),
                     suffixIcon: _isSearching
                         ? IconButton(
-                            icon: const Icon(Icons.close, color: AppTheme.secondaryColor),
+                            icon: const Icon(Icons.close,
+                                color: Color(0xFF111111)),
                             onPressed: () {
                               _searchController.clear();
                               ref.read(searchProvider.notifier).clear();
@@ -103,7 +140,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                           )
                         : null,
                     border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 16),
                   ),
                 ),
               ),
@@ -126,67 +164,91 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   // ===========================================================================
 
   Widget _buildBrowseSection(Responsive responsive) {
-    return SingleChildScrollView(
-      padding: EdgeInsets.only(bottom: responsive.miniPlayerHeight + responsive.bottomNavHeight + 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _BrowseSectionHeader(title: 'Genres', onViewAll: () {}),
-          _buildChipRow(genres, responsive),
-          const SizedBox(height: 24),
-          _BrowseSectionHeader(title: 'Moods & Activities', onViewAll: () {}),
-          _buildChipRow(moods, responsive),
-          const SizedBox(height: 24),
-          _BrowseSectionHeader(title: 'Decades', onViewAll: () {}),
-          _buildChipRow(decades, responsive),
-          const SizedBox(height: 24),
-          _buildNewReleasesSection(responsive),
-        ],
-      ),
-    );
-  }
+    final horizontal = responsive.horizontalPadding;
 
-  Widget _buildChipRow(List<String> items, Responsive responsive) {
-    return SizedBox(
-      height: 44,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
-        itemCount: items.length,
-        itemBuilder: (context, index) => Padding(
-          padding: const EdgeInsets.only(right: 8),
-          child: _CategoryChip(label: items[index], onTap: () => _onCategoryTap(items[index])),
-        ),
-      ),
-    );
-  }
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final contentWidth = constraints.maxWidth - (horizontal * 2);
 
-  Widget _buildNewReleasesSection(Responsive responsive) {
-    final homeData = ref.watch(homeDataProvider);
-    if (homeData.newAlbums.isEmpty) return const SizedBox.shrink();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _BrowseSectionHeader(title: 'New Releases', onViewAll: () {}),
-        SizedBox(
-          height: 180,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
-            itemCount: homeData.newAlbums.length,
-            itemBuilder: (context, index) {
-              final album = homeData.newAlbums[index];
-              return _AlbumCard(
-                album: album,
-                onTap: () => Navigator.push(context, MaterialPageRoute(
-                  builder: (_) => AlbumDetailScreen(albumId: album.id, album: album),
-                )),
-              );
-            },
+        return ListView(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          padding: EdgeInsets.fromLTRB(
+            horizontal,
+            8,
+            horizontal,
+            responsive.miniPlayerHeight + responsive.bottomNavHeight + 24,
           ),
-        ),
-      ],
+          children: [
+            _BrowseSectionHeader(title: 'Genres', onViewAll: () {}),
+            const SizedBox(height: 14),
+            _buildBentoGrid(
+              items: genres,
+              width: contentWidth,
+              onTap: (item) => _onCategoryTap(item.label),
+            ),
+            const SizedBox(height: 34),
+            _BrowseSectionHeader(
+              title: 'Moods & Activities',
+              onViewAll: () {},
+            ),
+            const SizedBox(height: 14),
+            _buildBentoGrid(
+              items: moods,
+              width: contentWidth,
+              onTap: (item) => _onCategoryTap(item.label),
+            ),
+            const SizedBox(height: 34),
+            _BrowseSectionHeader(title: 'Decades', onViewAll: () {}),
+            const SizedBox(height: 14),
+            _buildBentoGrid(
+              items: decades,
+              width: contentWidth,
+              onTap: (item) => _onCategoryTap(item.label),
+            ),
+            const SizedBox(height: 34),
+            _buildShortcutList(shortcuts),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildBentoGrid({
+    required List<_BrowseTileData> items,
+    required double width,
+    required ValueChanged<_BrowseTileData> onTap,
+  }) {
+    const spacing = 12.0;
+    final tileWidth = (width - (spacing * 2)) / 3;
+
+    return Wrap(
+      spacing: spacing,
+      runSpacing: spacing,
+      children: items.map((item) {
+        final resolvedWidth =
+            (tileWidth * item.span) + (spacing * (item.span - 1));
+
+        return _BrowseBentoTile(
+          width: resolvedWidth,
+          label: item.label,
+          onTap: () => onTap(item),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildShortcutList(List<_BrowseShortcutData> items) {
+    return Column(
+      children: items
+          .map(
+            (item) => _BrowseShortcutTile(
+              label: item.label,
+              icon: item.icon,
+              iconColor: item.iconColor,
+              onTap: () => _onCategoryTap(item.label),
+            ),
+          )
+          .toList(),
     );
   }
 
@@ -196,7 +258,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   Widget _buildSearchResults(SearchState searchState, Responsive responsive) {
     if (searchState.isLoading) {
-      return const Center(child: CircularProgressIndicator(color: AppTheme.primaryColor));
+      return const Center(
+          child: CircularProgressIndicator(color: AppTheme.primaryColor));
     }
 
     if (searchState.error != null) {
@@ -204,13 +267,17 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.error_outline, size: 64, color: AppTheme.errorColor),
+            const Icon(Icons.error_outline,
+                size: 64, color: AppTheme.errorColor),
             const SizedBox(height: 16),
             Text('Search failed', style: AppTheme.titleLarge),
             const SizedBox(height: 8),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 32),
-              child: Text(searchState.error!, style: AppTheme.bodyMedium.copyWith(color: AppTheme.secondaryColor), textAlign: TextAlign.center),
+              child: Text(searchState.error!,
+                  style: AppTheme.bodyMedium
+                      .copyWith(color: AppTheme.secondaryColor),
+                  textAlign: TextAlign.center),
             ),
           ],
         ),
@@ -219,17 +286,23 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
     final result = searchState.result;
     if (result == null) {
-      return Center(child: Text('Start typing to search', style: AppTheme.bodyLarge.copyWith(color: AppTheme.secondaryColor)));
+      return Center(
+          child: Text('Start typing to search',
+              style:
+                  AppTheme.bodyLarge.copyWith(color: AppTheme.secondaryColor)));
     }
 
-    final hasResults = result.tracks.isNotEmpty || result.artists.isNotEmpty || result.albums.isNotEmpty;
+    final hasResults = result.tracks.isNotEmpty ||
+        result.artists.isNotEmpty ||
+        result.albums.isNotEmpty;
 
     if (!hasResults) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.search_off, size: 64, color: AppTheme.secondaryColor),
+            const Icon(Icons.search_off,
+                size: 64, color: AppTheme.secondaryColor),
             const SizedBox(height: 16),
             Text('No results found', style: AppTheme.titleLarge),
           ],
@@ -241,11 +314,14 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
     // Build a SINGLE, clean mixed results list (like Tidal app)
     return ListView(
-      padding: EdgeInsets.only(bottom: responsive.miniPlayerHeight + responsive.bottomNavHeight + 20),
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      padding: EdgeInsets.only(
+          bottom:
+              responsive.miniPlayerHeight + responsive.bottomNavHeight + 20),
       children: [
         // Search suggestions at top
         ..._buildSearchSuggestions(result, query),
-        
+
         // Mixed results: Artist card, then albums, then tracks, then playlists
         ..._buildMixedResults(result, responsive, query),
       ],
@@ -255,33 +331,39 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   /// Build search suggestions (like Tidal's "acdc thunderstruck", "accept", etc.)
   List<Widget> _buildSearchSuggestions(SearchResult result, String query) {
     final suggestions = <String>{};
-    
+
     // Add artist names as suggestions
     for (final artist in result.artists.take(2)) {
       suggestions.add(artist.name.toLowerCase());
     }
-    
+
     // Add "artist + track" combinations
     for (final track in result.tracks.take(2)) {
-      final suggestion = '${track.artist.toLowerCase()} ${track.title.toLowerCase()}';
+      final suggestion =
+          '${track.artist.toLowerCase()} ${track.title.toLowerCase()}';
       if (suggestion.contains(query.toLowerCase())) {
         suggestions.add(suggestion);
       }
     }
 
-    return suggestions.take(4).map((s) => ListTile(
-      dense: true,
-      leading: const Icon(Icons.search, color: AppTheme.secondaryColor, size: 20),
-      title: _buildHighlightedText(s, query),
-      onTap: () {
-        _searchController.text = s;
-        _onSearchChanged(s);
-      },
-    )).toList();
+    return suggestions
+        .take(4)
+        .map((s) => ListTile(
+              dense: true,
+              leading: const Icon(Icons.search,
+                  color: AppTheme.secondaryColor, size: 20),
+              title: _buildHighlightedText(s, query),
+              onTap: () {
+                _searchController.text = s;
+                _onSearchChanged(s);
+              },
+            ))
+        .toList();
   }
 
   /// Build mixed results in proper order: Artist -> Albums -> Tracks -> Playlists
-  List<Widget> _buildMixedResults(SearchResult result, Responsive responsive, String query) {
+  List<Widget> _buildMixedResults(
+      SearchResult result, Responsive responsive, String query) {
     final widgets = <Widget>[];
 
     // 1. ARTIST at top (large card with circular image)
@@ -298,16 +380,18 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         uniqueAlbums[album.id] = album;
       }
       final albums = uniqueAlbums.values.take(6).toList();
-      
+
       widgets.add(Padding(
-        padding: EdgeInsets.fromLTRB(responsive.horizontalPadding, 20, responsive.horizontalPadding, 8),
+        padding: EdgeInsets.fromLTRB(
+            responsive.horizontalPadding, 20, responsive.horizontalPadding, 8),
         child: Text('Albums', style: AppTheme.titleMedium),
       ));
       widgets.add(SizedBox(
         height: responsive.value(mobile: 180.0, tablet: 220.0),
         child: ListView.builder(
           scrollDirection: Axis.horizontal,
-          padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
+          padding:
+              EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
           itemCount: albums.length,
           itemBuilder: (context, index) {
             final album = albums[index];
@@ -315,9 +399,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               padding: const EdgeInsets.only(right: 12),
               child: _AlbumCard(
                 album: album,
-                onTap: () => Navigator.push(context, MaterialPageRoute(
-                  builder: (_) => AlbumDetailScreen(albumId: album.id, album: album),
-                )),
+                onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          AlbumDetailScreen(albumId: album.id, album: album),
+                    )),
               ),
             );
           },
@@ -333,12 +420,14 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         uniqueTracks[track.id] = track;
       }
       final tracks = uniqueTracks.values.take(6).toList();
-      
+
       widgets.add(Padding(
-        padding: EdgeInsets.fromLTRB(responsive.horizontalPadding, 20, responsive.horizontalPadding, 8),
+        padding: EdgeInsets.fromLTRB(
+            responsive.horizontalPadding, 20, responsive.horizontalPadding, 8),
         child: Text('Tracks', style: AppTheme.titleMedium),
       ));
-      widgets.addAll(tracks.map((track) => _buildTrackTile(track, result.tracks)));
+      widgets
+          .addAll(tracks.map((track) => _buildTrackTile(track, result.tracks)));
     }
 
     // 4. PLAYLISTS (list) - only once!
@@ -349,9 +438,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         uniquePlaylists[playlist.id] = playlist;
       }
       final playlists = uniquePlaylists.values.take(4).toList();
-      
+
       widgets.add(Padding(
-        padding: EdgeInsets.fromLTRB(responsive.horizontalPadding, 20, responsive.horizontalPadding, 8),
+        padding: EdgeInsets.fromLTRB(
+            responsive.horizontalPadding, 20, responsive.horizontalPadding, 8),
         child: Text('Playlists', style: AppTheme.titleMedium),
       ));
       widgets.addAll(playlists.map((playlist) => _buildPlaylistTile(playlist)));
@@ -359,21 +449,28 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
     // 5. VIEW ALL button (only once at the end)
     widgets.add(Padding(
-      padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding, vertical: 24),
+      padding: EdgeInsets.symmetric(
+          horizontal: responsive.horizontalPadding, vertical: 24),
       child: GestureDetector(
         onTap: () => Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => SearchAllResultsScreen(query: query, result: result),
+            builder: (_) =>
+                SearchAllResultsScreen(query: query, result: result),
           ),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text('View all results for ', style: AppTheme.bodyMedium.copyWith(color: AppTheme.secondaryColor)),
-            Text(query, style: AppTheme.bodyMedium.copyWith(color: Colors.white, fontWeight: FontWeight.w600)),
+            Text('View all results for ',
+                style: AppTheme.bodyMedium
+                    .copyWith(color: AppTheme.secondaryColor)),
+            Text(query,
+                style: AppTheme.bodyMedium.copyWith(
+                    color: Colors.white, fontWeight: FontWeight.w600)),
             const SizedBox(width: 8),
-            const Icon(Icons.arrow_forward, color: AppTheme.secondaryColor, size: 18),
+            const Icon(Icons.arrow_forward,
+                color: AppTheme.secondaryColor, size: 18),
           ],
         ),
       ),
@@ -384,12 +481,19 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   Widget _buildArtistCard(Artist artist) {
     return ListTile(
-      onTap: () => Navigator.push(context, MaterialPageRoute(
-        builder: (_) => ArtistDetailScreen(artistId: artist.id, artist: artist),
-      )),
+      onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) =>
+                ArtistDetailScreen(artistId: artist.id, artist: artist),
+          )),
       leading: Container(
-        width: 56, height: 56,
-        decoration: BoxDecoration(shape: BoxShape.circle, color: AppTheme.surfaceColor),
+        width: 56,
+        height: 56,
+        decoration: const BoxDecoration(
+          shape: BoxShape.circle,
+          color: AppTheme.surfaceColor,
+        ),
         child: ClipOval(
           child: artist.imageUrl != null && artist.imageUrl!.isNotEmpty
               ? CachedNetworkImage(
@@ -410,11 +514,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   Widget _buildArtistInitial(String name) {
     return Container(
-      width: 56, height: 56,
+      width: 56,
+      height: 56,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         gradient: LinearGradient(
-          colors: [AppTheme.primaryColor.withOpacity(0.7), AppTheme.surfaceColor],
+          colors: [
+            AppTheme.primaryColor.withOpacity(0.7),
+            AppTheme.surfaceColor
+          ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -430,15 +538,31 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   Widget _buildTrackTile(Track track, List<Track> allTracks) {
     return ListTile(
-      onTap: () => ref.read(playerProvider.notifier).playQueue(allTracks, startIndex: allTracks.indexOf(track)),
+      onTap: () => ref
+          .read(playerProvider.notifier)
+          .playQueue(allTracks, startIndex: allTracks.indexOf(track)),
       leading: ClipRRect(
         borderRadius: BorderRadius.circular(4),
         child: track.coverArtUrl != null
-            ? CachedNetworkImage(imageUrl: track.coverArtUrl!, width: 50, height: 50, fit: BoxFit.cover)
-            : Container(width: 50, height: 50, color: AppTheme.surfaceColor, child: const Icon(Icons.music_note, color: AppTheme.secondaryColor)),
+            ? CachedNetworkImage(
+                imageUrl: track.coverArtUrl!,
+                width: 50,
+                height: 50,
+                fit: BoxFit.cover)
+            : Container(
+                width: 50,
+                height: 50,
+                color: AppTheme.surfaceColor,
+                child: const Icon(Icons.music_note,
+                    color: AppTheme.secondaryColor)),
       ),
-      title: Text(track.title, style: AppTheme.bodyLarge, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Text('Track by ${track.artist}', style: AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor), maxLines: 1),
+      title: Text(track.title,
+          style: AppTheme.bodyLarge,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis),
+      subtitle: Text('Track by ${track.artist}',
+          style: AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor),
+          maxLines: 1),
       trailing: GestureDetector(
         onTap: () => TrackOptionsSheet.show(context, track),
         child: const Icon(Icons.more_vert, color: AppTheme.secondaryColor),
@@ -448,18 +572,35 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   Widget _buildPlaylistTile(Playlist playlist) {
     return ListTile(
-      onTap: () => Navigator.push(context, MaterialPageRoute(
-        builder: (_) => PlaylistDetailScreen(playlistId: playlist.id, playlist: playlist),
-      )),
+      onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PlaylistDetailScreen(
+                playlistId: playlist.id, playlist: playlist),
+          )),
       leading: ClipRRect(
         borderRadius: BorderRadius.circular(4),
         child: playlist.coverArtUrl != null
-            ? CachedNetworkImage(imageUrl: playlist.coverArtUrl!, width: 50, height: 50, fit: BoxFit.cover)
-            : Container(width: 50, height: 50, color: AppTheme.surfaceColor, child: const Icon(Icons.playlist_play, color: AppTheme.secondaryColor)),
+            ? CachedNetworkImage(
+                imageUrl: playlist.coverArtUrl!,
+                width: 50,
+                height: 50,
+                fit: BoxFit.cover)
+            : Container(
+                width: 50,
+                height: 50,
+                color: AppTheme.surfaceColor,
+                child: const Icon(Icons.playlist_play,
+                    color: AppTheme.secondaryColor)),
       ),
-      title: Text(playlist.title, style: AppTheme.bodyLarge, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Text('by ${playlist.creatorName ?? "TIDAL"} • ${playlist.trackCount} tracks', 
-        style: AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor), maxLines: 1),
+      title: Text(playlist.title,
+          style: AppTheme.bodyLarge,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis),
+      subtitle: Text(
+          'by ${playlist.creatorName ?? "TIDAL"} • ${playlist.trackCount} tracks',
+          style: AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor),
+          maxLines: 1),
       trailing: const Icon(Icons.more_vert, color: AppTheme.secondaryColor),
     );
   }
@@ -480,7 +621,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           TextSpan(text: text.substring(0, index)),
           TextSpan(
             text: text.substring(index, index + query.length),
-            style: AppTheme.bodyMedium.copyWith(color: Colors.white, fontWeight: FontWeight.bold),
+            style: AppTheme.bodyMedium
+                .copyWith(color: Colors.white, fontWeight: FontWeight.bold),
           ),
           TextSpan(text: text.substring(index + query.length)),
         ],
@@ -501,42 +643,154 @@ class _BrowseSectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(title, style: AppTheme.headlineSmall),
-          TextButton(
-            onPressed: onViewAll,
-            child: Text('VIEW AS LIST', style: AppTheme.labelSmall.copyWith(color: AppTheme.secondaryColor)),
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          title,
+          style: AppTheme.headlineMedium.copyWith(
+            fontSize: 21,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.4,
           ),
-        ],
+        ),
+        InkWell(
+          onTap: onViewAll,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFF25252B),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.06),
+              ),
+            ),
+            child: Text(
+              'VIEW AS LIST',
+              style: AppTheme.labelMedium.copyWith(
+                color: Colors.white.withOpacity(0.82),
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.0,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _BrowseBentoTile extends StatelessWidget {
+  final double width;
+  final String label;
+  final VoidCallback onTap;
+
+  const _BrowseBentoTile({
+    required this.width,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      child: Ink(
+        width: width,
+        height: 68,
+        decoration: BoxDecoration(
+          color: const Color(0xFF2A2A31),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: Colors.white.withOpacity(0.06),
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 18),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              label,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: AppTheme.titleMedium.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+                fontSize: 15,
+                letterSpacing: -0.2,
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
 }
 
-class _CategoryChip extends StatelessWidget {
+class _BrowseShortcutTile extends StatelessWidget {
   final String label;
+  final IconData icon;
+  final Color iconColor;
   final VoidCallback onTap;
 
-  const _CategoryChip({required this.label, required this.onTap});
+  const _BrowseShortcutTile({
+    required this.label,
+    required this.icon,
+    required this.iconColor,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return InkWell(
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-        decoration: BoxDecoration(
-          color: AppTheme.surfaceLight,
-          borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(14),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 34,
+              child: Icon(icon, color: iconColor, size: 23),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              label,
+              style: AppTheme.headlineSmall.copyWith(
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
         ),
-        child: Text(label, style: AppTheme.bodyMedium),
       ),
     );
   }
+}
+
+class _BrowseTileData {
+  final String label;
+  final int span;
+
+  const _BrowseTileData({
+    required this.label,
+    this.span = 1,
+  });
+}
+
+class _BrowseShortcutData {
+  final String label;
+  final IconData icon;
+  final Color iconColor;
+
+  const _BrowseShortcutData({
+    required this.label,
+    required this.icon,
+    required this.iconColor,
+  });
 }
 
 class _AlbumCard extends StatelessWidget {
@@ -560,8 +814,17 @@ class _AlbumCard extends StatelessWidget {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(8),
                   child: album.coverArtUrl != null
-                      ? CachedNetworkImage(imageUrl: album.coverArtUrl!, width: 120, height: 120, fit: BoxFit.cover)
-                      : Container(width: 120, height: 120, color: AppTheme.surfaceColor, child: const Icon(Icons.album, size: 40, color: AppTheme.secondaryColor)),
+                      ? CachedNetworkImage(
+                          imageUrl: album.coverArtUrl!,
+                          width: 120,
+                          height: 120,
+                          fit: BoxFit.cover)
+                      : Container(
+                          width: 120,
+                          height: 120,
+                          color: AppTheme.surfaceColor,
+                          child: const Icon(Icons.album,
+                              size: 40, color: AppTheme.secondaryColor)),
                 ),
                 // 3-dot menu overlay
                 Positioned(
@@ -575,15 +838,22 @@ class _AlbumCard extends StatelessWidget {
                         color: Colors.black.withOpacity(0.5),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: const Icon(Icons.more_vert, color: Colors.white, size: 16),
+                      child: const Icon(Icons.more_vert,
+                          color: Colors.white, size: 16),
                     ),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 8),
-            Text(album.title, style: AppTheme.bodySmall, maxLines: 1, overflow: TextOverflow.ellipsis),
-            Text('Album by ${album.artist}', style: AppTheme.labelSmall.copyWith(color: AppTheme.secondaryColor), maxLines: 1),
+            Text(album.title,
+                style: AppTheme.bodySmall,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis),
+            Text('Album by ${album.artist}',
+                style: AppTheme.labelSmall
+                    .copyWith(color: AppTheme.secondaryColor),
+                maxLines: 1),
           ],
         ),
       ),

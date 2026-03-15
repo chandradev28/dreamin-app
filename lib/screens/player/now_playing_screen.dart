@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -192,35 +194,65 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
           child: LayoutBuilder(
             builder: (context, constraints) {
               final compact = constraints.maxHeight < 660;
+              final maxCover = math.max(220.0, constraints.maxWidth - 6);
+              final minCover = math.min(maxCover, compact ? 252.0 : 280.0);
               final coverSize =
-                  (constraints.maxHeight * (compact ? 0.34 : 0.39))
-                      .clamp(220.0, constraints.maxWidth - 12)
+                  (constraints.maxHeight * (compact ? 0.40 : 0.45))
+                      .clamp(minCover, maxCover)
                       .toDouble();
-              final sectionGap =
-                  (constraints.maxHeight * 0.022).clamp(12.0, 22.0).toDouble();
+              final infoGap = compact ? 12.0 : 18.0;
+              final progressGap = compact ? 10.0 : 14.0;
+              final actionsGap = compact ? 18.0 : 22.0;
+              final bottomInset =
+                  (constraints.maxHeight * 0.028).clamp(12.0, 24.0).toDouble();
 
               return Padding(
                 padding: EdgeInsets.symmetric(
                     horizontal: responsive.horizontalPadding),
                 child: Column(
                   children: [
-                    SizedBox(height: compact ? 4 : 10),
-                    Center(
-                      child: _buildAlbumCover(
-                        track,
-                        responsive,
-                        sizeOverride: coverSize,
+                    SizedBox(height: compact ? 2 : 6),
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Column(
+                            children: [
+                              Center(
+                                child: _buildAlbumCover(
+                                  track,
+                                  responsive,
+                                  sizeOverride: coverSize,
+                                ),
+                              ),
+                              SizedBox(height: infoGap),
+                              _buildTrackInfo(track, compact: compact),
+                              SizedBox(height: progressGap),
+                              _buildProgressBar(
+                                playerState,
+                                compact: compact,
+                              ),
+                            ],
+                          ),
+                          Padding(
+                            padding: EdgeInsets.only(bottom: bottomInset),
+                            child: Column(
+                              children: [
+                                _buildPlaybackControls(
+                                  playerState,
+                                  compact: compact,
+                                ),
+                                SizedBox(height: actionsGap),
+                                _buildPanelActions(
+                                  showLabels: false,
+                                  compact: compact,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    SizedBox(height: sectionGap),
-                    _buildTrackInfo(track, compact: compact),
-                    SizedBox(height: sectionGap),
-                    _buildProgressBar(playerState, compact: compact),
-                    SizedBox(height: compact ? 10 : sectionGap),
-                    _buildPlaybackControls(playerState, compact: compact),
-                    const Spacer(),
-                    _buildPanelActions(showLabels: false),
-                    SizedBox(height: compact ? 10 : 16),
                   ],
                 ),
               );
@@ -275,16 +307,16 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
     return Padding(
       padding: EdgeInsets.fromLTRB(
         responsive.horizontalPadding,
-        8,
+        4,
         responsive.horizontalPadding,
-        10,
+        8,
       ),
       child: Column(
         children: [
           GestureDetector(
             onTap: () => Navigator.of(context).pop(),
             child: Container(
-              width: 42,
+              width: 54,
               height: 5,
               decoration: BoxDecoration(
                 color: Colors.white.withOpacity(0.48),
@@ -292,7 +324,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
               ),
             ),
           ),
-          const SizedBox(height: 22),
+          const SizedBox(height: 16),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -309,10 +341,11 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      playerState.queueSource ?? 'Your Library',
+                      _displayQueueSource(playerState.queueSource),
                       style: AppTheme.titleLarge.copyWith(
                         color: Colors.white,
                         fontWeight: FontWeight.w500,
+                        fontSize: 17,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -320,9 +353,17 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                   ],
                 ),
               ),
-              IconButton(
-                icon: const Icon(Icons.cast_outlined, color: Colors.white),
-                onPressed: () {},
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: IconButton(
+                  icon: const Icon(Icons.cast_outlined, color: Colors.white),
+                  onPressed: () {},
+                ),
               ),
             ],
           ),
@@ -364,7 +405,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
       width: size,
       height: size,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.34),
@@ -374,7 +415,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
         ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         child: track.coverArtUrl != null
             ? CachedNetworkImage(
                 imageUrl: track.coverArtUrl!,
@@ -412,6 +453,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                 style: AppTheme.headlineLarge.copyWith(
                   color: Colors.white,
                   fontSize: compact ? 20 : 24,
+                  letterSpacing: -0.4,
                 ),
                 maxLines: compact ? 1 : 2,
                 overflow: TextOverflow.ellipsis,
@@ -422,7 +464,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                 style: AppTheme.headlineSmall.copyWith(
                   color: Colors.white.withOpacity(0.84),
                   fontWeight: FontWeight.w500,
-                  fontSize: compact ? 16 : 20,
+                  fontSize: compact ? 15 : 18,
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -435,15 +477,18 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
             isFavorite ? Icons.favorite : Icons.favorite_border,
             color: Colors.white,
           ),
+          visualDensity: VisualDensity.compact,
           onPressed: () =>
               ref.read(favoritesProvider.notifier).toggleFavorite(track),
         ),
         IconButton(
           icon: const Icon(Icons.share_outlined, color: Colors.white),
+          visualDensity: VisualDensity.compact,
           onPressed: () {},
         ),
         IconButton(
           icon: const Icon(Icons.more_vert, color: Colors.white),
+          visualDensity: VisualDensity.compact,
           onPressed: () => TrackOptionsSheet.show(context, track),
         ),
       ],
@@ -482,7 +527,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
           ),
         ),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -574,31 +619,35 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
     );
   }
 
-  Widget _buildPanelActions({bool showLabels = true}) {
+  Widget _buildPanelActions({bool showLabels = true, bool compact = false}) {
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      mainAxisAlignment: MainAxisAlignment.spaceAround,
       children: [
         _buildPanelActionButton(
           icon: Icons.reorder_rounded,
           label: 'Next up',
+          iconSize: compact ? 25 : 28,
           showLabel: showLabels,
           onTap: () => setState(() => _activeView = _PlayerView.nextUp),
         ),
         _buildPanelActionButton(
           icon: Icons.music_note_outlined,
           label: 'Suggested',
+          iconSize: compact ? 25 : 28,
           showLabel: showLabels,
           onTap: () => setState(() => _activeView = _PlayerView.suggested),
         ),
         _buildPanelActionButton(
           icon: Icons.lyrics_outlined,
           label: 'Lyrics',
+          iconSize: compact ? 25 : 28,
           showLabel: showLabels,
           onTap: () => setState(() => _activeView = _PlayerView.lyrics),
         ),
         _buildPanelActionButton(
           icon: Icons.info_outline_rounded,
           label: 'Credits',
+          iconSize: compact ? 25 : 28,
           showLabel: showLabels,
           onTap: () => setState(() => _activeView = _PlayerView.credits),
         ),
@@ -612,6 +661,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
     required VoidCallback onTap,
     bool enabled = true,
     bool showLabel = true,
+    double iconSize = 28,
   }) {
     final color = enabled ? Colors.white : Colors.white38;
 
@@ -619,10 +669,10 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
       onTap: enabled ? onTap : null,
       borderRadius: BorderRadius.circular(20),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
         child: Column(
           children: [
-            Icon(icon, color: color, size: 28),
+            Icon(icon, color: color, size: iconSize),
             if (showLabel) ...[
               const SizedBox(height: 8),
               Text(
@@ -1199,6 +1249,29 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
         curve: Curves.easeOut,
       );
     });
+  }
+
+  String _displayQueueSource(String? source) {
+    final value = source?.trim();
+    if (value == null || value.isEmpty) {
+      return 'Your Library';
+    }
+
+    const prefixes = [
+      'Playlist: ',
+      'Artist: ',
+      'Album: ',
+      'Mix: ',
+      'Search: ',
+    ];
+
+    for (final prefix in prefixes) {
+      if (value.startsWith(prefix)) {
+        return value.substring(prefix.length).trim();
+      }
+    }
+
+    return value;
   }
 
   String _formatDuration(Duration duration) {

@@ -25,7 +25,12 @@ class _MainScreenState extends ConsumerState<MainScreen> {
     LibraryScreen(),
   ];
 
+  void _dismissKeyboard() {
+    FocusManager.instance.primaryFocus?.unfocus();
+  }
+
   void _openNowPlaying() {
+    _dismissKeyboard();
     Navigator.of(context).push(
       PageRouteBuilder(
         pageBuilder: (context, animation, secondaryAnimation) {
@@ -98,6 +103,7 @@ class _MainScreenState extends ConsumerState<MainScreen> {
       child: BottomNavigationBar(
         currentIndex: _currentIndex,
         onTap: (index) {
+          _dismissKeyboard();
           setState(() {
             _currentIndex = index;
           });

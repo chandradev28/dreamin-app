@@ -429,6 +429,15 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       String? codec;
       bool isOffline = false;
 
+      void updateQualityState() {
+        state = state.copyWith(
+          currentQuality: quality ?? '',
+          currentBitDepth: bitDepth > 0 ? bitDepth : null,
+          currentSampleRate: sampleRate > 0 ? sampleRate : null,
+          currentCodec: codec,
+        );
+      }
+
       // Check for cached local file first (offline playback)
       final database = _ref.read(databaseProvider);
       final cachedPath =
@@ -442,6 +451,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
           codec = 'FLAC';
           bitDepth = track.quality?.bitDepth ?? 16;
           sampleRate = track.quality?.sampleRate ?? 44100;
+          updateQualityState();
           print('📱 Playing from local cache: $cachedPath');
         }
       }
@@ -462,6 +472,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
               bitDepth = streamInfo.bitDepth;
               sampleRate = streamInfo.sampleRate;
               codec = streamInfo.codec;
+              updateQualityState();
               print(
                   '📊 TIDAL Quality: $quality, BitDepth: $bitDepth, SampleRate: $sampleRate');
             }
@@ -483,6 +494,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
             bitDepth = 16;
             sampleRate = 44100;
             codec = 'FLAC';
+            updateQualityState();
             print('📊 HiFi Server Quality: $quality (FLAC)');
             break;
 
@@ -513,12 +525,24 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
             if (sampleRate < 1) {
               sampleRate = fallbackSampleRate;
             }
+            updateQualityState();
             print(
                 '📊 Qobuz Quality: $quality, BitDepth: $bitDepth, SampleRate: $sampleRate');
             break;
 
           default:
             streamUrl = await _musicService.getStreamUrl(track.id);
+            if (track.quality != null) {
+              bitDepth =
+                  bitDepth > 0 ? bitDepth : (track.quality?.bitDepth ?? 0);
+              sampleRate = sampleRate > 0
+                  ? sampleRate
+                  : (track.quality?.sampleRate ?? 0);
+              quality ??= (track.quality?.bitDepth ?? 0) >= 24
+                  ? 'HI_RES_LOSSLESS'
+                  : 'LOSSLESS';
+              updateQualityState();
+            }
             print('📊 ${track.source.name} Quality: $quality');
         }
       }
