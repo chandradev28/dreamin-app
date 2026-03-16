@@ -335,6 +335,15 @@ class AppDatabase extends _$AppDatabase {
     await (delete(localPlaylists)..where((t) => t.id.equals(playlistId))).go();
   }
 
+  Future<void> renamePlaylist(int playlistId, String name) async {
+    await (update(localPlaylists)..where((t) => t.id.equals(playlistId))).write(
+      LocalPlaylistsCompanion(
+        name: Value(name),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+  }
+
   Future<List<LocalPlaylist>> getAllPlaylists() async {
     return select(localPlaylists).get();
   }

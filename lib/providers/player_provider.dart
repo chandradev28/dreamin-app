@@ -276,7 +276,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     return prefs.getBool('autoplay') ?? true; // Default to true
   }
 
-  /// Trigger autoplay - fetch recommendations and add to queue
+  /// Trigger autoplay - continue with same-artist tracks instead of random suggestions.
   Future<void> _triggerAutoplay() async {
     try {
       // Check if autoplay is enabled
@@ -292,49 +292,96 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
         return;
       }
 
-      print('🎵 Autoplay: Queue ended, fetching recommendations...');
-
-      // Get recommendation service via ref
-      final recommendationService = _ref.read(recommendationServiceProvider);
-
-      // Fetch personalized recommendations
-      final recommendations =
-          await recommendationService.getRecommendations(limit: 10);
-
-      if (recommendations.isEmpty) {
-        print('🎵 Autoplay: No recommendations available');
+      final currentTrack = state.currentTrack;
+      if (currentTrack == null) {
         return;
       }
 
-      // Filter out tracks already in queue to avoid duplicates
-      final existingIds =
-          state.queue.map((t) => '${t.id}_${t.source.name}').toSet();
-      final newTracks = recommendations
-          .where((t) => !existingIds.contains('${t.id}_${t.source.name}'))
-          .toList();
+      print('🎵 Autoplay: Queue ended, fetching same-artist tracks...');
+      final newTracks = await _loadArtistAutoplayTracks(currentTrack);
 
       if (newTracks.isEmpty) {
-        print('🎵 Autoplay: All recommendations already in queue');
+        print('🎵 Autoplay: No same-artist tracks available');
         return;
       }
 
       print(
-          '🎵 Autoplay: Adding ${newTracks.length} recommended tracks to queue');
+          '🎵 Autoplay: Adding ${newTracks.length} same-artist tracks to queue');
 
-      // Add recommended tracks to queue
       final newQueue = [...state.queue, ...newTracks];
       _originalQueue = [..._originalQueue, ...newTracks];
 
       state = state.copyWith(
         queue: newQueue,
-        queueSource: 'Autoplay Recommendations',
+        queueSource: 'Artist: ${currentTrack.artist}',
       );
 
-      // Start playing the first recommended track
       playAtIndex(state.queueIndex + 1);
     } catch (e) {
       print('🎵 Autoplay: Error fetching recommendations - $e');
     }
+  }
+
+  Future<List<Track>> _loadArtistAutoplayTracks(Track track) async {
+    final tidalService = _tidalService;
+    if (tidalService == null) {
+      return const [];
+    }
+
+    final collected = <Track>[];
+
+    try {
+      if (_isNumericId(track.albumId)) {
+        final album = await tidalService.getAlbum(track.albumId);
+        collected.addAll(
+          album.tracks.where(
+            (candidate) =>
+                candidate.artistId == track.artistId ||
+                candidate.artist.toLowerCase() == track.artist.toLowerCase(),
+          ),
+        );
+      }
+    } catch (_) {}
+
+    try {
+      if (_isNumericId(track.artistId)) {
+        final artist = await tidalService.getArtist(track.artistId);
+        collected.addAll(artist.topTracks);
+      }
+    } catch (_) {}
+
+    if (collected.length < 12) {
+      try {
+        final searchResults =
+            await tidalService.searchTracks(track.artist, limit: 20);
+        collected.addAll(
+          searchResults.where(
+            (candidate) =>
+                candidate.artistId == track.artistId ||
+                candidate.artist.toLowerCase() == track.artist.toLowerCase(),
+          ),
+        );
+      } catch (_) {}
+    }
+
+    final existingIds =
+        state.queue.map((item) => '${item.id}_${item.source.name}').toSet();
+    final deduped = <Track>[];
+
+    for (final candidate in collected) {
+      final key = '${candidate.id}_${candidate.source.name}';
+      if (key == '${track.id}_${track.source.name}' ||
+          existingIds.contains(key)) {
+        continue;
+      }
+      existingIds.add(key);
+      deduped.add(candidate);
+      if (deduped.length >= 18) {
+        break;
+      }
+    }
+
+    return deduped;
   }
 
   Future<void> _recordPlayToHistory() async {
@@ -367,6 +414,10 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
 
   bool _isSameTrack(Track a, Track b) {
     return a.id == b.id && a.source == b.source;
+  }
+
+  bool _isNumericId(String? value) {
+    return value != null && value.isNotEmpty && int.tryParse(value) != null;
   }
 
   String _trackKey(Track track) => '${track.source.name}:${track.id}';

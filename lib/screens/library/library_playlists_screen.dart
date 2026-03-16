@@ -14,12 +14,20 @@ class LibraryPlaylistsScreen extends ConsumerStatefulWidget {
   const LibraryPlaylistsScreen({super.key});
 
   @override
-  ConsumerState<LibraryPlaylistsScreen> createState() => _LibraryPlaylistsScreenState();
+  ConsumerState<LibraryPlaylistsScreen> createState() =>
+      _LibraryPlaylistsScreenState();
 }
 
-class _LibraryPlaylistsScreenState extends ConsumerState<LibraryPlaylistsScreen> {
+enum _PlaylistSortMode { recent, nameAsc, nameDesc }
+
+class _LibraryPlaylistsScreenState
+    extends ConsumerState<LibraryPlaylistsScreen> {
   List<LocalPlaylist> _userPlaylists = [];
   Map<int, int> _userPlaylistTrackCounts = {};
+  final TextEditingController _searchController = TextEditingController();
+  bool _showSearch = false;
+  String _searchQuery = '';
+  _PlaylistSortMode _sortMode = _PlaylistSortMode.recent;
 
   @override
   void initState() {
@@ -27,17 +35,23 @@ class _LibraryPlaylistsScreenState extends ConsumerState<LibraryPlaylistsScreen>
     _loadUserPlaylists();
   }
 
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadUserPlaylists() async {
     final database = ref.read(databaseProvider);
     final playlists = await database.getAllPlaylists();
-    
+
     // Get track count for each playlist
     final trackCounts = <int, int>{};
     for (final playlist in playlists) {
       final tracks = await database.getPlaylistTracks(playlist.id);
       trackCounts[playlist.id] = tracks.length;
     }
-    
+
     if (mounted) {
       setState(() {
         _userPlaylists = playlists;
@@ -48,12 +62,13 @@ class _LibraryPlaylistsScreenState extends ConsumerState<LibraryPlaylistsScreen>
 
   void _showCreatePlaylistDialog() {
     final controller = TextEditingController();
-    
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: AppTheme.surfaceColor,
-        title: const Text('Create Playlist', style: TextStyle(color: Colors.white)),
+        title: const Text('Create Playlist',
+            style: TextStyle(color: Colors.white)),
         content: TextField(
           controller: controller,
           autofocus: true,
@@ -72,11 +87,17 @@ class _LibraryPlaylistsScreenState extends ConsumerState<LibraryPlaylistsScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('Cancel', style: TextStyle(color: Colors.white.withOpacity(0.7))),
+            child: Text('Cancel',
+                style: TextStyle(color: Colors.white.withOpacity(0.7))),
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.primaryColor,
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: Colors.black,
+              minimumSize: const Size(110, 48),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+              ),
             ),
             onPressed: () async {
               if (controller.text.isNotEmpty) {
@@ -94,19 +115,72 @@ class _LibraryPlaylistsScreenState extends ConsumerState<LibraryPlaylistsScreen>
                 }
               }
             },
-            child: const Text('Create', style: TextStyle(color: Colors.white)),
+            child: const Text(
+              'Create',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
           ),
         ],
       ),
     );
   }
 
+  void _showSortSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTheme.surfaceColor,
+      builder: (context) => SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            _buildSortTile('Recently updated', _PlaylistSortMode.recent),
+            _buildSortTile('Name A-Z', _PlaylistSortMode.nameAsc),
+            _buildSortTile('Name Z-A', _PlaylistSortMode.nameDesc),
+            SizedBox(height: MediaQuery.of(context).padding.bottom + 12),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSortTile(String label, _PlaylistSortMode mode) {
+    final selected = _sortMode == mode;
+    return ListTile(
+      leading: Icon(
+        selected ? Icons.radio_button_checked : Icons.radio_button_off,
+        color: selected ? AppTheme.primaryColor : Colors.white70,
+      ),
+      title: Text(
+        label,
+        style: AppTheme.bodyLarge.copyWith(color: Colors.white),
+      ),
+      onTap: () {
+        setState(() => _sortMode = mode);
+        Navigator.pop(context);
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final savedPlaylistsState = ref.watch(savedPlaylistsProvider);
-    final tidalPlaylists = savedPlaylistsState.playlists;
+    final tidalPlaylists = _sortedTidalPlaylists(
+      _filteredTidalPlaylists(savedPlaylistsState.playlists),
+    );
+    final userPlaylists = _sortedUserPlaylists(_filteredUserPlaylists());
 
-    final hasAnyPlaylists = _userPlaylists.isNotEmpty || tidalPlaylists.isNotEmpty;
+    final hasAnyPlaylists =
+        userPlaylists.isNotEmpty || tidalPlaylists.isNotEmpty;
 
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
@@ -128,40 +202,82 @@ class _LibraryPlaylistsScreenState extends ConsumerState<LibraryPlaylistsScreen>
         actions: [
           IconButton(
             icon: const Icon(Icons.sort, color: Colors.white),
-            onPressed: () {},
+            onPressed: _showSortSheet,
           ),
           IconButton(
             icon: const Icon(Icons.search, color: Colors.white),
-            onPressed: () {},
-          ),
-          IconButton(
-            icon: const Icon(Icons.more_vert, color: Colors.white),
-            onPressed: () {},
+            onPressed: () {
+              setState(() {
+                _showSearch = !_showSearch;
+                if (!_showSearch) {
+                  _searchController.clear();
+                  _searchQuery = '';
+                }
+              });
+            },
           ),
         ],
       ),
       body: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         children: [
+          if (_showSearch) ...[
+            Container(
+              decoration: BoxDecoration(
+                color: AppTheme.surfaceColor,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: TextField(
+                controller: _searchController,
+                autofocus: true,
+                style: AppTheme.bodyLarge.copyWith(color: Colors.white),
+                onChanged: (value) =>
+                    setState(() => _searchQuery = value.trim()),
+                decoration: InputDecoration(
+                  hintText: 'Search playlists',
+                  hintStyle: AppTheme.bodyLarge.copyWith(
+                    color: Colors.white.withOpacity(0.46),
+                  ),
+                  prefixIcon: const Icon(Icons.search, color: Colors.white70),
+                  suffixIcon: _searchQuery.isEmpty
+                      ? null
+                      : IconButton(
+                          icon: const Icon(Icons.close, color: Colors.white70),
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() => _searchQuery = '');
+                          },
+                        ),
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 15,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
           // Create button - always at top
           _buildCreateButton(),
-          
+
           const SizedBox(height: 16),
-          
+
           if (!hasAnyPlaylists)
             _buildEmptyState()
           else ...[
             // User playlists first
-            ..._userPlaylists.map((playlist) => _UserPlaylistItem(
-              playlist: playlist,
-              trackCount: _userPlaylistTrackCounts[playlist.id] ?? 0,
-              onRefresh: _loadUserPlaylists,
-            )),
-            
+            ...userPlaylists.map((playlist) => _UserPlaylistItem(
+                  playlist: playlist,
+                  trackCount: _userPlaylistTrackCounts[playlist.id] ?? 0,
+                  onRefresh: _loadUserPlaylists,
+                )),
+
             // TIDAL playlists second
-            ...tidalPlaylists.map((playlist) => _TidalPlaylistItem(playlist: playlist)),
+            ...tidalPlaylists
+                .map((playlist) => _TidalPlaylistItem(playlist: playlist)),
           ],
-          
+
           // Bottom padding
           SizedBox(height: MediaQuery.of(context).padding.bottom + 80),
         ],
@@ -230,6 +346,74 @@ class _LibraryPlaylistsScreenState extends ConsumerState<LibraryPlaylistsScreen>
       ),
     );
   }
+
+  List<LocalPlaylist> _filteredUserPlaylists() {
+    if (_searchQuery.isEmpty) {
+      return List<LocalPlaylist>.from(_userPlaylists);
+    }
+    final query = _searchQuery.toLowerCase();
+    return _userPlaylists
+        .where((playlist) => playlist.name.toLowerCase().contains(query))
+        .toList();
+  }
+
+  List<Playlist> _filteredTidalPlaylists(List<Playlist> playlists) {
+    if (_searchQuery.isEmpty) {
+      return List<Playlist>.from(playlists);
+    }
+    final query = _searchQuery.toLowerCase();
+    return playlists
+        .where(
+          (playlist) =>
+              playlist.title.toLowerCase().contains(query) ||
+              (playlist.creatorName?.toLowerCase().contains(query) ?? false),
+        )
+        .toList();
+  }
+
+  List<LocalPlaylist> _sortedUserPlaylists(List<LocalPlaylist> playlists) {
+    final sorted = List<LocalPlaylist>.from(playlists);
+    switch (_sortMode) {
+      case _PlaylistSortMode.recent:
+        sorted.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+        break;
+      case _PlaylistSortMode.nameAsc:
+        sorted.sort(
+            (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+        break;
+      case _PlaylistSortMode.nameDesc:
+        sorted.sort(
+            (a, b) => b.name.toLowerCase().compareTo(a.name.toLowerCase()));
+        break;
+    }
+    return sorted;
+  }
+
+  List<Playlist> _sortedTidalPlaylists(List<Playlist> playlists) {
+    final sorted = List<Playlist>.from(playlists);
+    switch (_sortMode) {
+      case _PlaylistSortMode.recent:
+        sorted.sort((a, b) {
+          final aDate = a.updatedAt ??
+              a.createdAt ??
+              DateTime.fromMillisecondsSinceEpoch(0);
+          final bDate = b.updatedAt ??
+              b.createdAt ??
+              DateTime.fromMillisecondsSinceEpoch(0);
+          return bDate.compareTo(aDate);
+        });
+        break;
+      case _PlaylistSortMode.nameAsc:
+        sorted.sort(
+            (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+        break;
+      case _PlaylistSortMode.nameDesc:
+        sorted.sort(
+            (a, b) => b.title.toLowerCase().compareTo(a.title.toLowerCase()));
+        break;
+    }
+    return sorted;
+  }
 }
 
 /// User-created playlist item
@@ -251,7 +435,7 @@ class _UserPlaylistItem extends ConsumerWidget {
         // Load tracks and navigate to local playlist detail
         final database = ref.read(databaseProvider);
         final playlistTracks = await database.getPlaylistTracks(playlist.id);
-        
+
         // Convert to Track objects
         final tracks = <Track>[];
         for (final pt in playlistTracks) {
@@ -260,7 +444,7 @@ class _UserPlaylistItem extends ConsumerWidget {
             tracks.add(Track.fromTidalJson(json));
           } catch (_) {}
         }
-        
+
         if (context.mounted) {
           Navigator.push(
             context,
@@ -319,7 +503,9 @@ class _UserPlaylistItem extends ConsumerWidget {
                     ),
                   ),
                   Text(
-                    trackCount == 0 ? 'NO ITEMS' : '$trackCount ${trackCount == 1 ? 'TRACK' : 'TRACKS'}',
+                    trackCount == 0
+                        ? 'NO ITEMS'
+                        : '$trackCount ${trackCount == 1 ? 'TRACK' : 'TRACKS'}',
                     style: AppTheme.bodySmall.copyWith(
                       color: AppTheme.secondaryColor,
                       fontSize: 11,
@@ -331,7 +517,8 @@ class _UserPlaylistItem extends ConsumerWidget {
             ),
             // 3-dot menu
             IconButton(
-              icon: const Icon(Icons.more_horiz, color: AppTheme.secondaryColor),
+              icon:
+                  const Icon(Icons.more_horiz, color: AppTheme.secondaryColor),
               onPressed: () => _showUserPlaylistOptions(context, ref),
             ),
           ],
@@ -358,7 +545,8 @@ class _UserPlaylistItem extends ConsumerWidget {
           ),
           ListTile(
             leading: const Icon(Icons.edit_outlined, color: Colors.white),
-            title: const Text('Rename playlist', style: TextStyle(color: Colors.white)),
+            title: const Text('Rename playlist',
+                style: TextStyle(color: Colors.white)),
             onTap: () {
               Navigator.pop(context);
               _showRenameDialog(context, ref);
@@ -366,7 +554,8 @@ class _UserPlaylistItem extends ConsumerWidget {
           ),
           ListTile(
             leading: const Icon(Icons.delete_outline, color: Colors.red),
-            title: const Text('Delete playlist', style: TextStyle(color: Colors.red)),
+            title: const Text('Delete playlist',
+                style: TextStyle(color: Colors.red)),
             onTap: () async {
               Navigator.pop(context);
               final database = ref.read(databaseProvider);
@@ -387,12 +576,13 @@ class _UserPlaylistItem extends ConsumerWidget {
 
   void _showRenameDialog(BuildContext context, WidgetRef ref) {
     final controller = TextEditingController(text: playlist.name);
-    
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: AppTheme.surfaceColor,
-        title: const Text('Rename Playlist', style: TextStyle(color: Colors.white)),
+        title: const Text('Rename Playlist',
+            style: TextStyle(color: Colors.white)),
         content: TextField(
           controller: controller,
           autofocus: true,
@@ -407,12 +597,32 @@ class _UserPlaylistItem extends ConsumerWidget {
             onPressed: () => Navigator.pop(context),
             child: const Text('Cancel'),
           ),
-          ElevatedButton(
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: Colors.black,
+              minimumSize: const Size(110, 48),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+              ),
+            ),
             onPressed: () async {
-              // TODO: Add rename functionality to database
-              Navigator.pop(context);
+              final name = controller.text.trim();
+              if (name.isEmpty) return;
+              final database = ref.read(databaseProvider);
+              await database.renamePlaylist(playlist.id, name);
+              if (context.mounted) {
+                Navigator.pop(context);
+                onRefresh();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Playlist renamed')),
+                );
+              }
             },
-            child: const Text('Save'),
+            child: const Text(
+              'Save',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
           ),
         ],
       ),
@@ -486,8 +696,8 @@ class _TidalPlaylistItem extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    playlist.trackCount == 0 
-                        ? 'NO ITEMS' 
+                    playlist.trackCount == 0
+                        ? 'NO ITEMS'
                         : '${playlist.trackCount} ${playlist.trackCount == 1 ? 'TRACK' : 'TRACKS'}',
                     style: AppTheme.bodySmall.copyWith(
                       color: AppTheme.secondaryColor,
@@ -500,7 +710,8 @@ class _TidalPlaylistItem extends StatelessWidget {
             ),
             // 3-dot menu
             IconButton(
-              icon: const Icon(Icons.more_horiz, color: AppTheme.secondaryColor),
+              icon:
+                  const Icon(Icons.more_horiz, color: AppTheme.secondaryColor),
               onPressed: () => PlaylistOptionsSheet.show(context, playlist),
             ),
           ],
@@ -588,7 +799,8 @@ class _LocalPlaylistDetailScreen extends StatelessWidget {
                             imageUrl: track.coverArtUrl!,
                             fit: BoxFit.cover,
                           )
-                        : const Icon(Icons.music_note, color: AppTheme.secondaryColor),
+                        : const Icon(Icons.music_note,
+                            color: AppTheme.secondaryColor),
                   ),
                   title: Text(
                     track.title,
@@ -598,7 +810,8 @@ class _LocalPlaylistDetailScreen extends StatelessWidget {
                   ),
                   subtitle: Text(
                     track.artist,
-                    style: AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor),
+                    style: AppTheme.bodySmall
+                        .copyWith(color: AppTheme.secondaryColor),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),

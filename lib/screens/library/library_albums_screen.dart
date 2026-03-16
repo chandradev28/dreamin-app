@@ -1,20 +1,39 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../../core/theme/app_theme.dart';
-import '../../providers/providers.dart';
 import '../../models/models.dart';
+import '../../providers/providers.dart';
 import '../../widgets/album_options_sheet.dart';
 import '../album/album_detail_screen.dart';
 
-/// Library Albums Screen - Shows saved albums
-class LibraryAlbumsScreen extends ConsumerWidget {
+/// Library Albums Screen - saved albums with working search and sort
+class LibraryAlbumsScreen extends ConsumerStatefulWidget {
   const LibraryAlbumsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<LibraryAlbumsScreen> createState() =>
+      _LibraryAlbumsScreenState();
+}
+
+enum _AlbumSortMode { recent, titleAsc, titleDesc, artistAsc, yearDesc }
+
+class _LibraryAlbumsScreenState extends ConsumerState<LibraryAlbumsScreen> {
+  final TextEditingController _searchController = TextEditingController();
+  bool _showSearch = false;
+  String _searchQuery = '';
+  _AlbumSortMode _sortMode = _AlbumSortMode.recent;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final savedAlbumsState = ref.watch(savedAlbumsProvider);
-    final albums = savedAlbumsState.albums;
+    final albums = _sortedAlbums(_filteredAlbums(savedAlbumsState.albums));
 
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
@@ -36,70 +55,112 @@ class LibraryAlbumsScreen extends ConsumerWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.search, color: Colors.white),
-            onPressed: () {},
+            onPressed: () {
+              setState(() {
+                _showSearch = !_showSearch;
+                if (!_showSearch) {
+                  _searchController.clear();
+                  _searchQuery = '';
+                }
+              });
+            },
           ),
           IconButton(
             icon: const Icon(Icons.sort, color: Colors.white),
-            onPressed: () {},
+            onPressed: _showSortSheet,
           ),
         ],
       ),
-      body: albums.isEmpty ? _buildEmptyState() : _buildAlbumGrid(context, albums),
-    );
-  }
-
-  Widget _buildAlbumGrid(BuildContext context, List<Album> albums) {
-    return GridView.builder(
-      padding: const EdgeInsets.all(16),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        mainAxisSpacing: 16,
-        crossAxisSpacing: 16,
-        childAspectRatio: 0.75,
-      ),
-      itemCount: albums.length,
-      itemBuilder: (context, index) {
-        final album = albums[index];
-        return _AlbumGridItem(album: album);
-      },
+      body: savedAlbumsState.isLoading
+          ? const Center(
+              child: CircularProgressIndicator(color: AppTheme.primaryColor),
+            )
+          : Column(
+              children: [
+                if (_showSearch)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: AppTheme.surfaceColor,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: TextField(
+                        controller: _searchController,
+                        autofocus: true,
+                        style: AppTheme.bodyLarge.copyWith(color: Colors.white),
+                        onChanged: (value) =>
+                            setState(() => _searchQuery = value.trim()),
+                        decoration: InputDecoration(
+                          hintText: 'Search albums',
+                          hintStyle: AppTheme.bodyLarge.copyWith(
+                            color: Colors.white.withOpacity(0.46),
+                          ),
+                          prefixIcon:
+                              const Icon(Icons.search, color: Colors.white70),
+                          suffixIcon: _searchQuery.isEmpty
+                              ? null
+                              : IconButton(
+                                  icon: const Icon(
+                                    Icons.close,
+                                    color: Colors.white70,
+                                  ),
+                                  onPressed: () {
+                                    _searchController.clear();
+                                    setState(() => _searchQuery = '');
+                                  },
+                                ),
+                          border: InputBorder.none,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 15,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                Expanded(
+                  child: albums.isEmpty
+                      ? _buildEmptyState()
+                      : GridView.builder(
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            childAspectRatio: 0.7,
+                            crossAxisSpacing: 16,
+                            mainAxisSpacing: 18,
+                          ),
+                          itemCount: albums.length,
+                          itemBuilder: (context, index) {
+                            final album = albums[index];
+                            return _AlbumGridItem(album: album);
+                          },
+                        ),
+                ),
+              ],
+            ),
     );
   }
 
   Widget _buildEmptyState() {
+    final hasSearch = _searchQuery.isNotEmpty;
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 48),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Vinyl/CD icon in circle
-            Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: Colors.white.withOpacity(0.3),
-                  width: 2,
-                ),
-              ),
-              child: Center(
-                child: Container(
-                  width: 24,
-                  height: 24,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: Colors.white.withOpacity(0.4),
-                      width: 2,
-                    ),
-                  ),
-                ),
-              ),
+            Icon(
+              Icons.album_outlined,
+              size: 64,
+              color: Colors.white.withOpacity(0.4),
             ),
             const SizedBox(height: 32),
             Text(
-              "You haven't added any albums yet. Tap the + icon on any album to add it to your collection.",
+              hasSearch
+                  ? 'No albums match your search.'
+                  : "You haven't added any albums yet. Tap the + icon on any album to add it to your collection.",
               style: AppTheme.bodyMedium.copyWith(
                 color: Colors.white.withOpacity(0.6),
               ),
@@ -110,9 +171,98 @@ class LibraryAlbumsScreen extends ConsumerWidget {
       ),
     );
   }
+
+  List<Album> _filteredAlbums(List<Album> albums) {
+    if (_searchQuery.isEmpty) {
+      return List<Album>.from(albums);
+    }
+    final query = _searchQuery.toLowerCase();
+    return albums
+        .where(
+          (album) =>
+              album.title.toLowerCase().contains(query) ||
+              album.artist.toLowerCase().contains(query) ||
+              (album.year?.toString().contains(query) ?? false),
+        )
+        .toList();
+  }
+
+  List<Album> _sortedAlbums(List<Album> albums) {
+    final sorted = List<Album>.from(albums);
+    switch (_sortMode) {
+      case _AlbumSortMode.recent:
+        break;
+      case _AlbumSortMode.titleAsc:
+        sorted.sort(
+          (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()),
+        );
+        break;
+      case _AlbumSortMode.titleDesc:
+        sorted.sort(
+          (a, b) => b.title.toLowerCase().compareTo(a.title.toLowerCase()),
+        );
+        break;
+      case _AlbumSortMode.artistAsc:
+        sorted.sort(
+          (a, b) => a.artist.toLowerCase().compareTo(b.artist.toLowerCase()),
+        );
+        break;
+      case _AlbumSortMode.yearDesc:
+        sorted.sort((a, b) => (b.year ?? 0).compareTo(a.year ?? 0));
+        break;
+    }
+    return sorted;
+  }
+
+  void _showSortSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTheme.surfaceColor,
+      builder: (context) => SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            _buildSortTile('Recently added', _AlbumSortMode.recent),
+            _buildSortTile('Title A-Z', _AlbumSortMode.titleAsc),
+            _buildSortTile('Title Z-A', _AlbumSortMode.titleDesc),
+            _buildSortTile('Artist A-Z', _AlbumSortMode.artistAsc),
+            _buildSortTile('Year newest first', _AlbumSortMode.yearDesc),
+            SizedBox(height: MediaQuery.of(context).padding.bottom + 12),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSortTile(String label, _AlbumSortMode mode) {
+    final selected = _sortMode == mode;
+    return ListTile(
+      leading: Icon(
+        selected ? Icons.radio_button_checked : Icons.radio_button_off,
+        color: selected ? AppTheme.primaryColor : Colors.white70,
+      ),
+      title: Text(
+        label,
+        style: AppTheme.bodyLarge.copyWith(color: Colors.white),
+      ),
+      onTap: () {
+        setState(() => _sortMode = mode);
+        Navigator.pop(context);
+      },
+    );
+  }
 }
 
-/// Album Grid Item with 3-dot menu
 class _AlbumGridItem extends StatelessWidget {
   final Album album;
 
@@ -120,7 +270,7 @@ class _AlbumGridItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return InkWell(
       onTap: () {
         Navigator.push(
           context,
@@ -129,67 +279,70 @@ class _AlbumGridItem extends StatelessWidget {
           ),
         );
       },
+      borderRadius: BorderRadius.circular(8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Album Cover with 3-dot overlay
           Expanded(
             child: Stack(
               children: [
                 Container(
+                  width: double.infinity,
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(8),
                     color: AppTheme.surfaceColor,
+                    borderRadius: BorderRadius.circular(8),
                   ),
                   clipBehavior: Clip.antiAlias,
                   child: album.coverArtUrl != null
                       ? CachedNetworkImage(
                           imageUrl: album.coverArtUrl!,
                           fit: BoxFit.cover,
-                          width: double.infinity,
-                          height: double.infinity,
-                          placeholder: (_, __) => Container(color: AppTheme.surfaceColor),
-                          errorWidget: (_, __, ___) => const Icon(
-                            Icons.album,
-                            color: AppTheme.tertiaryColor,
-                            size: 40,
-                          ),
                         )
-                      : const Center(
-                          child: Icon(Icons.album, color: AppTheme.tertiaryColor, size: 40),
+                      : Container(
+                          color: AppTheme.surfaceLight,
+                          child: const Icon(
+                            Icons.album,
+                            color: AppTheme.secondaryColor,
+                            size: 36,
+                          ),
                         ),
                 ),
-                // 3-dot menu overlay
                 Positioned(
                   top: 6,
                   right: 6,
-                  child: GestureDetector(
-                    onTap: () => AlbumOptionsSheet.show(context, album),
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.5),
-                        borderRadius: BorderRadius.circular(12),
+                  child: Material(
+                    color: Colors.black45,
+                    borderRadius: BorderRadius.circular(16),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: () => AlbumOptionsSheet.show(context, album),
+                      child: const Padding(
+                        padding: EdgeInsets.all(6),
+                        child: Icon(
+                          Icons.more_vert,
+                          color: Colors.white,
+                          size: 18,
+                        ),
                       ),
-                      child: const Icon(Icons.more_horiz, color: Colors.white, size: 18),
                     ),
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 8),
-          // Album Title
+          const SizedBox(height: 10),
           Text(
             album.title,
-            style: AppTheme.bodyMedium,
-            maxLines: 1,
+            style: AppTheme.bodyLarge.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.w500,
+            ),
+            maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
           const SizedBox(height: 2),
-          // Artist Name
           Text(
-            album.artist,
+            'Album by ${album.artist}',
             style: AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
