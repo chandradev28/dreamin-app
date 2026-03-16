@@ -6,6 +6,7 @@ import '../../core/utils/responsive.dart';
 import '../../providers/providers.dart';
 import '../../models/models.dart';
 import '../../widgets/track_options_sheet.dart';
+import '../../widgets/playlist_options_sheet.dart';
 import '../scaffold_with_mini_player.dart';
 
 /// Playlist Detail Screen - TIDAL Style Design
@@ -28,7 +29,8 @@ class PlaylistDetailScreen extends ConsumerWidget {
     return ScaffoldWithMiniPlayer(
       body: playlistDetail.when(
         loading: () => _buildLoadingState(context, responsive),
-        error: (error, _) => _buildErrorState(context, error.toString(), responsive),
+        error: (error, _) =>
+            _buildErrorState(context, error.toString(), responsive),
         data: (data) {
           if (data == null) {
             return _buildErrorState(context, 'Playlist not found', responsive);
@@ -56,7 +58,8 @@ class PlaylistDetailScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildErrorState(BuildContext context, String error, Responsive responsive) {
+  Widget _buildErrorState(
+      BuildContext context, String error, Responsive responsive) {
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
       appBar: AppBar(
@@ -71,7 +74,8 @@ class PlaylistDetailScreen extends ConsumerWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.error_outline, color: AppTheme.secondaryColor, size: 48),
+            const Icon(Icons.error_outline,
+                color: AppTheme.secondaryColor, size: 48),
             const SizedBox(height: 16),
             Text(
               'Failed to load playlist',
@@ -80,7 +84,8 @@ class PlaylistDetailScreen extends ConsumerWidget {
             const SizedBox(height: 8),
             Text(
               error,
-              style: AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor),
+              style:
+                  AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor),
               textAlign: TextAlign.center,
             ),
           ],
@@ -123,7 +128,22 @@ class PlaylistDetailScreen extends ConsumerWidget {
               ),
               IconButton(
                 icon: const Icon(Icons.more_vert, color: Colors.white),
-                onPressed: () {},
+                onPressed: () => PlaylistOptionsSheet.show(
+                  context,
+                  Playlist(
+                    id: playlistDetail.id,
+                    title: playlistDetail.title,
+                    description: playlistDetail.description,
+                    coverArtUrl: playlistDetail.coverArtUrl,
+                    trackCount: playlistDetail.trackCount,
+                    duration: playlistDetail.duration,
+                    creatorName: playlistDetail.creatorName,
+                    source: playlistDetail.source,
+                    likesCount: playlistDetail.likesCount,
+                    createdAt: playlistDetail.createdAt,
+                    updatedAt: playlistDetail.updatedAt,
+                  ),
+                ),
               ),
             ],
           ),
@@ -131,7 +151,8 @@ class PlaylistDetailScreen extends ConsumerWidget {
           // Header Content (Centered Cover + Info)
           SliverToBoxAdapter(
             child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
+              padding: EdgeInsets.symmetric(
+                  horizontal: responsive.horizontalPadding),
               child: Column(
                 children: [
                   const SizedBox(height: 8),
@@ -158,16 +179,19 @@ class PlaylistDetailScreen extends ConsumerWidget {
                               fit: BoxFit.cover,
                               placeholder: (_, __) => Container(
                                 color: AppTheme.surfaceColor,
-                                child: const Icon(Icons.playlist_play, size: 60, color: AppTheme.secondaryColor),
+                                child: const Icon(Icons.playlist_play,
+                                    size: 60, color: AppTheme.secondaryColor),
                               ),
                               errorWidget: (_, __, ___) => Container(
                                 color: AppTheme.surfaceColor,
-                                child: const Icon(Icons.playlist_play, size: 60, color: AppTheme.secondaryColor),
+                                child: const Icon(Icons.playlist_play,
+                                    size: 60, color: AppTheme.secondaryColor),
                               ),
                             )
                           : Container(
                               color: AppTheme.surfaceColor,
-                              child: const Icon(Icons.playlist_play, size: 60, color: AppTheme.secondaryColor),
+                              child: const Icon(Icons.playlist_play,
+                                  size: 60, color: AppTheme.secondaryColor),
                             ),
                     ),
                   ),
@@ -218,7 +242,8 @@ class PlaylistDetailScreen extends ConsumerWidget {
                   const SizedBox(height: 12),
 
                   // Description (if available)
-                  if (playlistDetail.description != null && playlistDetail.description!.isNotEmpty)
+                  if (playlistDetail.description != null &&
+                      playlistDetail.description!.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Text(
@@ -258,15 +283,17 @@ class PlaylistDetailScreen extends ConsumerWidget {
                           onPressed: playlistDetail.tracks.isNotEmpty
                               ? () {
                                   ref.read(playerProvider.notifier).playQueue(
-                                    playlistDetail.tracks,
-                                    startIndex: 0,
-                                    source: 'Playlist: ${playlistDetail.title}',
-                                  );
+                                        playlistDetail.tracks,
+                                        startIndex: 0,
+                                        source:
+                                            'Playlist: ${playlistDetail.title}',
+                                      );
                                 }
                               : null,
                           style: OutlinedButton.styleFrom(
                             foregroundColor: Colors.white,
-                            side: const BorderSide(color: Colors.white, width: 1),
+                            side:
+                                const BorderSide(color: Colors.white, width: 1),
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(24),
@@ -296,12 +323,15 @@ class PlaylistDetailScreen extends ConsumerWidget {
                         child: ElevatedButton(
                           onPressed: playlistDetail.tracks.isNotEmpty
                               ? () {
-                                  final shuffled = List<Track>.from(playlistDetail.tracks)..shuffle();
+                                  final shuffled =
+                                      List<Track>.from(playlistDetail.tracks)
+                                        ..shuffle();
                                   ref.read(playerProvider.notifier).playQueue(
-                                    shuffled,
-                                    startIndex: 0,
-                                    source: 'Playlist: ${playlistDetail.title} (Shuffled)',
-                                  );
+                                        shuffled,
+                                        startIndex: 0,
+                                        source:
+                                            'Playlist: ${playlistDetail.title} (Shuffled)',
+                                      );
                                 }
                               : null,
                           style: ElevatedButton.styleFrom(
@@ -342,7 +372,8 @@ class PlaylistDetailScreen extends ConsumerWidget {
                           // We need Consumer for watching provider
                           return Consumer(
                             builder: (context, ref, _) {
-                              final isSaved = ref.watch(isPlaylistSavedProvider(playlistDetail.id));
+                              final isSaved = ref.watch(
+                                  isPlaylistSavedProvider(playlistDetail.id));
                               return _ActionIconButton(
                                 icon: isSaved ? Icons.check : Icons.add,
                                 label: isSaved ? 'Added' : 'Add',
@@ -362,7 +393,9 @@ class PlaylistDetailScreen extends ConsumerWidget {
                                     createdAt: playlistDetail.createdAt,
                                     updatedAt: playlistDetail.updatedAt,
                                   );
-                                  ref.read(savedPlaylistsProvider.notifier).togglePlaylist(playlist);
+                                  ref
+                                      .read(savedPlaylistsProvider.notifier)
+                                      .togglePlaylist(playlist);
                                 },
                               );
                             },
@@ -374,7 +407,16 @@ class PlaylistDetailScreen extends ConsumerWidget {
                         icon: Icons.download_outlined,
                         label: 'Download',
                         onTap: () {
-                          // TODO: Download playlist
+                          ref.read(downloadProvider.notifier).addAllToQueue(
+                                playlistDetail.tracks,
+                              );
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'Queued ${playlistDetail.tracks.length} tracks for download',
+                              ),
+                            ),
+                          );
                         },
                       ),
                       const SizedBox(width: 48),
@@ -416,10 +458,10 @@ class PlaylistDetailScreen extends ConsumerWidget {
                     isPlaying: isPlaying,
                     onTap: () {
                       ref.read(playerProvider.notifier).playQueue(
-                        playlistDetail.tracks,
-                        startIndex: index,
-                        source: 'Playlist: ${playlistDetail.title}',
-                      );
+                            playlistDetail.tracks,
+                            startIndex: index,
+                            source: 'Playlist: ${playlistDetail.title}',
+                          );
                     },
                     onMoreTap: () {
                       TrackOptionsSheet.show(context, track);
@@ -432,7 +474,10 @@ class PlaylistDetailScreen extends ConsumerWidget {
 
           // Bottom Spacing
           SliverToBoxAdapter(
-            child: SizedBox(height: responsive.miniPlayerHeight + responsive.bottomNavHeight + 20),
+            child: SizedBox(
+                height: responsive.miniPlayerHeight +
+                    responsive.bottomNavHeight +
+                    20),
           ),
         ],
       ),
@@ -442,12 +487,12 @@ class PlaylistDetailScreen extends ConsumerWidget {
   String _buildStatsText(PlaylistDetail playlist) {
     final trackCount = playlist.trackCount;
     final duration = playlist.formattedDuration;
-    
+
     String statsText = '$trackCount TRACKS';
     if (duration.isNotEmpty) {
       statsText += ' (${duration.toUpperCase()})';
     }
-    
+
     return statsText;
   }
 }
@@ -519,16 +564,19 @@ class _PlaylistTrackTile extends StatelessWidget {
                   fit: BoxFit.cover,
                   placeholder: (_, __) => Container(
                     color: AppTheme.surfaceColor,
-                    child: const Icon(Icons.music_note, color: AppTheme.secondaryColor, size: 24),
+                    child: const Icon(Icons.music_note,
+                        color: AppTheme.secondaryColor, size: 24),
                   ),
                   errorWidget: (_, __, ___) => Container(
                     color: AppTheme.surfaceColor,
-                    child: const Icon(Icons.music_note, color: AppTheme.secondaryColor, size: 24),
+                    child: const Icon(Icons.music_note,
+                        color: AppTheme.secondaryColor, size: 24),
                   ),
                 )
               : Container(
                   color: AppTheme.surfaceColor,
-                  child: const Icon(Icons.music_note, color: AppTheme.secondaryColor, size: 24),
+                  child: const Icon(Icons.music_note,
+                      color: AppTheme.secondaryColor, size: 24),
                 ),
         ),
       ),
@@ -578,7 +626,8 @@ class _PlaylistTrackTile extends StatelessWidget {
         onTap: onMoreTap,
         child: const Padding(
           padding: EdgeInsets.all(8),
-          child: Icon(Icons.more_vert, color: AppTheme.secondaryColor, size: 22),
+          child:
+              Icon(Icons.more_vert, color: AppTheme.secondaryColor, size: 22),
         ),
       ),
     );

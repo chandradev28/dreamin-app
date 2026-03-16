@@ -80,7 +80,8 @@ class AlbumOptionsSheet extends ConsumerWidget {
                       const SizedBox(height: 2),
                       Text(
                         album.artist,
-                        style: AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor),
+                        style: AppTheme.bodySmall
+                            .copyWith(color: AppTheme.secondaryColor),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -105,9 +106,9 @@ class AlbumOptionsSheet extends ConsumerWidget {
                 final albumDetail = await tidalService.getAlbum(album.id);
                 if (albumDetail.tracks.isNotEmpty) {
                   ref.read(playerProvider.notifier).playQueue(
-                    albumDetail.tracks,
-                    source: 'Album: ${album.title}',
-                  );
+                        albumDetail.tracks,
+                        source: 'Album: ${album.title}',
+                      );
                 }
               } catch (e) {
                 print('Error playing album: $e');
@@ -124,11 +125,12 @@ class AlbumOptionsSheet extends ConsumerWidget {
                 final tidalService = ref.read(tidalServiceProvider);
                 final albumDetail = await tidalService.getAlbum(album.id);
                 if (albumDetail.tracks.isNotEmpty) {
-                  final shuffled = List<Track>.from(albumDetail.tracks)..shuffle();
+                  final shuffled = List<Track>.from(albumDetail.tracks)
+                    ..shuffle();
                   ref.read(playerProvider.notifier).playQueue(
-                    shuffled,
-                    source: 'Album: ${album.title} (Shuffled)',
-                  );
+                        shuffled,
+                        source: 'Album: ${album.title} (Shuffled)',
+                      );
                 }
               } catch (e) {
                 print('Error shuffling album: $e');
@@ -149,12 +151,39 @@ class AlbumOptionsSheet extends ConsumerWidget {
                 }
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('Added ${albumDetail.tracks.length} tracks to queue'),
+                    content: Text(
+                        'Added ${albumDetail.tracks.length} tracks to queue'),
                     backgroundColor: AppTheme.surfaceLight,
                   ),
                 );
               } catch (e) {
                 print('Error adding album to queue: $e');
+              }
+            },
+          ),
+
+          _OptionTile(
+            icon: Icons.download_outlined,
+            label: 'Download',
+            onTap: () async {
+              Navigator.pop(context);
+              try {
+                final tidalService = ref.read(tidalServiceProvider);
+                final albumDetail = await tidalService.getAlbum(album.id);
+                ref
+                    .read(downloadProvider.notifier)
+                    .addAllToQueue(albumDetail.tracks);
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'Queued ${albumDetail.tracks.length} tracks for download',
+                    ),
+                    backgroundColor: AppTheme.surfaceLight,
+                  ),
+                );
+              } catch (e) {
+                print('Error downloading album: $e');
               }
             },
           ),
@@ -165,14 +194,18 @@ class AlbumOptionsSheet extends ConsumerWidget {
               final isAlbumSaved = ref.watch(isAlbumSavedProvider(album.id));
               return _OptionTile(
                 icon: isAlbumSaved ? Icons.check : Icons.add,
-                label: isAlbumSaved ? 'Remove from collection' : 'Add to collection',
+                label: isAlbumSaved
+                    ? 'Remove from collection'
+                    : 'Add to collection',
                 iconColor: isAlbumSaved ? AppTheme.primaryColor : null,
                 onTap: () {
                   ref.read(savedAlbumsProvider.notifier).toggleAlbum(album);
                   Navigator.pop(context);
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text(isAlbumSaved ? 'Removed from collection' : 'Added to collection'),
+                      content: Text(isAlbumSaved
+                          ? 'Removed from collection'
+                          : 'Added to collection'),
                       backgroundColor: AppTheme.surfaceLight,
                     ),
                   );
@@ -189,7 +222,8 @@ class AlbumOptionsSheet extends ConsumerWidget {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => AlbumDetailScreen(albumId: album.id, album: album),
+                  builder: (_) =>
+                      AlbumDetailScreen(albumId: album.id, album: album),
                 ),
               );
             },
@@ -204,7 +238,8 @@ class AlbumOptionsSheet extends ConsumerWidget {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => ArtistDetailScreen(artistId: album.artistId),
+                    builder: (_) =>
+                        ArtistDetailScreen(artistId: album.artistId),
                   ),
                 );
               }

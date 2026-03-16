@@ -36,6 +36,7 @@ class PlayerState {
   final int? currentBitDepth;
   final int? currentSampleRate;
   final String? currentCodec;
+  final List<String> queuedTrackKeys;
 
   const PlayerState({
     this.currentTrack,
@@ -54,6 +55,7 @@ class PlayerState {
     this.currentBitDepth,
     this.currentSampleRate,
     this.currentCodec,
+    this.queuedTrackKeys = const [],
   });
 
   bool get isPlaying => status == PlaybackStatus.playing;
@@ -106,6 +108,7 @@ class PlayerState {
     int? currentBitDepth,
     int? currentSampleRate,
     String? currentCodec,
+    List<String>? queuedTrackKeys,
   }) {
     return PlayerState(
       currentTrack: currentTrack ?? this.currentTrack,
@@ -124,6 +127,7 @@ class PlayerState {
       currentBitDepth: currentBitDepth ?? this.currentBitDepth,
       currentSampleRate: currentSampleRate ?? this.currentSampleRate,
       currentCodec: currentCodec ?? this.currentCodec,
+      queuedTrackKeys: queuedTrackKeys ?? this.queuedTrackKeys,
     );
   }
 }
@@ -365,6 +369,26 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     return a.id == b.id && a.source == b.source;
   }
 
+  String _trackKey(Track track) => '${track.source.name}:${track.id}';
+
+  List<String> _trimQueuedTrackKeys(
+      List<Track> queue, int queueIndex, List<String> queuedTrackKeys) {
+    if (queuedTrackKeys.isEmpty || queue.isEmpty) {
+      return queuedTrackKeys;
+    }
+
+    final remaining = List<String>.from(queuedTrackKeys);
+    final lastIndex = queueIndex.clamp(0, queue.length - 1);
+    for (var i = 0; i <= lastIndex; i++) {
+      final key = _trackKey(queue[i]);
+      final matchIndex = remaining.indexOf(key);
+      if (matchIndex != -1) {
+        remaining.removeAt(matchIndex);
+      }
+    }
+    return remaining;
+  }
+
   void _syncQueueForDirectPlay(Track track) {
     final index = state.queue.indexWhere((t) => _isSameTrack(t, track));
     if (index == -1) {
@@ -373,9 +397,14 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
         queue: [track],
         queueIndex: 0,
         queueSource: null,
+        queuedTrackKeys: const [],
       );
     } else if (state.queueIndex != index) {
-      state = state.copyWith(queueIndex: index);
+      state = state.copyWith(
+        queueIndex: index,
+        queuedTrackKeys:
+            _trimQueuedTrackKeys(state.queue, index, state.queuedTrackKeys),
+      );
     }
   }
 
@@ -643,6 +672,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       queue: tracks,
       queueIndex: startIndex,
       queueSource: source,
+      queuedTrackKeys: const [],
     );
 
     await play(tracks[startIndex]);
@@ -742,7 +772,9 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     }
 
     final newQueue = List<Track>.from(state.queue)..add(track);
-    state = state.copyWith(queue: newQueue);
+    final queuedTrackKeys = List<String>.from(state.queuedTrackKeys)
+      ..add(_trackKey(track));
+    state = state.copyWith(queue: newQueue, queuedTrackKeys: queuedTrackKeys);
   }
 
   /// Add track to play next (after current track)
@@ -754,9 +786,12 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     }
 
     final newQueue = List<Track>.from(state.queue);
-    final insertIndex = state.queueIndex + 1;
+    final insertIndex = (state.queueIndex + 1 + state.queuedTrackKeys.length)
+        .clamp(0, newQueue.length);
     newQueue.insert(insertIndex.clamp(0, newQueue.length), track);
-    state = state.copyWith(queue: newQueue);
+    final queuedTrackKeys = List<String>.from(state.queuedTrackKeys)
+      ..add(_trackKey(track));
+    state = state.copyWith(queue: newQueue, queuedTrackKeys: queuedTrackKeys);
   }
 
   /// Toggle shuffle mode
@@ -770,6 +805,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
         queueIndex: currentTrack != null
             ? _originalQueue.indexWhere((t) => t.id == currentTrack.id)
             : 0,
+        queuedTrackKeys: const [],
       );
     } else {
       // Shuffle queue
@@ -786,6 +822,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
         isShuffleOn: true,
         queue: shuffled,
         queueIndex: 0,
+        queuedTrackKeys: const [],
       );
     }
   }
@@ -839,6 +876,8 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     state = state.copyWith(
       queue: queue,
       queueIndex: newIndex,
+      queuedTrackKeys:
+          _trimQueuedTrackKeys(queue, newIndex, state.queuedTrackKeys),
     );
   }
 
@@ -871,16 +910,53 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     );
   }
 
-  /// Clear upcoming tracks while keeping the current playback context
-  void clearUpcomingQueue() {
-    if (state.queue.isEmpty) return;
+  /// Reorder only the user-added queued tracks that sit after the current track.
+  void reorderQueuedTracks(int oldIndex, int newIndex) {
+    if (oldIndex < 0 ||
+        newIndex < 0 ||
+        oldIndex >= state.queuedTrackKeys.length ||
+        newIndex >= state.queuedTrackKeys.length ||
+        oldIndex == newIndex) {
+      return;
+    }
 
-    final keepCount = (state.queueIndex + 1).clamp(1, state.queue.length);
-    final queue = state.queue.take(keepCount).toList();
+    final queue = List<Track>.from(state.queue);
+    final queuedTrackKeys = List<String>.from(state.queuedTrackKeys);
+    final queueStart = state.queueIndex + 1;
+    if (queueStart < 0 || queueStart >= queue.length) {
+      return;
+    }
+
+    final movedTrack = queue.removeAt(queueStart + oldIndex);
+    queue.insert(queueStart + newIndex, movedTrack);
+
+    final movedKey = queuedTrackKeys.removeAt(oldIndex);
+    queuedTrackKeys.insert(newIndex, movedKey);
 
     state = state.copyWith(
       queue: queue,
-      queueIndex: queue.length - 1,
+      queuedTrackKeys: queuedTrackKeys,
+    );
+  }
+
+  /// Clear only the manually queued upcoming tracks.
+  void clearUpcomingQueue() {
+    if (state.queue.isEmpty || state.queuedTrackKeys.isEmpty) return;
+
+    final queue = List<Track>.from(state.queue);
+    final removeCount = state.queuedTrackKeys.length.clamp(
+      0,
+      queue.length - (state.queueIndex + 1),
+    );
+    if (removeCount <= 0) {
+      return;
+    }
+
+    queue.removeRange(state.queueIndex + 1, state.queueIndex + 1 + removeCount);
+
+    state = state.copyWith(
+      queue: queue,
+      queuedTrackKeys: const [],
     );
   }
 

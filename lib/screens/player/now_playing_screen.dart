@@ -28,6 +28,8 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
   Color _secondaryColor = AppTheme.surfaceColor;
   String? _lastCoverUrl;
   String? _lastPrefetchedTrackKey;
+  String? _lastNextUpTrackKey;
+  List<String> _nextUpOrderKeys = const [];
   _PlayerView _activeView = _PlayerView.player;
   final ScrollController _lyricsScrollController = ScrollController();
   int _lastLyricIndex = -1;
@@ -751,16 +753,20 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
         final nextUpAsync = ref.watch(playerNextUpProvider(track));
         return nextUpAsync.when(
           data: (items) {
-            if (items.isEmpty) {
+            final orderedItems = _orderedNextUpTracks(track, items);
+            final queueTracks = _queuedTracks(playerState);
+            if (orderedItems.isEmpty && queueTracks.isEmpty) {
               return _buildPanelEmptyState(
                 'Next Up from ${track.artist}',
                 'No same-artist tracks were found for this song yet.',
               );
             }
-            return _buildTrackPanel(
-              title: 'Next Up from ${track.artist}',
-              tracks: items,
-              trailingIcon: Icons.drag_handle_rounded,
+            return _buildNextUpPanel(
+              context,
+              track,
+              playerState,
+              queueTracks,
+              orderedItems,
             );
           },
           loading: () => _buildPanelLoading('Next Up from ${track.artist}'),
@@ -773,8 +779,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
         final suggestedAsync = ref.watch(playerSuggestedTracksProvider(track));
         return suggestedAsync.when(
           data: (items) {
-            final queueTracks = _queueTracks(playerState);
-            if (items.isEmpty && queueTracks.length <= 1) {
+            if (items.isEmpty) {
               return _buildPanelEmptyState(
                 'Suggested tracks',
                 'Recommendations are still warming up from your listening history.',
@@ -782,9 +787,6 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
             }
             return _buildSuggestedPanel(
               context,
-              track,
-              playerState,
-              queueTracks,
               items,
             );
           },
@@ -819,27 +821,70 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
     }
   }
 
-  List<Track> _queueTracks(PlayerState playerState) {
+  List<Track> _queuedTracks(PlayerState playerState) {
     if (playerState.queue.isEmpty ||
         playerState.queueIndex < 0 ||
-        playerState.queueIndex >= playerState.queue.length) {
+        playerState.queueIndex >= playerState.queue.length ||
+        playerState.queuedTrackKeys.isEmpty) {
       return const [];
     }
 
-    return playerState.queue.sublist(playerState.queueIndex);
+    final start = playerState.queueIndex + 1;
+    final end = (start + playerState.queuedTrackKeys.length)
+        .clamp(start, playerState.queue.length);
+    if (start >= playerState.queue.length || start >= end) {
+      return const [];
+    }
+    return playerState.queue.sublist(start, end);
   }
 
-  Widget _buildSuggestedPanel(
+  String _trackKey(Track track) => '${track.source.name}:${track.id}';
+
+  List<Track> _orderedNextUpTracks(Track currentTrack, List<Track> tracks) {
+    final currentTrackKey = _trackKey(currentTrack);
+    if (_lastNextUpTrackKey != currentTrackKey) {
+      _lastNextUpTrackKey = currentTrackKey;
+      _nextUpOrderKeys = tracks.map(_trackKey).toList();
+      return tracks;
+    }
+
+    if (_nextUpOrderKeys.isEmpty) {
+      _nextUpOrderKeys = tracks.map(_trackKey).toList();
+      return tracks;
+    }
+
+    final byKey = <String, Track>{
+      for (final track in tracks) _trackKey(track): track,
+    };
+    final ordered = <Track>[];
+
+    for (final key in _nextUpOrderKeys) {
+      final track = byKey.remove(key);
+      if (track != null) {
+        ordered.add(track);
+      }
+    }
+
+    if (byKey.isNotEmpty) {
+      final remaining = byKey.values.toList();
+      ordered.addAll(remaining);
+      _nextUpOrderKeys = ordered.map(_trackKey).toList();
+    }
+
+    return ordered;
+  }
+
+  Widget _buildNextUpPanel(
     BuildContext context,
     Track currentTrack,
     PlayerState playerState,
     List<Track> queueTracks,
-    List<Track> suggestedTracks,
+    List<Track> nextUpTracks,
   ) {
     return ListView(
       padding: EdgeInsets.zero,
       children: [
-        if (queueTracks.length > 1) ...[
+        if (queueTracks.isNotEmpty) ...[
           Row(
             children: [
               Expanded(
@@ -867,16 +912,17 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
               if (newIndex > oldIndex) {
                 newIndex -= 1;
               }
-
-              ref.read(playerProvider.notifier).reorderQueue(
-                    playerState.queueIndex + oldIndex,
-                    playerState.queueIndex + newIndex,
+              ref.read(playerProvider.notifier).reorderQueuedTracks(
+                    oldIndex,
+                    newIndex,
                   );
             },
             itemBuilder: (context, index) {
               final item = queueTracks[index];
               return Padding(
-                key: ValueKey('queue-${item.id}-${item.source.name}-$index'),
+                key: ValueKey(
+                  'queued-${item.id}-${item.source.name}-$index',
+                ),
                 padding: EdgeInsets.only(
                   bottom: index == queueTracks.length - 1 ? 0 : 16,
                 ),
@@ -894,13 +940,92 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                   ),
                   onTap: () => ref
                       .read(playerProvider.notifier)
-                      .playAtIndex(playerState.queueIndex + index),
+                      .playAtIndex(playerState.queueIndex + index + 1),
                 ),
               );
             },
           ),
           const SizedBox(height: 30),
         ],
+        Text(
+          'Next Up from ${currentTrack.artist}',
+          style: AppTheme.headlineMedium.copyWith(
+            color: Colors.white,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 18),
+        if (nextUpTracks.isEmpty)
+          _buildPanelEmptyState(
+            'Next Up from ${currentTrack.artist}',
+            'No same-artist tracks were found for this song yet.',
+          )
+        else
+          ReorderableListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            buildDefaultDragHandles: false,
+            itemCount: nextUpTracks.length,
+            onReorder: (oldIndex, newIndex) {
+              if (newIndex > oldIndex) {
+                newIndex -= 1;
+              }
+              setState(() {
+                final keys = List<String>.from(_nextUpOrderKeys);
+                final movedKey = keys.removeAt(oldIndex);
+                keys.insert(newIndex, movedKey);
+                _nextUpOrderKeys = keys;
+              });
+            },
+            itemBuilder: (context, index) {
+              final item = nextUpTracks[index];
+              return Padding(
+                key: ValueKey(
+                  'next-up-${item.id}-${item.source.name}-$index',
+                ),
+                padding: EdgeInsets.only(
+                  bottom: index == nextUpTracks.length - 1 ? 0 : 16,
+                ),
+                child: _buildTrackRow(
+                  item,
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(
+                          Icons.playlist_add_rounded,
+                          color: Colors.white70,
+                        ),
+                        onPressed: () => _addTrackToQueue(context, item),
+                      ),
+                      ReorderableDragStartListener(
+                        index: index,
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 4),
+                          child: Icon(
+                            Icons.drag_handle_rounded,
+                            color: Colors.white70,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  onTap: () => ref.read(playerProvider.notifier).play(item),
+                ),
+              );
+            },
+          ),
+      ],
+    );
+  }
+
+  Widget _buildSuggestedPanel(
+    BuildContext context,
+    List<Track> suggestedTracks,
+  ) {
+    return ListView(
+      padding: EdgeInsets.zero,
+      children: [
         Text(
           'Suggested tracks',
           style: AppTheme.headlineMedium.copyWith(
@@ -923,66 +1048,12 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
               ),
               child: _buildTrackRow(
                 item,
-                trailing: const Icon(
-                  Icons.playlist_add_rounded,
-                  color: Colors.white70,
-                ),
-                onTrailingTap: () {
-                  ref.read(playerProvider.notifier).addToQueueNext(item);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Added "${item.title}" to play next'),
-                      duration: const Duration(seconds: 2),
-                    ),
-                  );
-                },
+                trailingIcon: Icons.playlist_add_rounded,
+                onTrailingTap: () => _addTrackToQueue(context, item),
                 onTap: () => ref.read(playerProvider.notifier).play(item),
               ),
             );
           }),
-      ],
-    );
-  }
-
-  Widget _buildTrackPanel({
-    required String title,
-    required List<Track> tracks,
-    required IconData trailingIcon,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          title,
-          style: AppTheme.headlineMedium.copyWith(
-            color: Colors.white,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 18),
-        Expanded(
-          child: ListView.separated(
-            itemCount: tracks.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 16),
-            itemBuilder: (context, index) {
-              final item = tracks[index];
-              return _buildTrackRow(
-                item,
-                trailingIcon: trailingIcon,
-                onTrailingTap: () {
-                  ref.read(playerProvider.notifier).addToQueueNext(item);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Added "${item.title}" to play next'),
-                      duration: const Duration(seconds: 2),
-                    ),
-                  );
-                },
-                onTap: () => ref.read(playerProvider.notifier).play(item),
-              );
-            },
-          ),
-        ),
       ],
     );
   }
@@ -1045,6 +1116,16 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
               onPressed: onTrailingTap,
             ),
         ],
+      ),
+    );
+  }
+
+  void _addTrackToQueue(BuildContext context, Track track) {
+    ref.read(playerProvider.notifier).addToQueueNext(track);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Added "${track.title}" to your queue'),
+        duration: const Duration(seconds: 2),
       ),
     );
   }

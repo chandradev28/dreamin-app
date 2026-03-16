@@ -6,6 +6,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/utils/responsive.dart';
 import '../../providers/providers.dart';
 import '../../models/models.dart';
+import '../../widgets/album_options_sheet.dart';
 import '../../widgets/widgets.dart';
 import '../artist/artist_detail_screen.dart';
 import '../scaffold_with_mini_player.dart';
@@ -201,7 +202,7 @@ class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
     );
   }
 
-  Widget _buildAppBar(BuildContext context) {
+  Widget _buildAppBar(BuildContext context, {VoidCallback? onMore}) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
       child: Row(
@@ -213,7 +214,7 @@ class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
           const Spacer(),
           IconButton(
             icon: const Icon(Icons.more_vert, color: Colors.white),
-            onPressed: () {},
+            onPressed: onMore,
           ),
         ],
       ),
@@ -232,7 +233,30 @@ class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
       slivers: [
         // App Bar
         SliverToBoxAdapter(
-            child: SafeArea(bottom: false, child: _buildAppBar(context))),
+          child: SafeArea(
+            bottom: false,
+            child: _buildAppBar(
+              context,
+              onMore: () => AlbumOptionsSheet.show(
+                context,
+                Album(
+                  id: albumDetail.id,
+                  title: albumDetail.title,
+                  artist: albumDetail.artist,
+                  artistId: albumDetail.artistId,
+                  coverArtUrl: albumDetail.coverArtUrl,
+                  year: albumDetail.year,
+                  trackCount: albumDetail.trackCount,
+                  source: albumDetail.source,
+                  quality: albumDetail.quality,
+                  duration: albumDetail.duration,
+                  isExplicit: albumDetail.isExplicit,
+                  albumType: albumDetail.albumType,
+                ),
+              ),
+            ),
+          ),
+        ),
 
         // Album Header (Cover + Info)
         SliverToBoxAdapter(
@@ -241,6 +265,18 @@ class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
             onArtistTap: () => _navigateToArtist(context, albumDetail),
             onPlay: () => _playAlbum(ref, albumDetail, shuffle: false),
             onShuffle: () => _playAlbum(ref, albumDetail, shuffle: true),
+            onDownload: () {
+              ref.read(downloadProvider.notifier).addAllToQueue(
+                    albumDetail.tracks,
+                  );
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    'Queued ${albumDetail.tracks.length} tracks for download',
+                  ),
+                ),
+              );
+            },
             isAlbumSaved: ref.watch(isAlbumSavedProvider(albumDetail.id)),
             onToggleSave: () {
               // Create Album from AlbumDetail for saving
@@ -422,6 +458,7 @@ class _AlbumHeader extends StatelessWidget {
   final VoidCallback onArtistTap;
   final VoidCallback onPlay;
   final VoidCallback onShuffle;
+  final VoidCallback onDownload;
   final bool isAlbumSaved;
   final VoidCallback onToggleSave;
 
@@ -430,6 +467,7 @@ class _AlbumHeader extends StatelessWidget {
     required this.onArtistTap,
     required this.onPlay,
     required this.onShuffle,
+    required this.onDownload,
     required this.isAlbumSaved,
     required this.onToggleSave,
   });
@@ -602,9 +640,10 @@ class _AlbumHeader extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
               _ActionIcon(
-                  icon: Icons.download_outlined,
-                  label: 'Download',
-                  onTap: () {}),
+                icon: Icons.download_outlined,
+                label: 'Download',
+                onTap: onDownload,
+              ),
               _ActionIcon(
                 icon: isAlbumSaved ? Icons.check : Icons.add,
                 label: isAlbumSaved ? 'Added' : 'Add',

@@ -5,6 +5,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/utils/responsive.dart';
 import '../../providers/providers.dart';
 import '../../models/models.dart';
+import '../../widgets/artist_options_sheet.dart';
 import '../../widgets/track_options_sheet.dart';
 import '../album/album_detail_screen.dart';
 import '../album/view_all_screen.dart';
@@ -204,12 +205,21 @@ class ArtistDetailScreen extends ConsumerWidget {
           ? artistDetail.bio
           : extrasAsync.valueOrNull?.bioSummary,
     );
+    final artistSummary = Artist(
+      id: artistDetail.id,
+      name: artistDetail.name,
+      imageUrl: artistDetail.imageUrl,
+      albumCount: artistDetail.albumCount,
+      source: artistDetail.source,
+      bio: artistDetail.bio,
+    );
+    final isSavedArtist = ref.watch(isArtistSavedProvider(artistDetail.id));
 
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
       body: CustomScrollView(
         slivers: [
-          _buildHeroHeader(context, artistDetail, bioText),
+          _buildHeroHeader(context, artistDetail, bioText, artistSummary),
           SliverToBoxAdapter(
             child: Padding(
               padding: EdgeInsets.fromLTRB(
@@ -305,8 +315,13 @@ class ArtistDetailScreen extends ConsumerWidget {
                       const SizedBox(width: 36),
                       _ActionIconButton(
                         icon: Icons.add,
-                        label: 'Follow',
-                        onTap: () {},
+                        label: isSavedArtist ? 'Following' : 'Follow',
+                        isActive: isSavedArtist,
+                        onTap: () {
+                          ref
+                              .read(savedArtistsProvider.notifier)
+                              .toggleArtist(artistSummary);
+                        },
                       ),
                       const SizedBox(width: 36),
                       _ActionIconButton(
@@ -702,6 +717,7 @@ class ArtistDetailScreen extends ConsumerWidget {
     BuildContext context,
     ArtistDetail artistDetail,
     String? bioText,
+    Artist artistSummary,
   ) {
     return SliverAppBar(
       backgroundColor: AppTheme.backgroundColor,
@@ -719,7 +735,7 @@ class ArtistDetailScreen extends ConsumerWidget {
         ),
         IconButton(
           icon: const Icon(Icons.more_vert, color: Colors.white),
-          onPressed: () {},
+          onPressed: () => ArtistOptionsSheet.show(context, artistSummary),
         ),
       ],
       flexibleSpace: FlexibleSpaceBar(
@@ -883,25 +899,28 @@ class _ActionIconButton extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
+  final bool isActive;
 
   const _ActionIconButton({
     required this.icon,
     required this.label,
     required this.onTap,
+    this.isActive = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final color = isActive ? AppTheme.primaryColor : Colors.white;
     return GestureDetector(
       onTap: onTap,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: Colors.white, size: 26),
+          Icon(icon, color: color, size: 26),
           const SizedBox(height: 6),
           Text(
             label,
-            style: const TextStyle(color: Colors.white, fontSize: 11),
+            style: TextStyle(color: color, fontSize: 11),
           ),
         ],
       ),

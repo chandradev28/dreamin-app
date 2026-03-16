@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../data/database.dart';
 import '../models/models.dart';
 import 'providers.dart';
@@ -44,12 +45,12 @@ class SavedAlbumsNotifier extends StateNotifier<SavedAlbumsState> {
   /// Load all saved albums from database
   Future<void> loadSavedAlbums() async {
     state = state.copyWith(isLoading: true);
-    
+
     try {
       final savedAlbums = await _database.getAllSavedAlbums();
       final albums = <Album>[];
       final savedIds = <String>{};
-      
+
       for (final saved in savedAlbums) {
         try {
           final json = jsonDecode(saved.albumJson) as Map<String, dynamic>;
@@ -59,7 +60,7 @@ class SavedAlbumsNotifier extends StateNotifier<SavedAlbumsState> {
           // Skip invalid entries
         }
       }
-      
+
       state = state.copyWith(
         albums: albums,
         savedAlbumIds: savedIds,
@@ -78,14 +79,14 @@ class SavedAlbumsNotifier extends StateNotifier<SavedAlbumsState> {
   /// Save album to library
   Future<void> saveAlbum(Album album) async {
     if (state.savedAlbumIds.contains(album.id)) return;
-    
+
     final albumJson = jsonEncode(album.toJson());
     await _database.saveAlbum(
       albumId: album.id,
       source: album.source.index,
       albumJson: albumJson,
     );
-    
+
     state = state.copyWith(
       albums: [album, ...state.albums],
       savedAlbumIds: {...state.savedAlbumIds, album.id},
@@ -95,7 +96,7 @@ class SavedAlbumsNotifier extends StateNotifier<SavedAlbumsState> {
   /// Remove album from library
   Future<void> removeAlbum(String albumId, int source) async {
     await _database.removeSavedAlbum(albumId, source);
-    
+
     state = state.copyWith(
       albums: state.albums.where((a) => a.id != albumId).toList(),
       savedAlbumIds: state.savedAlbumIds.where((id) => id != albumId).toSet(),
@@ -117,7 +118,8 @@ class SavedAlbumsNotifier extends StateNotifier<SavedAlbumsState> {
 // ============================================================================
 
 /// Provider for saved albums notifier
-final savedAlbumsProvider = StateNotifierProvider<SavedAlbumsNotifier, SavedAlbumsState>((ref) {
+final savedAlbumsProvider =
+    StateNotifierProvider<SavedAlbumsNotifier, SavedAlbumsState>((ref) {
   final database = ref.watch(databaseProvider);
   return SavedAlbumsNotifier(database);
 });
@@ -168,12 +170,12 @@ class SavedPlaylistsNotifier extends StateNotifier<SavedPlaylistsState> {
   /// Load all saved playlists from database
   Future<void> loadSavedPlaylists() async {
     state = state.copyWith(isLoading: true);
-    
+
     try {
       final saved = await _database.getAllSavedPlaylists();
       final playlists = <Playlist>[];
       final savedIds = <String>{};
-      
+
       for (final s in saved) {
         try {
           final json = jsonDecode(s.playlistJson) as Map<String, dynamic>;
@@ -183,7 +185,7 @@ class SavedPlaylistsNotifier extends StateNotifier<SavedPlaylistsState> {
           // Skip invalid entries
         }
       }
-      
+
       state = state.copyWith(
         playlists: playlists,
         savedPlaylistIds: savedIds,
@@ -202,14 +204,14 @@ class SavedPlaylistsNotifier extends StateNotifier<SavedPlaylistsState> {
   /// Save playlist to library
   Future<void> savePlaylist(Playlist playlist) async {
     if (state.savedPlaylistIds.contains(playlist.id)) return;
-    
+
     final playlistJson = jsonEncode(playlist.toJson());
     await _database.savePlaylist(
       playlistId: playlist.id,
       source: playlist.source.index,
       playlistJson: playlistJson,
     );
-    
+
     state = state.copyWith(
       playlists: [playlist, ...state.playlists],
       savedPlaylistIds: {...state.savedPlaylistIds, playlist.id},
@@ -219,10 +221,11 @@ class SavedPlaylistsNotifier extends StateNotifier<SavedPlaylistsState> {
   /// Remove playlist from library
   Future<void> removePlaylist(String playlistId, int source) async {
     await _database.removeSavedPlaylist(playlistId, source);
-    
+
     state = state.copyWith(
       playlists: state.playlists.where((p) => p.id != playlistId).toList(),
-      savedPlaylistIds: state.savedPlaylistIds.where((id) => id != playlistId).toSet(),
+      savedPlaylistIds:
+          state.savedPlaylistIds.where((id) => id != playlistId).toSet(),
     );
   }
 
@@ -237,13 +240,151 @@ class SavedPlaylistsNotifier extends StateNotifier<SavedPlaylistsState> {
 }
 
 /// Provider for saved playlists notifier
-final savedPlaylistsProvider = StateNotifierProvider<SavedPlaylistsNotifier, SavedPlaylistsState>((ref) {
+final savedPlaylistsProvider =
+    StateNotifierProvider<SavedPlaylistsNotifier, SavedPlaylistsState>((ref) {
   final database = ref.watch(databaseProvider);
   return SavedPlaylistsNotifier(database);
 });
 
 /// Provider to check if specific playlist is saved
-final isPlaylistSavedProvider = Provider.family<bool, String>((ref, playlistId) {
+final isPlaylistSavedProvider =
+    Provider.family<bool, String>((ref, playlistId) {
   final state = ref.watch(savedPlaylistsProvider);
   return state.savedPlaylistIds.contains(playlistId);
+});
+
+// ============================================================================
+// SAVED ARTISTS STATE
+// ============================================================================
+
+class SavedArtistsState {
+  final List<Artist> artists;
+  final Set<String> savedArtistIds;
+  final bool isLoading;
+
+  const SavedArtistsState({
+    this.artists = const [],
+    this.savedArtistIds = const {},
+    this.isLoading = false,
+  });
+
+  SavedArtistsState copyWith({
+    List<Artist>? artists,
+    Set<String>? savedArtistIds,
+    bool? isLoading,
+  }) {
+    return SavedArtistsState(
+      artists: artists ?? this.artists,
+      savedArtistIds: savedArtistIds ?? this.savedArtistIds,
+      isLoading: isLoading ?? this.isLoading,
+    );
+  }
+}
+
+class SavedArtistsNotifier extends StateNotifier<SavedArtistsState> {
+  static const _storageKey = 'saved_artists';
+
+  SavedArtistsNotifier() : super(const SavedArtistsState()) {
+    loadSavedArtists();
+  }
+
+  Future<void> loadSavedArtists() async {
+    state = state.copyWith(isLoading: true);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final rawArtists = prefs.getStringList(_storageKey) ?? const [];
+      final artists = <Artist>[];
+      final savedIds = <String>{};
+
+      for (final rawArtist in rawArtists) {
+        try {
+          final json = jsonDecode(rawArtist) as Map<String, dynamic>;
+          final artist = Artist(
+            id: json['id']?.toString() ?? '',
+            name: json['name'] as String? ?? 'Unknown Artist',
+            imageUrl: json['imageUrl'] as String?,
+            albumCount: json['albumCount'] as int?,
+            source: MusicSource.values[json['source'] as int? ?? 0],
+            bio: json['bio'] as String?,
+          );
+          if (artist.id.isEmpty) {
+            continue;
+          }
+          artists.add(artist);
+          savedIds.add(artist.id);
+        } catch (_) {}
+      }
+
+      state = state.copyWith(
+        artists: artists,
+        savedArtistIds: savedIds,
+        isLoading: false,
+      );
+    } catch (_) {
+      state = state.copyWith(isLoading: false);
+    }
+  }
+
+  bool isArtistSaved(String artistId) {
+    return state.savedArtistIds.contains(artistId);
+  }
+
+  Future<void> _persist(List<Artist> artists) async {
+    final prefs = await SharedPreferences.getInstance();
+    final encoded = artists
+        .map(
+          (artist) => jsonEncode({
+            'id': artist.id,
+            'name': artist.name,
+            'imageUrl': artist.imageUrl,
+            'albumCount': artist.albumCount,
+            'source': artist.source.index,
+            'bio': artist.bio,
+          }),
+        )
+        .toList();
+    await prefs.setStringList(_storageKey, encoded);
+  }
+
+  Future<void> saveArtist(Artist artist) async {
+    if (state.savedArtistIds.contains(artist.id)) {
+      return;
+    }
+
+    final artists = [artist, ...state.artists];
+    await _persist(artists);
+    state = state.copyWith(
+      artists: artists,
+      savedArtistIds: {...state.savedArtistIds, artist.id},
+    );
+  }
+
+  Future<void> removeArtist(String artistId) async {
+    final artists =
+        state.artists.where((artist) => artist.id != artistId).toList();
+    await _persist(artists);
+    state = state.copyWith(
+      artists: artists,
+      savedArtistIds:
+          state.savedArtistIds.where((id) => id != artistId).toSet(),
+    );
+  }
+
+  Future<void> toggleArtist(Artist artist) async {
+    if (isArtistSaved(artist.id)) {
+      await removeArtist(artist.id);
+    } else {
+      await saveArtist(artist);
+    }
+  }
+}
+
+final savedArtistsProvider =
+    StateNotifierProvider<SavedArtistsNotifier, SavedArtistsState>((ref) {
+  return SavedArtistsNotifier();
+});
+
+final isArtistSavedProvider = Provider.family<bool, String>((ref, artistId) {
+  final state = ref.watch(savedArtistsProvider);
+  return state.savedArtistIds.contains(artistId);
 });

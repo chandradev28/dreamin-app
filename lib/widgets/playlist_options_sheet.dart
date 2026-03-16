@@ -62,7 +62,8 @@ class PlaylistOptionsSheet extends ConsumerWidget {
                           imageUrl: playlist.coverArtUrl!,
                           fit: BoxFit.cover,
                         )
-                      : const Icon(Icons.playlist_play, color: AppTheme.secondaryColor),
+                      : const Icon(Icons.playlist_play,
+                          color: AppTheme.secondaryColor),
                 ),
                 const SizedBox(width: 12),
                 // Playlist info
@@ -79,7 +80,8 @@ class PlaylistOptionsSheet extends ConsumerWidget {
                       const SizedBox(height: 2),
                       Text(
                         'by ${playlist.creatorName ?? 'Unknown'}',
-                        style: AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor),
+                        style: AppTheme.bodySmall
+                            .copyWith(color: AppTheme.secondaryColor),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -100,12 +102,13 @@ class PlaylistOptionsSheet extends ConsumerWidget {
               Navigator.pop(context);
               try {
                 final tidalService = ref.read(tidalServiceProvider);
-                final playlistDetail = await tidalService.getPlaylist(playlist.id);
+                final playlistDetail =
+                    await tidalService.getPlaylist(playlist.id);
                 if (playlistDetail.tracks.isNotEmpty) {
                   ref.read(playerProvider.notifier).playQueue(
-                    playlistDetail.tracks,
-                    source: 'Playlist: ${playlist.title}',
-                  );
+                        playlistDetail.tracks,
+                        source: 'Playlist: ${playlist.title}',
+                      );
                 }
               } catch (e) {
                 print('Error playing playlist: $e');
@@ -120,13 +123,15 @@ class PlaylistOptionsSheet extends ConsumerWidget {
               Navigator.pop(context);
               try {
                 final tidalService = ref.read(tidalServiceProvider);
-                final playlistDetail = await tidalService.getPlaylist(playlist.id);
+                final playlistDetail =
+                    await tidalService.getPlaylist(playlist.id);
                 if (playlistDetail.tracks.isNotEmpty) {
-                  final shuffled = List<Track>.from(playlistDetail.tracks)..shuffle();
+                  final shuffled = List<Track>.from(playlistDetail.tracks)
+                    ..shuffle();
                   ref.read(playerProvider.notifier).playQueue(
-                    shuffled,
-                    source: 'Playlist: ${playlist.title} (Shuffled)',
-                  );
+                        shuffled,
+                        source: 'Playlist: ${playlist.title} (Shuffled)',
+                      );
                 }
               } catch (e) {
                 print('Error shuffling playlist: $e');
@@ -141,18 +146,48 @@ class PlaylistOptionsSheet extends ConsumerWidget {
               Navigator.pop(context);
               try {
                 final tidalService = ref.read(tidalServiceProvider);
-                final playlistDetail = await tidalService.getPlaylist(playlist.id);
+                final playlistDetail =
+                    await tidalService.getPlaylist(playlist.id);
                 for (final track in playlistDetail.tracks) {
                   ref.read(playerProvider.notifier).addToQueue(track);
                 }
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('Added ${playlistDetail.tracks.length} tracks to queue'),
+                    content: Text(
+                        'Added ${playlistDetail.tracks.length} tracks to queue'),
                     backgroundColor: AppTheme.surfaceLight,
                   ),
                 );
               } catch (e) {
                 print('Error adding playlist to queue: $e');
+              }
+            },
+          ),
+
+          _OptionTile(
+            icon: Icons.download_outlined,
+            label: 'Download',
+            onTap: () async {
+              Navigator.pop(context);
+              try {
+                final tidalService = ref.read(tidalServiceProvider);
+                final playlistDetail = await tidalService.getPlaylist(
+                  playlist.id,
+                );
+                ref
+                    .read(downloadProvider.notifier)
+                    .addAllToQueue(playlistDetail.tracks);
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'Queued ${playlistDetail.tracks.length} tracks for download',
+                    ),
+                    backgroundColor: AppTheme.surfaceLight,
+                  ),
+                );
+              } catch (e) {
+                print('Error downloading playlist: $e');
               }
             },
           ),
@@ -166,11 +201,15 @@ class PlaylistOptionsSheet extends ConsumerWidget {
                 label: isSaved ? 'Remove from collection' : 'Add to collection',
                 iconColor: isSaved ? AppTheme.primaryColor : null,
                 onTap: () {
-                  ref.read(savedPlaylistsProvider.notifier).togglePlaylist(playlist);
+                  ref
+                      .read(savedPlaylistsProvider.notifier)
+                      .togglePlaylist(playlist);
                   Navigator.pop(context);
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text(isSaved ? 'Removed from collection' : 'Added to collection'),
+                      content: Text(isSaved
+                          ? 'Removed from collection'
+                          : 'Added to collection'),
                       backgroundColor: AppTheme.surfaceLight,
                     ),
                   );
@@ -187,7 +226,8 @@ class PlaylistOptionsSheet extends ConsumerWidget {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => PlaylistDetailScreen(playlistId: playlist.id, playlist: playlist),
+                  builder: (_) => PlaylistDetailScreen(
+                      playlistId: playlist.id, playlist: playlist),
                 ),
               );
             },
