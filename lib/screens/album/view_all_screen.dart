@@ -28,7 +28,7 @@ class ViewAllScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final responsive = Responsive(context);
-    
+
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
       appBar: AppBar(
@@ -70,9 +70,8 @@ class ViewAllScreen extends StatelessWidget {
   }
 
   Widget _buildAlbumGrid(BuildContext context, Responsive responsive) {
-    // Limit to 20 items
-    final items = albums!.take(20).toList();
-    
+    final items = albums!;
+
     return GridView.builder(
       padding: const EdgeInsets.all(16),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -93,8 +92,8 @@ class ViewAllScreen extends StatelessWidget {
   }
 
   Widget _buildArtistGrid(BuildContext context, Responsive responsive) {
-    final items = artists!.take(20).toList();
-    
+    final items = artists!;
+
     return GridView.builder(
       padding: const EdgeInsets.all(16),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -115,8 +114,8 @@ class ViewAllScreen extends StatelessWidget {
   }
 
   Widget _buildPlaylistGrid(BuildContext context, Responsive responsive) {
-    final items = playlists!.take(20).toList();
-    
+    final items = playlists!;
+
     return GridView.builder(
       padding: const EdgeInsets.all(16),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -134,7 +133,8 @@ class ViewAllScreen extends StatelessWidget {
             Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => PlaylistDetailScreen(playlistId: playlist.id, playlist: playlist),
+                builder: (_) => PlaylistDetailScreen(
+                    playlistId: playlist.id, playlist: playlist),
               ),
             );
           },
@@ -204,14 +204,17 @@ class _AlbumGridItem extends StatelessWidget {
                           height: double.infinity,
                           placeholder: (_, __) => Container(
                             color: AppTheme.surfaceColor,
-                            child: const Icon(Icons.album, color: AppTheme.tertiaryColor, size: 40),
+                            child: const Icon(Icons.album,
+                                color: AppTheme.tertiaryColor, size: 40),
                           ),
                           errorWidget: (_, __, ___) => Container(
                             color: AppTheme.surfaceColor,
-                            child: const Icon(Icons.album, color: AppTheme.tertiaryColor, size: 40),
+                            child: const Icon(Icons.album,
+                                color: AppTheme.tertiaryColor, size: 40),
                           ),
                         )
-                      : const Icon(Icons.album, color: AppTheme.tertiaryColor, size: 40),
+                      : const Icon(Icons.album,
+                          color: AppTheme.tertiaryColor, size: 40),
                 ),
                 // 3-dot menu overlay
                 Positioned(
@@ -225,7 +228,8 @@ class _AlbumGridItem extends StatelessWidget {
                         color: Colors.black.withOpacity(0.5),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: const Icon(Icons.more_horiz, color: Colors.white, size: 18),
+                      child: const Icon(Icons.more_horiz,
+                          color: Colors.white, size: 18),
                     ),
                   ),
                 ),
@@ -251,7 +255,8 @@ class _AlbumGridItem extends StatelessWidget {
               if (album.isExplicit)
                 Container(
                   margin: const EdgeInsets.only(left: 4),
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                   decoration: BoxDecoration(
                     color: Colors.grey.shade700,
                     borderRadius: BorderRadius.circular(2),
@@ -325,14 +330,17 @@ class _ArtistGridItem extends StatelessWidget {
                       fit: BoxFit.cover,
                       placeholder: (_, __) => Container(
                         color: AppTheme.surfaceColor,
-                        child: const Icon(Icons.person, color: AppTheme.tertiaryColor, size: 40),
+                        child: const Icon(Icons.person,
+                            color: AppTheme.tertiaryColor, size: 40),
                       ),
                       errorWidget: (_, __, ___) => Container(
                         color: AppTheme.surfaceColor,
-                        child: const Icon(Icons.person, color: AppTheme.tertiaryColor, size: 40),
+                        child: const Icon(Icons.person,
+                            color: AppTheme.tertiaryColor, size: 40),
                       ),
                     )
-                  : const Icon(Icons.person, color: AppTheme.tertiaryColor, size: 40),
+                  : const Icon(Icons.person,
+                      color: AppTheme.tertiaryColor, size: 40),
             ),
           ),
           const SizedBox(height: 10),
@@ -390,14 +398,17 @@ class _PlaylistGridItem extends StatelessWidget {
                           height: double.infinity,
                           placeholder: (_, __) => Container(
                             color: AppTheme.surfaceColor,
-                            child: const Icon(Icons.playlist_play, color: AppTheme.tertiaryColor, size: 40),
+                            child: const Icon(Icons.playlist_play,
+                                color: AppTheme.tertiaryColor, size: 40),
                           ),
                           errorWidget: (_, __, ___) => Container(
                             color: AppTheme.surfaceColor,
-                            child: const Icon(Icons.playlist_play, color: AppTheme.tertiaryColor, size: 40),
+                            child: const Icon(Icons.playlist_play,
+                                color: AppTheme.tertiaryColor, size: 40),
                           ),
                         )
-                      : const Icon(Icons.playlist_play, color: AppTheme.tertiaryColor, size: 40),
+                      : const Icon(Icons.playlist_play,
+                          color: AppTheme.tertiaryColor, size: 40),
                 ),
                 // 3-dot menu overlay
                 Positioned(
@@ -411,7 +422,8 @@ class _PlaylistGridItem extends StatelessWidget {
                         color: Colors.black.withOpacity(0.5),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: const Icon(Icons.more_horiz, color: Colors.white, size: 18),
+                      child: const Icon(Icons.more_horiz,
+                          color: Colors.white, size: 18),
                     ),
                   ),
                 ),

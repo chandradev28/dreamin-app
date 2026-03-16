@@ -1,4 +1,6 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -30,6 +32,8 @@ class AlbumDetailScreen extends ConsumerStatefulWidget {
 
 class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
   List<Album> _moreAlbumsByArtist = [];
+  List<Album> _liveAlbums = [];
+  List<Album> _otherVersions = [];
   List<Artist> _relatedArtists = [];
   bool _isLoadingExtras = false;
   bool _hasLoadedExtras = false; // Prevent duplicate loads
@@ -49,11 +53,38 @@ class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
     try {
       // 1. Load more albums by this artist from Tidal
       List<Album> moreAlbums = [];
+      List<Album> liveAlbums = [];
+      List<Album> otherVersions = [];
       try {
         final artist = await tidalService.getArtist(albumDetail.artistId);
-        moreAlbums =
-            artist.albums.where((a) => a.id != albumDetail.id).take(6).toList();
+        final buckets = _buildAlbumVariantBuckets(
+          albumDetail,
+          artist.albums.where((a) => a.id != albumDetail.id).toList(),
+        );
+        moreAlbums = buckets.moreAlbums;
+        liveAlbums = buckets.liveAlbums;
+        otherVersions = buckets.otherVersions;
       } catch (_) {}
+
+      if (otherVersions.isEmpty || liveAlbums.isEmpty) {
+        try {
+          final searchedAlbums = await tidalService.searchAlbums(
+            '${albumDetail.title} ${albumDetail.artist}',
+            limit: 20,
+          );
+          final buckets =
+              _buildAlbumVariantBuckets(albumDetail, searchedAlbums);
+          if (liveAlbums.isEmpty) {
+            liveAlbums = buckets.liveAlbums;
+          }
+          if (otherVersions.isEmpty) {
+            otherVersions = buckets.otherVersions;
+          }
+          if (moreAlbums.isEmpty) {
+            moreAlbums = buckets.moreAlbums;
+          }
+        } catch (_) {}
+      }
 
       // 2. Get related artists from Last.fm (genuine related artists!)
       List<Artist> relatedArtists = [];
@@ -91,6 +122,8 @@ class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
       if (mounted) {
         setState(() {
           _moreAlbumsByArtist = moreAlbums;
+          _liveAlbums = liveAlbums;
+          _otherVersions = otherVersions;
           _relatedArtists = relatedArtists;
           _isLoadingExtras = false;
           _hasLoadedExtras = true;
@@ -104,6 +137,149 @@ class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
         });
       }
     }
+  }
+
+  _AlbumVariantBuckets _buildAlbumVariantBuckets(
+    AlbumDetail currentAlbum,
+    List<Album> albums,
+  ) {
+    final currentKey = _normalizedAlbumTitle(currentAlbum.title);
+    final seenIds = <String>{currentAlbum.id};
+    final liveAlbums = <Album>[];
+    final otherVersions = <Album>[];
+    final moreAlbums = <Album>[];
+
+    for (final album in albums) {
+      if (album.id.isEmpty || seenIds.contains(album.id)) {
+        continue;
+      }
+      seenIds.add(album.id);
+
+      final normalizedTitle = _normalizedAlbumTitle(album.title);
+      final isLive = album.albumType == AlbumType.live ||
+          album.title.toLowerCase().contains('live');
+      final isVersionMatch =
+          normalizedTitle.isNotEmpty && normalizedTitle == currentKey;
+
+      if (isLive) {
+        liveAlbums.add(album);
+      } else if (isVersionMatch) {
+        otherVersions.add(album);
+      } else {
+        moreAlbums.add(album);
+      }
+    }
+
+    return _AlbumVariantBuckets(
+      liveAlbums: liveAlbums.take(8).toList(),
+      otherVersions: otherVersions.take(8).toList(),
+      moreAlbums: moreAlbums.take(8).toList(),
+    );
+  }
+
+  String _normalizedAlbumTitle(String title) {
+    var normalized = title.toLowerCase();
+    normalized = normalized.replaceAll(RegExp(r'\((.*?)\)|\[(.*?)\]'), ' ');
+    normalized = normalized.replaceAll(
+      RegExp(
+        r'\b(remaster(ed)?|deluxe|expanded|edition|version|mono|stereo|anniversary|bonus|track|disc|single|ep|album)\b',
+      ),
+      ' ',
+    );
+    normalized = normalized.replaceAll(RegExp(r'[^a-z0-9]+'), ' ');
+    return normalized.replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
+  void _showAlbumCredits(BuildContext context, AlbumDetail albumDetail) {
+    final qualityLabel = _albumQualityLabel(albumDetail);
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTheme.surfaceColor,
+      builder: (context) => SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'Album credits',
+                style: AppTheme.titleLarge.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 18),
+              _CreditRow(label: 'Artist', value: albumDetail.artist),
+              if (albumDetail.year != null)
+                _CreditRow(
+                  label: 'Release year',
+                  value: albumDetail.year.toString(),
+                ),
+              _CreditRow(
+                label: 'Tracks',
+                value: '${albumDetail.tracks.length}',
+              ),
+              if (albumDetail.duration != null)
+                _CreditRow(
+                  label: 'Duration',
+                  value: '${albumDetail.duration!.inMinutes} min',
+                ),
+              if (qualityLabel != null)
+                _CreditRow(label: 'Quality', value: qualityLabel),
+              if (albumDetail.copyright != null &&
+                  albumDetail.copyright!.trim().isNotEmpty)
+                _CreditRow(
+                  label: 'Copyright',
+                  value: albumDetail.copyright!,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String? _albumQualityLabel(AlbumDetail albumDetail) {
+    int? maxBitDepth = albumDetail.quality?.bitDepth;
+    for (final track in albumDetail.tracks) {
+      final bitDepth = track.quality?.bitDepth;
+      if (bitDepth != null && (maxBitDepth == null || bitDepth > maxBitDepth)) {
+        maxBitDepth = bitDepth;
+      }
+    }
+    if (maxBitDepth == null) {
+      return null;
+    }
+    return maxBitDepth >= 24 ? 'MAX' : 'HIGH';
+  }
+
+  Future<void> _shareAlbum(
+      BuildContext context, AlbumDetail albumDetail) async {
+    final shareUrl = albumDetail.source == MusicSource.tidal
+        ? 'https://listen.tidal.com/album/${albumDetail.id}'
+        : '${albumDetail.title} - ${albumDetail.artist}';
+    final shareText =
+        '${albumDetail.title} by ${albumDetail.artist}\n$shareUrl';
+    await Clipboard.setData(ClipboardData(text: shareText));
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Album link copied to clipboard'),
+        backgroundColor: AppTheme.surfaceLight,
+      ),
+    );
   }
 
   @override
@@ -279,6 +455,7 @@ class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
             },
             isAlbumSaved: ref.watch(isAlbumSavedProvider(albumDetail.id)),
             onToggleSave: () {
+              final wasSaved = ref.read(isAlbumSavedProvider(albumDetail.id));
               // Create Album from AlbumDetail for saving
               final album = Album(
                 id: albumDetail.id,
@@ -295,7 +472,19 @@ class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
                 albumType: albumDetail.albumType,
               );
               ref.read(savedAlbumsProvider.notifier).toggleAlbum(album);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    wasSaved
+                        ? 'Removed from collection'
+                        : 'Added to collection',
+                  ),
+                  backgroundColor: AppTheme.surfaceLight,
+                ),
+              );
             },
+            onCredits: () => _showAlbumCredits(context, albumDetail),
+            onShare: () => _shareAlbum(context, albumDetail),
           ),
         ),
 
@@ -366,6 +555,48 @@ class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
           ),
         ],
 
+        if (_otherVersions.isNotEmpty) ...[
+          _SectionHeader(
+            title: 'Other Versions',
+            onViewAll: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => ViewAllScreen(
+                  title: 'Other Versions',
+                  albums: _otherVersions,
+                ),
+              ),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: _HorizontalAlbumList(
+              albums: _otherVersions,
+              onAlbumTap: (album) => _navigateToAlbum(context, album),
+            ),
+          ),
+        ],
+
+        if (_liveAlbums.isNotEmpty) ...[
+          _SectionHeader(
+            title: 'Live Albums',
+            onViewAll: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => ViewAllScreen(
+                  title: 'Live Albums',
+                  albums: _liveAlbums,
+                ),
+              ),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: _HorizontalAlbumList(
+              albums: _liveAlbums,
+              onAlbumTap: (album) => _navigateToAlbum(context, album),
+            ),
+          ),
+        ],
+
         // Related Artists
         if (_relatedArtists.isNotEmpty) ...[
           _SectionHeader(
@@ -375,7 +606,7 @@ class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
               MaterialPageRoute(
                 builder: (context) => ViewAllScreen(
                   title: 'Related Artists',
-                  artists: _relatedArtists,
+                  artists: _relatedArtists.take(10).toList(),
                 ),
               ),
             ),
@@ -459,6 +690,8 @@ class _AlbumHeader extends StatelessWidget {
   final VoidCallback onPlay;
   final VoidCallback onShuffle;
   final VoidCallback onDownload;
+  final VoidCallback onCredits;
+  final VoidCallback onShare;
   final bool isAlbumSaved;
   final VoidCallback onToggleSave;
 
@@ -468,6 +701,8 @@ class _AlbumHeader extends StatelessWidget {
     required this.onPlay,
     required this.onShuffle,
     required this.onDownload,
+    required this.onCredits,
+    required this.onShare,
     required this.isAlbumSaved,
     required this.onToggleSave,
   });
@@ -475,83 +710,144 @@ class _AlbumHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final responsive = Responsive(context);
-    final coverSize = responsive.value(mobile: 224.0, tablet: 288.0);
+    final coverSize = responsive.value(mobile: 236.0, tablet: 300.0);
     final qualityCode = _qualityCode();
-    final bitDepth = _bitDepth();
-    final sampleRate = _sampleRate();
 
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: responsive.horizontalPadding),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Center(
-            child: Container(
-              width: coverSize,
-              height: coverSize,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(6),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.32),
-                    blurRadius: 22,
-                    offset: const Offset(0, 10),
-                  ),
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(6),
-                child: albumDetail.source == MusicSource.tidal
-                    ? TidalCover(
-                        coverUrl: albumDetail.coverArtUrl,
-                        size: 640,
-                        borderRadius: 0,
-                        fit: BoxFit.cover,
-                        enableVideoCover: false,
-                      )
-                    : albumDetail.coverArtUrl != null
-                        ? CachedNetworkImage(
-                            imageUrl: albumDetail.coverArtUrl!,
-                            fit: BoxFit.cover,
-                            placeholder: (_, __) =>
-                                Container(color: AppTheme.surfaceColor),
+          SizedBox(
+            height: coverSize + 84,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Positioned.fill(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: albumDetail.coverArtUrl != null
+                        ? Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              CachedNetworkImage(
+                                imageUrl: albumDetail.coverArtUrl!,
+                                fit: BoxFit.cover,
+                              ),
+                              BackdropFilter(
+                                filter:
+                                    ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                                child: Container(
+                                  color: Colors.black.withOpacity(0.4),
+                                ),
+                              ),
+                              Container(
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    colors: [
+                                      Colors.black.withOpacity(0.16),
+                                      Colors.black.withOpacity(0.55),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
                           )
-                        : Container(
-                            color: AppTheme.surfaceColor,
-                            child: const Icon(
-                              Icons.album,
-                              size: 80,
-                              color: AppTheme.secondaryColor,
-                            ),
-                          ),
-              ),
+                        : Container(color: AppTheme.surfaceColor),
+                  ),
+                ),
+                Container(
+                  width: coverSize,
+                  height: coverSize,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.34),
+                        blurRadius: 26,
+                        offset: const Offset(0, 12),
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: albumDetail.source == MusicSource.tidal
+                        ? TidalCover(
+                            coverUrl: albumDetail.coverArtUrl,
+                            size: 640,
+                            borderRadius: 0,
+                            fit: BoxFit.cover,
+                            enableVideoCover: false,
+                          )
+                        : albumDetail.coverArtUrl != null
+                            ? CachedNetworkImage(
+                                imageUrl: albumDetail.coverArtUrl!,
+                                fit: BoxFit.cover,
+                                placeholder: (_, __) =>
+                                    Container(color: AppTheme.surfaceColor),
+                              )
+                            : Container(
+                                color: AppTheme.surfaceColor,
+                                child: const Icon(
+                                  Icons.album,
+                                  size: 80,
+                                  color: AppTheme.secondaryColor,
+                                ),
+                              ),
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 18),
           Text(
             albumDetail.title,
+            textAlign: TextAlign.center,
             style: AppTheme.headlineMedium.copyWith(
-              fontSize: 31,
-              fontWeight: FontWeight.w700,
-              letterSpacing: -0.8,
+              fontSize: 24,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.9,
               height: 1.02,
             ),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
           const SizedBox(height: 8),
-          GestureDetector(
+          InkWell(
             onTap: onArtistTap,
-            child: Text(
-              'Album by ${albumDetail.artist}',
-              style: AppTheme.bodyLarge.copyWith(
-                color: Colors.white.withOpacity(0.68),
-                fontWeight: FontWeight.w500,
+            borderRadius: BorderRadius.circular(20),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      'Album by ${albumDetail.artist}',
+                      textAlign: TextAlign.center,
+                      style: AppTheme.bodyLarge.copyWith(
+                        color: Colors.white.withOpacity(0.72),
+                        fontWeight: FontWeight.w500,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 2),
+                  Icon(
+                    Icons.chevron_right,
+                    size: 18,
+                    color: Colors.white.withOpacity(0.72),
+                  ),
+                ],
               ),
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           Wrap(
+            alignment: WrapAlignment.center,
             spacing: 10,
             runSpacing: 8,
             crossAxisAlignment: WrapCrossAlignment.center,
@@ -560,52 +856,29 @@ class _AlbumHeader extends StatelessWidget {
                 Text(
                   '${albumDetail.year}',
                   style: AppTheme.bodySmall.copyWith(
-                    color: AppTheme.secondaryColor,
-                    fontWeight: FontWeight.w500,
+                    color: Colors.white.withOpacity(0.8),
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 1.1,
                   ),
                 ),
-              if (albumDetail.tracks.isNotEmpty)
-                Text(
-                  '${albumDetail.tracks.length} tracks',
-                  style: AppTheme.bodySmall.copyWith(
-                    color: AppTheme.secondaryColor,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              if (albumDetail.duration != null)
-                Text(
-                  '${albumDetail.duration!.inMinutes} min',
-                  style: AppTheme.bodySmall.copyWith(
-                    color: AppTheme.secondaryColor,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              if (qualityCode != null)
-                QualityBadge(
-                  qualityCode: qualityCode,
-                  source: albumDetail.source,
-                  bitDepth: bitDepth,
-                  sampleRate: sampleRate,
-                  codec: 'FLAC',
-                  fontSize: 9,
-                ),
+              if (qualityCode != null) _AlbumQualityBadge(label: qualityCode),
             ],
           ),
-          const SizedBox(height: 22),
+          const SizedBox(height: 20),
           Row(
             children: [
               Expanded(
                 child: ElevatedButton.icon(
                   onPressed: onPlay,
-                  icon: const Icon(Icons.play_arrow_rounded, size: 20),
+                  icon: const Icon(Icons.play_arrow_rounded, size: 19),
                   label: const Text('Play'),
                   style: ElevatedButton.styleFrom(
                     elevation: 0,
                     backgroundColor: Colors.white,
                     foregroundColor: Colors.black,
-                    padding: const EdgeInsets.symmetric(vertical: 15),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
+                      borderRadius: BorderRadius.circular(12),
                     ),
                     textStyle: AppTheme.bodyLarge.copyWith(
                       fontWeight: FontWeight.w700,
@@ -615,17 +888,17 @@ class _AlbumHeader extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: OutlinedButton.icon(
+                child: FilledButton.icon(
                   onPressed: onShuffle,
                   icon: const Icon(Icons.shuffle_rounded, size: 18),
                   label: const Text('Shuffle'),
-                  style: OutlinedButton.styleFrom(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.white.withOpacity(0.12),
                     foregroundColor: Colors.white,
-                    side: BorderSide(color: Colors.white.withOpacity(0.18)),
-                    backgroundColor: Colors.white.withOpacity(0.04),
-                    padding: const EdgeInsets.symmetric(vertical: 15),
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
+                      borderRadius: BorderRadius.circular(12),
                     ),
                     textStyle: AppTheme.bodyLarge.copyWith(
                       fontWeight: FontWeight.w700,
@@ -635,23 +908,33 @@ class _AlbumHeader extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 16),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
+              _ActionIcon(
+                icon: isAlbumSaved
+                    ? Icons.favorite_outline
+                    : Icons.favorite_border,
+                label: 'Add',
+                onTap: onToggleSave,
+                isActive: isAlbumSaved,
+              ),
+              _ActionIcon(
+                icon: Icons.info_outline,
+                label: 'Credits',
+                onTap: onCredits,
+              ),
               _ActionIcon(
                 icon: Icons.download_outlined,
                 label: 'Download',
                 onTap: onDownload,
               ),
               _ActionIcon(
-                icon: isAlbumSaved ? Icons.check : Icons.add,
-                label: isAlbumSaved ? 'Added' : 'Add',
-                onTap: onToggleSave,
-                isActive: isAlbumSaved,
+                icon: Icons.share_outlined,
+                label: 'Share',
+                onTap: onShare,
               ),
-              _ActionIcon(
-                  icon: Icons.share_outlined, label: 'Share', onTap: () {}),
             ],
           ),
         ],
@@ -664,7 +947,7 @@ class _AlbumHeader extends StatelessWidget {
     if (bitDepth == null) {
       return null;
     }
-    return bitDepth >= 24 ? 'HI_RES_LOSSLESS' : 'LOSSLESS';
+    return bitDepth >= 24 ? 'MAX' : 'HIGH';
   }
 
   int? _bitDepth() {
@@ -676,18 +959,6 @@ class _AlbumHeader extends StatelessWidget {
       }
     }
     return maxBitDepth;
-  }
-
-  int? _sampleRate() {
-    int? maxSampleRate = albumDetail.quality?.sampleRate;
-    for (final track in albumDetail.tracks) {
-      final sampleRate = track.quality?.sampleRate;
-      if (sampleRate != null &&
-          (maxSampleRate == null || sampleRate > maxSampleRate)) {
-        maxSampleRate = sampleRate;
-      }
-    }
-    return maxSampleRate;
   }
 }
 
@@ -707,18 +978,82 @@ class _ActionIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = isActive ? AppTheme.primaryColor : AppTheme.secondaryColor;
-    return GestureDetector(
+    return InkWell(
       onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
       child: Column(
         children: [
           Icon(icon, color: color, size: 22),
-          const SizedBox(height: 6),
+          const SizedBox(height: 5),
           Text(
             label,
             style: AppTheme.labelSmall.copyWith(
               color: color,
-              fontSize: 11,
+              fontSize: 10.5,
               fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AlbumQualityBadge extends StatelessWidget {
+  final String label;
+
+  const _AlbumQualityBadge({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final isMax = label == 'MAX';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: isMax
+            ? const Color(0xFF8F6E1D).withOpacity(0.92)
+            : const Color(0xFF004E47).withOpacity(0.95),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        label,
+        style: GoogleFonts.inter(
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.9,
+          color: Colors.white,
+        ),
+      ),
+    );
+  }
+}
+
+class _CreditRow extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _CreditRow({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label.toUpperCase(),
+            style: AppTheme.labelSmall.copyWith(
+              color: AppTheme.tertiaryColor,
+              letterSpacing: 1.1,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: AppTheme.bodyLarge.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.w500,
             ),
           ),
         ],
@@ -747,75 +1082,104 @@ class _TrackListItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final titleStyle = GoogleFonts.inter(
-      fontSize: 15.5,
-      fontWeight: FontWeight.w500,
+      fontSize: 15,
+      fontWeight: FontWeight.w600,
       color: isPlaying ? AppTheme.accentColor : Colors.white,
     );
     final subtitleStyle = GoogleFonts.inter(
-      fontSize: 13,
+      fontSize: 12.5,
       fontWeight: FontWeight.w400,
       color: AppTheme.secondaryColor,
     );
     final numberStyle = GoogleFonts.inter(
-      fontSize: 14,
+      fontSize: 13.5,
       fontWeight: FontWeight.w400,
       color: AppTheme.tertiaryColor,
     );
 
-    return ListTile(
+    return InkWell(
       onTap: onTap,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 2),
-      minVerticalPadding: 6,
-      leading: SizedBox(
-        width: 24,
-        child: Center(
-          child: isPlaying
-              ? Icon(Icons.equalizer, color: AppTheme.accentColor, size: 18)
-              : Text('$index', style: numberStyle),
-        ),
-      ),
-      title: Row(
-        children: [
-          Expanded(
-            child: Text(
-              track.title,
-              style: titleStyle,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          if (track.isExplicit) ...[
-            const SizedBox(width: 6),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.14),
-                borderRadius: BorderRadius.circular(2),
-              ),
-              child: Text(
-                'E',
-                style: AppTheme.labelSmall.copyWith(
-                  fontSize: 9,
-                  color: Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 22,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 3),
+                child: Center(
+                  child: isPlaying
+                      ? Icon(
+                          Icons.equalizer,
+                          color: AppTheme.accentColor,
+                          size: 17,
+                        )
+                      : Text('$index', style: numberStyle),
                 ),
               ),
             ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          track.title,
+                          style: titleStyle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (track.isExplicit) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 4,
+                            vertical: 1,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.14),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                          child: Text(
+                            'E',
+                            style: AppTheme.labelSmall.copyWith(
+                              fontSize: 9,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    track.artist,
+                    style: subtitleStyle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Builder(
+              builder: (context) => IconButton(
+                icon: const Icon(
+                  Icons.more_vert,
+                  size: 18,
+                  color: AppTheme.secondaryColor,
+                ),
+                onPressed: () => TrackOptionsSheet.show(context, track),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+              ),
+            ),
           ],
-        ],
-      ),
-      subtitle: Text(
-        track.artist,
-        style: subtitleStyle,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: Builder(
-        builder: (context) => IconButton(
-          icon: const Icon(Icons.more_vert,
-              size: 20, color: AppTheme.secondaryColor),
-          onPressed: () => TrackOptionsSheet.show(context, track),
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(),
         ),
       ),
     );
@@ -836,13 +1200,13 @@ class _SectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return SliverToBoxAdapter(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(18, 34, 18, 12),
+        padding: const EdgeInsets.fromLTRB(18, 30, 18, 10),
         child: Row(
           children: [
             Expanded(
               child: Text(
                 title,
-                style: AppTheme.titleLarge.copyWith(
+                style: AppTheme.titleMedium.copyWith(
                   fontWeight: FontWeight.w700,
                 ),
                 maxLines: 1,
@@ -868,7 +1232,7 @@ class _SectionHeader extends StatelessWidget {
                 child: Text(
                   'VIEW ALL',
                   style: GoogleFonts.inter(
-                    fontSize: 11,
+                    fontSize: 10.5,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 0.65,
                   ),
@@ -894,7 +1258,7 @@ class _HorizontalAlbumList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 198,
+      height: 184,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 18),
@@ -904,8 +1268,8 @@ class _HorizontalAlbumList extends StatelessWidget {
           return GestureDetector(
             onTap: () => onAlbumTap(album),
             child: Container(
-              width: 128,
-              margin: const EdgeInsets.only(right: 14),
+              width: 116,
+              margin: const EdgeInsets.only(right: 12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -914,18 +1278,18 @@ class _HorizontalAlbumList extends StatelessWidget {
                     child: album.coverArtUrl != null
                         ? CachedNetworkImage(
                             imageUrl: album.coverArtUrl!,
-                            width: 128,
-                            height: 128,
+                            width: 116,
+                            height: 116,
                             fit: BoxFit.cover,
                             placeholder: (_, __) => Container(
-                              width: 128,
-                              height: 128,
+                              width: 116,
+                              height: 116,
                               color: AppTheme.surfaceColor,
                             ),
                           )
                         : Container(
-                            width: 128,
-                            height: 128,
+                            width: 116,
+                            height: 116,
                             color: AppTheme.surfaceColor,
                             child: const Icon(
                               Icons.album,
@@ -941,14 +1305,16 @@ class _HorizontalAlbumList extends StatelessWidget {
                       color: Colors.white,
                       fontWeight: FontWeight.w500,
                     ),
-                    maxLines: 1,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    album.year?.toString() ?? '',
+                    album.artist,
                     style: AppTheme.labelSmall
                         .copyWith(color: AppTheme.secondaryColor),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
@@ -1043,4 +1409,16 @@ class _HorizontalArtistList extends StatelessWidget {
       ),
     );
   }
+}
+
+class _AlbumVariantBuckets {
+  final List<Album> liveAlbums;
+  final List<Album> otherVersions;
+  final List<Album> moreAlbums;
+
+  const _AlbumVariantBuckets({
+    required this.liveAlbums,
+    required this.otherVersions,
+    required this.moreAlbums,
+  });
 }
