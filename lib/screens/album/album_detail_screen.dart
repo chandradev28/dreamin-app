@@ -34,6 +34,7 @@ class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
   List<Album> _moreAlbumsByArtist = [];
   List<Album> _liveAlbums = [];
   List<Album> _otherVersions = [];
+  List<Album> _relatedAlbums = [];
   List<Artist> _relatedArtists = [];
   bool _isLoadingExtras = false;
   bool _hasLoadedExtras = false; // Prevent duplicate loads
@@ -51,79 +52,111 @@ class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
     final lastFmService = ref.read(lastFmServiceProvider);
 
     try {
-      // 1. Load more albums by this artist from Tidal
-      List<Album> moreAlbums = [];
-      List<Album> liveAlbums = [];
-      List<Album> otherVersions = [];
+      final sameArtistAlbums = <Album>[];
       try {
         final artist = await tidalService.getArtist(albumDetail.artistId);
-        final buckets = _buildAlbumVariantBuckets(
-          albumDetail,
-          artist.albums.where((a) => a.id != albumDetail.id).toList(),
+        sameArtistAlbums.addAll(
+          artist.albums.where(
+            (album) => _belongsToArtist(
+              album,
+              albumDetail.artistId,
+              albumDetail.artist,
+            ),
+          ),
         );
-        moreAlbums = buckets.moreAlbums;
-        liveAlbums = buckets.liveAlbums;
-        otherVersions = buckets.otherVersions;
       } catch (_) {}
 
-      if (otherVersions.isEmpty || liveAlbums.isEmpty) {
+      if (sameArtistAlbums.length < 12) {
         try {
           final searchedAlbums = await tidalService.searchAlbums(
-            '${albumDetail.title} ${albumDetail.artist}',
-            limit: 20,
+            albumDetail.artist,
+            limit: 50,
           );
-          final buckets =
-              _buildAlbumVariantBuckets(albumDetail, searchedAlbums);
-          if (liveAlbums.isEmpty) {
-            liveAlbums = buckets.liveAlbums;
-          }
-          if (otherVersions.isEmpty) {
-            otherVersions = buckets.otherVersions;
-          }
-          if (moreAlbums.isEmpty) {
-            moreAlbums = buckets.moreAlbums;
-          }
+          sameArtistAlbums.addAll(
+            searchedAlbums.where(
+              (album) => _belongsToArtist(
+                album,
+                albumDetail.artistId,
+                albumDetail.artist,
+              ),
+            ),
+          );
         } catch (_) {}
       }
 
-      // 2. Get related artists from Last.fm (genuine related artists!)
-      List<Artist> relatedArtists = [];
+      final sameArtistBuckets =
+          _buildAlbumVariantBuckets(albumDetail, sameArtistAlbums);
+      final moreAlbums = sameArtistBuckets.moreAlbums;
+      final liveAlbums = sameArtistBuckets.liveAlbums;
+      final otherVersions = sameArtistBuckets.otherVersions;
+
+      final relatedArtists = <Artist>[];
+      final relatedAlbums = <Album>[];
+      final seenArtistIds = <String>{albumDetail.artistId};
+      final seenRelatedAlbumIds = <String>{albumDetail.id};
 
       try {
-        final lastFmSimilar = await lastFmService
-            .getSimilarArtists(albumDetail.artist, limit: 10);
+        final lastFmSimilar = await lastFmService.getSimilarArtists(
+          albumDetail.artist,
+          limit: 12,
+        );
 
-        // For each related artist: get their Tidal profile AND their top album
-        for (final lfmArtist in lastFmSimilar.take(8)) {
+        for (final lfmArtist in lastFmSimilar) {
           try {
-            // Search Tidal for this artist to get proper ID and image
             final tidalArtists =
-                await tidalService.searchArtists(lfmArtist.name, limit: 1);
-            if (tidalArtists.isNotEmpty) {
-              final artist = tidalArtists.first;
-              relatedArtists.add(artist);
+                await tidalService.searchArtists(lfmArtist.name, limit: 5);
+            final matchedArtist =
+                _pickBestArtistMatch(tidalArtists, lfmArtist.name);
+            if (matchedArtist == null ||
+                seenArtistIds.contains(matchedArtist.id) ||
+                _normalizeArtistName(matchedArtist.name) ==
+                    _normalizeArtistName(albumDetail.artist)) {
+              continue;
+            }
+
+            seenArtistIds.add(matchedArtist.id);
+            relatedArtists.add(matchedArtist);
+
+            if (relatedAlbums.length < 12) {
+              try {
+                final detail = await tidalService.getArtist(matchedArtist.id);
+                final firstAlbum = detail.albums.firstWhere(
+                  (album) =>
+                      !_belongsToArtist(
+                        album,
+                        albumDetail.artistId,
+                        albumDetail.artist,
+                      ) &&
+                      !seenRelatedAlbumIds.contains(album.id),
+                  orElse: () => const Album(
+                    id: '',
+                    title: '',
+                    artist: '',
+                    artistId: '',
+                    trackCount: 0,
+                    source: MusicSource.tidal,
+                  ),
+                );
+                if (firstAlbum.id.isNotEmpty) {
+                  seenRelatedAlbumIds.add(firstAlbum.id);
+                  relatedAlbums.add(firstAlbum);
+                }
+              } catch (_) {}
+            }
+
+            if (relatedArtists.length >= 10) {
+              break;
             }
           } catch (_) {}
         }
       } catch (_) {}
-
-      // 3. Fallback to Tidal search if Last.fm failed
-      if (relatedArtists.isEmpty) {
-        try {
-          final searchedArtists =
-              await tidalService.searchArtists(albumDetail.artist, limit: 10);
-          relatedArtists = searchedArtists
-              .where((a) => a.id != albumDetail.artistId)
-              .take(8)
-              .toList();
-        } catch (_) {}
-      }
 
       if (mounted) {
         setState(() {
           _moreAlbumsByArtist = moreAlbums;
           _liveAlbums = liveAlbums;
           _otherVersions = otherVersions;
+          _relatedAlbums = relatedAlbums;
           _relatedArtists = relatedArtists;
           _isLoadingExtras = false;
           _hasLoadedExtras = true;
@@ -171,9 +204,9 @@ class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
     }
 
     return _AlbumVariantBuckets(
-      liveAlbums: liveAlbums.take(8).toList(),
-      otherVersions: otherVersions.take(8).toList(),
-      moreAlbums: moreAlbums.take(8).toList(),
+      liveAlbums: liveAlbums,
+      otherVersions: otherVersions,
+      moreAlbums: moreAlbums,
     );
   }
 
@@ -188,6 +221,41 @@ class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
     );
     normalized = normalized.replaceAll(RegExp(r'[^a-z0-9]+'), ' ');
     return normalized.replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
+  String _normalizeArtistName(String name) {
+    return name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
+  }
+
+  bool _belongsToArtist(Album album, String artistId, String artistName) {
+    if (album.id.isEmpty) {
+      return false;
+    }
+    if (album.artistId.isNotEmpty && album.artistId == artistId) {
+      return true;
+    }
+    return _normalizeArtistName(album.artist) ==
+        _normalizeArtistName(artistName);
+  }
+
+  Artist? _pickBestArtistMatch(List<Artist> artists, String expectedName) {
+    if (artists.isEmpty) {
+      return null;
+    }
+    final normalizedExpected = _normalizeArtistName(expectedName);
+    for (final artist in artists) {
+      if (_normalizeArtistName(artist.name) == normalizedExpected) {
+        return artist;
+      }
+    }
+    for (final artist in artists) {
+      final normalized = _normalizeArtistName(artist.name);
+      if (normalized.contains(normalizedExpected) ||
+          normalizedExpected.contains(normalized)) {
+        return artist;
+      }
+    }
+    return artists.first;
   }
 
   void _showAlbumCredits(BuildContext context, AlbumDetail albumDetail) {
@@ -592,6 +660,27 @@ class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
           SliverToBoxAdapter(
             child: _HorizontalAlbumList(
               albums: _liveAlbums,
+              onAlbumTap: (album) => _navigateToAlbum(context, album),
+            ),
+          ),
+        ],
+
+        if (_relatedAlbums.isNotEmpty) ...[
+          _SectionHeader(
+            title: 'Related Albums',
+            onViewAll: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => ViewAllScreen(
+                  title: 'Related Albums',
+                  albums: _relatedAlbums,
+                ),
+              ),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: _HorizontalAlbumList(
+              albums: _relatedAlbums,
               onAlbumTap: (album) => _navigateToAlbum(context, album),
             ),
           ),

@@ -508,6 +508,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       int sampleRate = 0;
       String? codec;
       bool isOffline = false;
+      Duration? loadedDuration;
 
       void updateQualityState() {
         state = state.copyWith(
@@ -638,17 +639,30 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
 
       if (streamAudioSource != null) {
         print('🔗 Loading DASH audio source: $streamUrl');
-        await _audioPlayer.setAudioSource(streamAudioSource);
+        loadedDuration = await _audioPlayer.setAudioSource(streamAudioSource);
       } else {
         final resolvedStreamUrl = streamUrl!;
         print(
             '🔗 Stream URL: ${resolvedStreamUrl.substring(0, 50.clamp(0, resolvedStreamUrl.length))}...');
-        await _audioPlayer.setUrl(resolvedStreamUrl);
+        loadedDuration = await _audioPlayer.setUrl(resolvedStreamUrl);
       }
       print('✅ URL set successfully');
 
       if (playRequestId != _playRequestCounter) {
         return;
+      }
+
+      if (track.source == MusicSource.tidal && loadedDuration != null) {
+        final expectedSeconds = track.duration.inSeconds;
+        final actualSeconds = loadedDuration.inSeconds;
+        final suspiciouslyShort = expectedSeconds >= 90 &&
+            actualSeconds > 0 &&
+            (actualSeconds <= 35 || actualSeconds < (expectedSeconds * 0.45));
+        if (suspiciouslyShort) {
+          throw Exception(
+            'Rejected short proxy stream (${actualSeconds}s for expected ${expectedSeconds}s)',
+          );
+        }
       }
 
       // Apply volume normalization setting before playing

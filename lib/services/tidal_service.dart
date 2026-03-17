@@ -753,8 +753,8 @@ class TidalService {
 
   Future<StreamInfo> _fetchStreamInfo(
       int numericId, TidalQuality quality) async {
-    final response = await _executeWithFallback((baseUrl) {
-      print('[TIDAL] Trying endpoint: $baseUrl');
+    final response = await _executeStreamWithFallback((baseUrl) {
+      print('[TIDAL] Trying stream endpoint: $baseUrl');
       return _dio.get(
         '$baseUrl${TidalEndpoints.trackPath}',
         queryParameters: {
@@ -790,6 +790,22 @@ class TidalService {
     }
 
     return streamInfo;
+  }
+
+  Future<Response<T>> _executeStreamWithFallback<T>(
+    Future<Response<T>> Function(String baseUrl) request,
+  ) async {
+    Exception? lastError;
+    for (final endpoint in TidalEndpoints.streamEndpoints) {
+      try {
+        return await request(endpoint);
+      } on DioException catch (e) {
+        lastError = e;
+      } catch (e) {
+        lastError = e as Exception;
+      }
+    }
+    throw TidalApiException('All stream endpoints failed: $lastError');
   }
 
   Future<String> _materializeDashManifest(

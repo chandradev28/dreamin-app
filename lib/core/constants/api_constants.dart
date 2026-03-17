@@ -17,6 +17,18 @@ class TidalEndpoints {
     'https://wolf.qqdl.site',
   ];
 
+  /// Streaming should prefer endpoints that consistently return full media
+  /// rather than metadata-only or short preview-like responses.
+  static const List<String> streamEndpoints = [
+    'https://triton.squid.wtf',
+    'https://tidal.kinoplus.online',
+    'https://hund.qqdl.site',
+    'https://katze.qqdl.site',
+    'https://maus.qqdl.site',
+    'https://vogel.qqdl.site',
+    'https://wolf.qqdl.site',
+  ];
+
   /// Dead endpoints (do not include in rotation)
   /// hifi.401658.xyz - redirects to GitHub, not an API
 
