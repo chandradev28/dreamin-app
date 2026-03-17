@@ -2,35 +2,29 @@
 /// Production-grade endpoint management with health tracking
 class TidalEndpoints {
   /// All available endpoints - ordered by reliability
-  /// Mixed endpoint set:
-  /// - triton/kinoplus can return DASH master manifests for some tracks
-  /// - monochrome exposes hifi-api with confirmed 24-bit TIDAL stream metadata
-  /// - qqdl cluster reliably returns direct playable URLs
+  /// Keep this pool limited to hosts that are currently healthy for the
+  /// app's hifi-api request pattern.
   static const List<String> endpoints = [
-    'https://triton.squid.wtf',
-    'https://tidal.kinoplus.online',
     'https://api.monochrome.tf',
-    'https://hund.qqdl.site', // qqdl cluster (working)
-    'https://katze.qqdl.site',
-    'https://maus.qqdl.site',
-    'https://vogel.qqdl.site',
-    'https://wolf.qqdl.site',
+    'https://arran.monochrome.tf',
+    'https://hifi-one.spotisaver.net',
+    'https://hifi-two.spotisaver.net',
   ];
 
   /// Streaming should prefer endpoints that consistently return full media
   /// rather than metadata-only or short preview-like responses.
   static const List<String> streamEndpoints = [
-    'https://triton.squid.wtf',
-    'https://tidal.kinoplus.online',
-    'https://hund.qqdl.site',
-    'https://katze.qqdl.site',
-    'https://maus.qqdl.site',
-    'https://vogel.qqdl.site',
-    'https://wolf.qqdl.site',
+    'https://api.monochrome.tf',
+    'https://arran.monochrome.tf',
+    'https://hifi-one.spotisaver.net',
+    'https://hifi-two.spotisaver.net',
   ];
 
-  /// Dead endpoints (do not include in rotation)
-  /// hifi.401658.xyz - redirects to GitHub, not an API
+  /// Removed from rotation after repeated failures in direct app-style tests:
+  /// - triton.squid.wtf (502)
+  /// - tidal.kinoplus.online (403/429 on key routes)
+  /// - hund/katze/maus/vogel/wolf.qqdl.site (401 auth failures)
+  /// - hifi.401658.xyz redirects to GitHub, not an API
 
   // Core API paths (hifi-api format)
   static const String searchPath =
