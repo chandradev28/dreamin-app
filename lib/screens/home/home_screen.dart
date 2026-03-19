@@ -5,7 +5,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/utils/responsive.dart';
 import '../../providers/providers.dart';
 import '../../models/models.dart';
-import '../../widgets/track_options_sheet.dart';
+import '../../widgets/widgets.dart';
 import '../album/album_detail_screen.dart';
 import '../playlist/playlist_detail_screen.dart';
 import 'see_all_screen.dart';
@@ -28,10 +28,8 @@ class HomeScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: sourceTheme.gradient,
-        ),
+      body: PosterGradientBackground(
+        fallbackGradient: sourceTheme.gradient,
         child: RefreshIndicator(
           onRefresh: () => ref.read(homeDataProvider.notifier).refresh(),
           color: AppTheme.primaryColor,

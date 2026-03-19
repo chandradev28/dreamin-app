@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/responsive.dart';
 import '../../providers/providers.dart';
+import '../../widgets/widgets.dart';
 import 'library_playlists_screen.dart';
 import 'library_albums_screen.dart';
 import 'library_tracks_screen.dart';
@@ -21,130 +22,133 @@ class LibraryScreen extends ConsumerWidget {
     final favoritesState = ref.watch(favoritesProvider);
 
     return Scaffold(
-      backgroundColor: AppTheme.backgroundColor,
-      body: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            // Header - TIDAL Style
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(
-                  responsive.horizontalPadding,
-                  responsive.horizontalPadding,
-                  responsive.horizontalPadding,
-                  16,
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Library',
-                      style: AppTheme.headlineLarge.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Row(
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.settings_outlined),
-                          iconSize: 24,
-                          color: Colors.white,
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (_) => const SettingsScreen()),
-                            );
-                          },
+      backgroundColor: Colors.transparent,
+      body: PosterGradientBackground(
+        child: SafeArea(
+          child: CustomScrollView(
+            slivers: [
+              // Header - TIDAL Style
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    responsive.horizontalPadding,
+                    responsive.horizontalPadding,
+                    responsive.horizontalPadding,
+                    16,
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Library',
+                        style: AppTheme.headlineLarge.copyWith(
+                          fontWeight: FontWeight.bold,
                         ),
-                      ],
+                      ),
+                      Row(
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.settings_outlined),
+                            iconSize: 24,
+                            color: Colors.white,
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                    builder: (_) => const SettingsScreen()),
+                              );
+                            },
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // Library Categories - TIDAL Clean Style
+              SliverToBoxAdapter(
+                child: Column(
+                  children: [
+                    // Playlists
+                    _TidalLibraryTile(
+                      icon: Icons.queue_music_outlined,
+                      title: 'Playlists',
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const LibraryPlaylistsScreen()),
+                        );
+                      },
+                    ),
+
+                    // Albums
+                    _TidalLibraryTile(
+                      icon: Icons.album_outlined,
+                      title: 'Albums',
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const LibraryAlbumsScreen()),
+                        );
+                      },
+                    ),
+
+                    // Tracks / Favorites
+                    _TidalLibraryTile(
+                      icon: Icons.music_note_outlined,
+                      title: 'Tracks',
+                      subtitle:
+                          '${favoritesState.favorites.length} liked songs',
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const LibraryTracksScreen()),
+                        );
+                      },
+                    ),
+
+                    // Artists
+                    _TidalLibraryTile(
+                      icon: Icons.person_outline,
+                      title: 'Artists',
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const LibraryArtistsScreen()),
+                        );
+                      },
+                    ),
+
+                    // Downloads
+                    _TidalLibraryTile(
+                      icon: Icons.download_outlined,
+                      title: 'Downloads',
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const LibraryDownloadsScreen()),
+                        );
+                      },
                     ),
                   ],
                 ),
               ),
-            ),
 
-            // Library Categories - TIDAL Clean Style
-            SliverToBoxAdapter(
-              child: Column(
-                children: [
-                  // Playlists
-                  _TidalLibraryTile(
-                    icon: Icons.queue_music_outlined,
-                    title: 'Playlists',
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const LibraryPlaylistsScreen()),
-                      );
-                    },
-                  ),
-
-                  // Albums
-                  _TidalLibraryTile(
-                    icon: Icons.album_outlined,
-                    title: 'Albums',
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const LibraryAlbumsScreen()),
-                      );
-                    },
-                  ),
-
-                  // Tracks / Favorites
-                  _TidalLibraryTile(
-                    icon: Icons.music_note_outlined,
-                    title: 'Tracks',
-                    subtitle: '${favoritesState.favorites.length} liked songs',
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const LibraryTracksScreen()),
-                      );
-                    },
-                  ),
-
-                  // Artists
-                  _TidalLibraryTile(
-                    icon: Icons.person_outline,
-                    title: 'Artists',
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const LibraryArtistsScreen()),
-                      );
-                    },
-                  ),
-
-                  // Downloads
-                  _TidalLibraryTile(
-                    icon: Icons.download_outlined,
-                    title: 'Downloads',
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const LibraryDownloadsScreen()),
-                      );
-                    },
-                  ),
-                ],
+              // Bottom spacing for mini player
+              SliverToBoxAdapter(
+                child: SizedBox(
+                    height: responsive.miniPlayerHeight +
+                        responsive.bottomNavHeight +
+                        20),
               ),
-            ),
-
-            // Bottom spacing for mini player
-            SliverToBoxAdapter(
-              child: SizedBox(
-                  height: responsive.miniPlayerHeight +
-                      responsive.bottomNavHeight +
-                      20),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

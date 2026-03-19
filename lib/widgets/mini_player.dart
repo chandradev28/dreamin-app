@@ -28,10 +28,10 @@ class MiniPlayer extends ConsumerWidget {
       child: Container(
         height: height,
         decoration: BoxDecoration(
-          color: AppTheme.surfaceColor,
+          color: Colors.black.withOpacity(0.76),
           border: const Border(
             top: BorderSide(
-              color: AppTheme.surfaceLighter,
+              color: Color(0x14FFFFFF),
               width: 0.5,
             ),
           ),
@@ -111,12 +111,17 @@ class MiniPlayer extends ConsumerWidget {
                             return IconButton(
                               icon: Icon(
                                 isFav ? Icons.favorite : Icons.favorite_border,
-                                size: responsive.value(mobile: 24.0, tablet: 28.0),
+                                size: responsive.value(
+                                    mobile: 24.0, tablet: 28.0),
                               ),
                               onPressed: () {
-                                ref.read(favoritesProvider.notifier).toggleFavorite(track);
+                                ref
+                                    .read(favoritesProvider.notifier)
+                                    .toggleFavorite(track);
                               },
-                              color: isFav ? AppTheme.accentColor : AppTheme.secondaryColor,
+                              color: isFav
+                                  ? AppTheme.accentColor
+                                  : AppTheme.secondaryColor,
                             );
                           },
                         ),

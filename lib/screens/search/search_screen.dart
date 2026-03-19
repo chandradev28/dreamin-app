@@ -6,8 +6,8 @@ import '../../core/theme/app_theme.dart';
 import '../../core/utils/responsive.dart';
 import '../../providers/providers.dart';
 import '../../models/models.dart';
-import '../../widgets/track_options_sheet.dart';
 import '../../widgets/album_options_sheet.dart';
+import '../../widgets/widgets.dart';
 import '../album/album_detail_screen.dart';
 import '../playlist/playlist_detail_screen.dart';
 import '../artist/artist_detail_screen.dart';
@@ -101,65 +101,66 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final responsive = Responsive(context);
 
     return Scaffold(
-      backgroundColor: AppTheme.backgroundColor,
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Search Bar
-            Padding(
-              padding: EdgeInsets.all(responsive.horizontalPadding),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: AppTheme.surfaceColor,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: TextField(
-                  controller: _searchController,
-                  onChanged: _onSearchChanged,
-                  onTapOutside: (_) =>
-                      FocusManager.instance.primaryFocus?.unfocus(),
-                  style: AppTheme.titleMedium.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w500,
+      backgroundColor: Colors.transparent,
+      body: PosterGradientBackground(
+        child: SafeArea(
+          child: Column(
+            children: [
+              Padding(
+                padding: EdgeInsets.all(responsive.horizontalPadding),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: AppTheme.surfaceColor.withOpacity(0.86),
+                    borderRadius: BorderRadius.circular(4),
                   ),
-                  decoration: InputDecoration(
-                    hintText: 'Search',
-                    hintStyle: AppTheme.titleMedium.copyWith(
-                      color: Colors.white.withOpacity(0.46),
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: _onSearchChanged,
+                    onTapOutside: (_) =>
+                        FocusManager.instance.primaryFocus?.unfocus(),
+                    style: AppTheme.titleMedium.copyWith(
+                      color: Colors.white,
                       fontWeight: FontWeight.w500,
                     ),
-                    prefixIcon: const Icon(
-                      Icons.search,
-                      color: AppTheme.secondaryColor,
+                    decoration: InputDecoration(
+                      hintText: 'Search',
+                      hintStyle: AppTheme.titleMedium.copyWith(
+                        color: Colors.white.withOpacity(0.46),
+                        fontWeight: FontWeight.w500,
+                      ),
+                      prefixIcon: const Icon(
+                        Icons.search,
+                        color: AppTheme.secondaryColor,
+                      ),
+                      suffixIcon: _isSearching
+                          ? IconButton(
+                              icon: const Icon(
+                                Icons.close,
+                                color: AppTheme.secondaryColor,
+                              ),
+                              onPressed: () {
+                                _searchController.clear();
+                                ref.read(searchProvider.notifier).clear();
+                                setState(() => _isSearching = false);
+                              },
+                            )
+                          : null,
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 16,
+                      ),
                     ),
-                    suffixIcon: _isSearching
-                        ? IconButton(
-                            icon: const Icon(
-                              Icons.close,
-                              color: AppTheme.secondaryColor,
-                            ),
-                            onPressed: () {
-                              _searchController.clear();
-                              ref.read(searchProvider.notifier).clear();
-                              setState(() => _isSearching = false);
-                            },
-                          )
-                        : null,
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 16),
                   ),
                 ),
               ),
-            ),
-
-            // Content
-            Expanded(
-              child: _isSearching
-                  ? _buildSearchResults(searchState, responsive)
-                  : _buildBrowseSection(responsive),
-            ),
-          ],
+              Expanded(
+                child: _isSearching
+                    ? _buildSearchResults(searchState, responsive)
+                    : _buildBrowseSection(responsive),
+              ),
+            ],
+          ),
         ),
       ),
     );

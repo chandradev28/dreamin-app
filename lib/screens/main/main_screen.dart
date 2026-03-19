@@ -60,30 +60,29 @@ class _MainScreenState extends ConsumerState<MainScreen> {
     final playerState = ref.watch(playerProvider);
 
     return Scaffold(
-      backgroundColor: AppTheme.backgroundColor,
-      body: Stack(
-        children: [
-          // Main content
-          IndexedStack(
-            index: _currentIndex,
-            children: _screens,
-          ),
-
-          // Mini player
-          if (playerState.hasTrack)
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  MiniPlayer(onTap: _openNowPlaying),
-                  _buildBottomNav(),
-                ],
-              ),
+      backgroundColor: Colors.transparent,
+      body: PosterGradientBackground(
+        child: Stack(
+          children: [
+            IndexedStack(
+              index: _currentIndex,
+              children: _screens,
             ),
-        ],
+            if (playerState.hasTrack)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    MiniPlayer(onTap: _openNowPlaying),
+                    _buildBottomNav(),
+                  ],
+                ),
+              ),
+          ],
+        ),
       ),
       bottomNavigationBar: playerState.hasTrack ? null : _buildBottomNav(),
     );
@@ -92,10 +91,10 @@ class _MainScreenState extends ConsumerState<MainScreen> {
   Widget _buildBottomNav() {
     return Container(
       decoration: BoxDecoration(
-        color: AppTheme.surfaceColor,
+        color: Colors.black.withOpacity(0.72),
         border: Border(
           top: BorderSide(
-            color: AppTheme.surfaceLighter,
+            color: Colors.white.withOpacity(0.08),
             width: 0.5,
           ),
         ),
@@ -108,7 +107,7 @@ class _MainScreenState extends ConsumerState<MainScreen> {
             _currentIndex = index;
           });
         },
-        backgroundColor: AppTheme.surfaceColor,
+        backgroundColor: Colors.transparent,
         selectedItemColor: AppTheme.primaryColor,
         unselectedItemColor: AppTheme.secondaryColor,
         type: BottomNavigationBarType.fixed,

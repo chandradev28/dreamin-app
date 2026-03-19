@@ -5,7 +5,8 @@ import 'dart:convert';
 import '../../core/theme/app_theme.dart';
 import '../../providers/providers.dart';
 import '../../models/models.dart';
-import '../../widgets/track_options_sheet.dart';
+import '../../data/database.dart';
+import '../../widgets/widgets.dart';
 
 /// Library Downloads Screen - TIDAL Style
 class LibraryDownloadsScreen extends ConsumerWidget {
@@ -13,12 +14,13 @@ class LibraryDownloadsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(downloadProvider);
     final database = ref.watch(databaseProvider);
 
     return Scaffold(
-      backgroundColor: AppTheme.backgroundColor,
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
-        backgroundColor: AppTheme.backgroundColor,
+        backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
@@ -33,23 +35,25 @@ class LibraryDownloadsScreen extends ConsumerWidget {
         ),
         centerTitle: false,
       ),
-      body: FutureBuilder(
-        future: database.getAllCachedTracks(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(color: AppTheme.primaryColor),
-            );
-          }
+      body: PosterGradientBackground(
+        child: FutureBuilder<List<CachedTrack>>(
+          future: database.getAllCachedTracks(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(
+                child: CircularProgressIndicator(color: AppTheme.primaryColor),
+              );
+            }
 
-          final downloads = snapshot.data ?? [];
+            final downloads = snapshot.data ?? const <CachedTrack>[];
 
-          if (downloads.isEmpty) {
-            return _buildEmptyState();
-          }
+            if (downloads.isEmpty) {
+              return _buildEmptyState();
+            }
 
-          return _buildDownloadsList(downloads, ref);
-        },
+            return _buildDownloadsList(downloads, ref);
+          },
+        ),
       ),
     );
   }
@@ -100,14 +104,14 @@ class LibraryDownloadsScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildDownloadsList(List<dynamic> downloads, WidgetRef ref) {
+  Widget _buildDownloadsList(List<CachedTrack> downloads, WidgetRef ref) {
     return ListView.builder(
       padding: const EdgeInsets.symmetric(vertical: 8),
       itemCount: downloads.length,
       itemBuilder: (context, index) {
         final cached = downloads[index];
         try {
-          final trackData = jsonDecode(cached.trackJson as String);
+          final trackData = jsonDecode(cached.trackJson);
           final track = Track.fromJson(trackData);
 
           return ListTile(
@@ -115,7 +119,7 @@ class LibraryDownloadsScreen extends ConsumerWidget {
               final tracks = downloads
                   .map((item) {
                     try {
-                      final data = jsonDecode(item.trackJson as String);
+                      final data = jsonDecode(item.trackJson);
                       return Track.fromJson(data);
                     } catch (_) {
                       return null;

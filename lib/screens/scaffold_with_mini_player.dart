@@ -24,10 +24,12 @@ class ScaffoldWithMiniPlayer extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<ScaffoldWithMiniPlayer> createState() => _ScaffoldWithMiniPlayerState();
+  ConsumerState<ScaffoldWithMiniPlayer> createState() =>
+      _ScaffoldWithMiniPlayerState();
 }
 
-class _ScaffoldWithMiniPlayerState extends ConsumerState<ScaffoldWithMiniPlayer> {
+class _ScaffoldWithMiniPlayerState
+    extends ConsumerState<ScaffoldWithMiniPlayer> {
   String? _lastError;
 
   void _openNowPlaying(BuildContext context) {
@@ -84,27 +86,35 @@ class _ScaffoldWithMiniPlayerState extends ConsumerState<ScaffoldWithMiniPlayer>
     }
 
     return Scaffold(
-      backgroundColor: widget.backgroundColor ?? AppTheme.backgroundColor,
+      backgroundColor: Colors.transparent,
       extendBody: widget.extendBody,
       extendBodyBehindAppBar: widget.extendBodyBehindAppBar,
       appBar: widget.appBar,
-      body: Stack(
-        children: [
-          // Main content - add bottom padding if mini player is showing
-          Positioned.fill(
-            bottom: hasTrack ? 64.0 : 0,
-            child: widget.body,
-          ),
-
-          // Mini player at bottom
-          if (hasTrack)
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: MiniPlayer(onTap: () => _openNowPlaying(context)),
+      body: PosterGradientBackground(
+        fallbackGradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            (widget.backgroundColor ?? AppTheme.backgroundColor)
+                .withOpacity(0.92),
+            AppTheme.backgroundColor,
+          ],
+        ),
+        child: Stack(
+          children: [
+            Positioned.fill(
+              bottom: hasTrack ? 64.0 : 0,
+              child: widget.body,
             ),
-        ],
+            if (hasTrack)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: MiniPlayer(onTap: () => _openNowPlaying(context)),
+              ),
+          ],
+        ),
       ),
     );
   }

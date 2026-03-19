@@ -437,14 +437,33 @@ class AppDatabase extends _$AppDatabase {
     required String filePath,
     required int fileSize,
   }) async {
-    await into(cachedTracks).insert(CachedTracksCompanion.insert(
-      trackId: trackId,
-      source: source,
-      trackJson: trackJson,
-      filePath: filePath,
-      fileSize: fileSize,
-      cachedAt: DateTime.now(),
-    ));
+    final existing = await (select(cachedTracks)
+          ..where((t) => t.trackId.equals(trackId) & t.source.equals(source)))
+        .getSingleOrNull();
+
+    if (existing != null) {
+      await (update(cachedTracks)..where((t) => t.id.equals(existing.id)))
+          .write(
+        CachedTracksCompanion(
+          trackJson: Value(trackJson),
+          filePath: Value(filePath),
+          fileSize: Value(fileSize),
+          cachedAt: Value(DateTime.now()),
+        ),
+      );
+      return;
+    }
+
+    await into(cachedTracks).insert(
+      CachedTracksCompanion.insert(
+        trackId: trackId,
+        source: source,
+        trackJson: trackJson,
+        filePath: filePath,
+        fileSize: fileSize,
+        cachedAt: DateTime.now(),
+      ),
+    );
   }
 
   Future<bool> isTrackCached(String trackId, int source) async {
@@ -458,7 +477,17 @@ class AppDatabase extends _$AppDatabase {
     final result = await (select(cachedTracks)
           ..where((t) => t.trackId.equals(trackId) & t.source.equals(source)))
         .getSingleOrNull();
-    return result?.filePath;
+    if (result == null) {
+      return null;
+    }
+
+    final file = File(result.filePath);
+    if (!await file.exists()) {
+      await (delete(cachedTracks)..where((t) => t.id.equals(result.id))).go();
+      return null;
+    }
+
+    return result.filePath;
   }
 
   Future<void> removeCachedTrack(String trackId, int source) async {
@@ -494,7 +523,21 @@ class AppDatabase extends _$AppDatabase {
   }
 
   Future<List<CachedTrack>> getAllCachedTracks() async {
-    return select(cachedTracks).get();
+    final records = await (select(cachedTracks)
+          ..orderBy([(t) => OrderingTerm.desc(t.cachedAt)]))
+        .get();
+
+    final valid = <CachedTrack>[];
+    for (final record in records) {
+      final file = File(record.filePath);
+      if (await file.exists()) {
+        valid.add(record);
+      } else {
+        await (delete(cachedTracks)..where((t) => t.id.equals(record.id))).go();
+      }
+    }
+
+    return valid;
   }
 
   // ==================== SAVED ALBUMS ====================
