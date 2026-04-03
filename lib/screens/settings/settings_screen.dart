@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme/app_theme.dart';
 import '../../providers/music_provider.dart';
-import '../../providers/subsonic_provider.dart';
 import '../../providers/source_provider.dart';
 
 // ============================================================================
@@ -14,7 +13,7 @@ class SettingsState {
   // Playback
   final bool normalizeVolume;
   final bool autoplay;
-  
+
   // Look and Feel
   final bool darkMode;
 
@@ -74,7 +73,8 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
   }
 }
 
-final settingsProvider = StateNotifierProvider<SettingsNotifier, SettingsState>((ref) {
+final settingsProvider =
+    StateNotifierProvider<SettingsNotifier, SettingsState>((ref) {
   return SettingsNotifier();
 });
 
@@ -116,13 +116,14 @@ class SettingsScreen extends StatelessWidget {
             onTap: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const PlaybackSettingsScreen()),
+                MaterialPageRoute(
+                    builder: (_) => const PlaybackSettingsScreen()),
               );
             },
           ),
-          
+
           const SizedBox(height: 8),
-          
+
           // Look and Feel Section
           _SettingsCategoryTile(
             icon: Icons.palette_outlined,
@@ -131,13 +132,14 @@ class SettingsScreen extends StatelessWidget {
             onTap: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const LookAndFeelSettingsScreen()),
+                MaterialPageRoute(
+                    builder: (_) => const LookAndFeelSettingsScreen()),
               );
             },
           ),
-          
+
           const SizedBox(height: 8),
-          
+
           // Music Source Section (NEW)
           _SettingsCategoryTile(
             icon: Icons.library_music_outlined,
@@ -146,17 +148,18 @@ class SettingsScreen extends StatelessWidget {
             onTap: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const MusicSourceSettingsScreen()),
+                MaterialPageRoute(
+                    builder: (_) => const MusicSourceSettingsScreen()),
               );
             },
           ),
-          
+
           const SizedBox(height: 8),
-          
+
           // App Info Section
           const Divider(color: AppTheme.surfaceLight),
           const SizedBox(height: 16),
-          
+
           Center(
             child: Column(
               children: [
@@ -216,23 +219,20 @@ class PlaybackSettingsScreen extends ConsumerWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16),
         children: [
           const SizedBox(height: 16),
-          
           _SettingsTile(
             title: 'Normalize volume',
             subtitle: 'Set the same volume level for all tracks.',
             value: settings.normalizeVolume,
             onChanged: settingsNotifier.setNormalizeVolume,
           ),
-          
           const Divider(color: AppTheme.surfaceLight, height: 1),
-          
           _SettingsTile(
             title: 'Autoplay',
-            subtitle: 'Play similar songs after the last track in your queue ends.',
+            subtitle:
+                'Play similar songs after the last track in your queue ends.',
             value: settings.autoplay,
             onChanged: settingsNotifier.setAutoplay,
           ),
-          
           const SizedBox(height: 48),
         ],
       ),
@@ -274,14 +274,12 @@ class LookAndFeelSettingsScreen extends ConsumerWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16),
         children: [
           const SizedBox(height: 16),
-          
           _SettingsTile(
             title: 'Dark mode',
             subtitle: 'Use dark theme throughout the app.',
             value: settings.darkMode,
             onChanged: settingsNotifier.setDarkMode,
           ),
-          
           const SizedBox(height: 48),
         ],
       ),
@@ -290,7 +288,6 @@ class LookAndFeelSettingsScreen extends ConsumerWidget {
 }
 
 // HiFiServerSettingsScreen removed - HiFi server is pre-configured
-
 
 // ============================================================================
 // WIDGETS
@@ -420,12 +417,328 @@ class _SettingsTile extends StatelessWidget {
 // MUSIC SOURCE SETTINGS SCREEN
 // ============================================================================
 
-class MusicSourceSettingsScreen extends ConsumerWidget {
+class MusicSourceSettingsScreen extends ConsumerStatefulWidget {
   const MusicSourceSettingsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MusicSourceSettingsScreen> createState() =>
+      _MusicSourceSettingsScreenState();
+}
+
+class _MusicSourceSettingsScreenState
+    extends ConsumerState<MusicSourceSettingsScreen> {
+  Future<void> _activateSource(ActiveSource source) async {
+    await ref.read(sourceSelectionProvider.notifier).setActiveSource(source);
+    ref.invalidate(homeDataProvider);
+  }
+
+  Future<void> _showQobuzCredentialsDialog() async {
+    final qobuzState = ref.read(qobuzAuthProvider);
+    final tokenController = TextEditingController(text: qobuzState.userToken);
+    final userIdController = TextEditingController(text: qobuzState.userId);
+    final appIdController = TextEditingController(text: qobuzState.appId);
+    final appSecretController =
+        TextEditingController(text: qobuzState.appSecret);
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: AppTheme.surfaceColor,
+          title: Text(
+            'Connect Qobuz',
+            style: AppTheme.titleLarge.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildTokenField(
+                  controller: tokenController,
+                  label: 'User token',
+                  obscureText: true,
+                ),
+                const SizedBox(height: 12),
+                _buildTokenField(
+                  controller: userIdController,
+                  label: 'User ID',
+                ),
+                const SizedBox(height: 12),
+                _buildTokenField(
+                  controller: appIdController,
+                  label: 'App ID',
+                ),
+                const SizedBox(height: 12),
+                _buildTokenField(
+                  controller: appSecretController,
+                  label: 'App secret',
+                  obscureText: true,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                final messenger = ScaffoldMessenger.of(this.context);
+                await ref.read(qobuzAuthProvider.notifier).saveCredentials(
+                      userToken: tokenController.text,
+                      userId: userIdController.text,
+                      appId: appIdController.text,
+                      appSecret: appSecretController.text,
+                    );
+                final nextState = ref.read(qobuzAuthProvider);
+                if (!mounted) {
+                  return;
+                }
+                Navigator.of(this.context).pop();
+
+                if (nextState.isConnected) {
+                  await _activateSource(ActiveSource.qobuz);
+                  messenger.showSnackBar(
+                    const SnackBar(
+                      content: Text('Qobuz account connected'),
+                    ),
+                  );
+                } else {
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content:
+                          Text(nextState.error ?? 'Qobuz validation failed'),
+                    ),
+                  );
+                }
+              },
+              style: FilledButton.styleFrom(
+                backgroundColor: AppTheme.primaryColor,
+                foregroundColor: Colors.black,
+              ),
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+
+    tokenController.dispose();
+    userIdController.dispose();
+    appIdController.dispose();
+    appSecretController.dispose();
+  }
+
+  Widget _buildTokenField({
+    required TextEditingController controller,
+    required String label,
+    bool obscureText = false,
+  }) {
+    return TextField(
+      controller: controller,
+      obscureText: obscureText,
+      style: AppTheme.bodyMedium.copyWith(color: Colors.white),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: AppTheme.bodySmall.copyWith(
+          color: Colors.white.withOpacity(0.7),
+        ),
+        filled: true,
+        fillColor: Colors.white.withOpacity(0.06),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: Colors.white.withOpacity(0.1)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: AppTheme.primaryColor.withOpacity(0.7)),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQobuzAccountCard(QobuzAuthState qobuzState) {
+    final info = qobuzState.accountInfo;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: qobuzState.isConnected
+              ? AppTheme.primaryColor.withOpacity(0.25)
+              : Colors.white.withOpacity(0.08),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.verified_user_outlined, color: Colors.white),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Qobuz Account',
+                  style: AppTheme.bodyLarge.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              if (qobuzState.isLoading)
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          if (info != null) ...[
+            Text(
+              info.displayName.isNotEmpty ? info.displayName : info.login,
+              style: AppTheme.titleMedium.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              info.email.isNotEmpty ? info.email : info.login,
+              style: AppTheme.bodySmall.copyWith(
+                color: Colors.white.withOpacity(0.7),
+              ),
+            ),
+            const SizedBox(height: 14),
+            _detailLine('Country', info.countryCode),
+            _detailLine('Plan', info.subscriptionLabel),
+            _detailLine('Start Date', info.startDate),
+            _detailLine('End Date', info.endDate),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _capabilityChip(
+                  label: 'Lossless Streaming',
+                  enabled: info.losslessStreaming,
+                ),
+                _capabilityChip(
+                  label: 'Hi-Res Streaming',
+                  enabled: info.hiResStreaming,
+                ),
+              ],
+            ),
+          ] else ...[
+            Text(
+              qobuzState.error ??
+                  'Add your Qobuz token, user ID, app ID, and app secret to use your personal Qobuz account across the app.',
+              style: AppTheme.bodySmall.copyWith(
+                color: Colors.white.withOpacity(0.72),
+              ),
+            ),
+          ],
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: _showQobuzCredentialsDialog,
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: Colors.white.withOpacity(0.18)),
+                    foregroundColor: Colors.white,
+                  ),
+                  child: Text(info == null ? 'Add Token' : 'Update Token'),
+                ),
+              ),
+              if (qobuzState.hasCredentials) ...[
+                const SizedBox(width: 10),
+                IconButton(
+                  onPressed: () =>
+                      ref.read(qobuzAuthProvider.notifier).refreshAccountInfo(),
+                  icon: const Icon(Icons.refresh, color: Colors.white),
+                ),
+                IconButton(
+                  onPressed: () async {
+                    await ref
+                        .read(qobuzAuthProvider.notifier)
+                        .clearCredentials();
+                    if (ref.read(sourceSelectionProvider).activeSource ==
+                        ActiveSource.qobuz) {
+                      await _activateSource(ActiveSource.tidal);
+                    }
+                  },
+                  icon: const Icon(Icons.logout, color: Colors.white70),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _detailLine(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 92,
+            child: Text(
+              label,
+              style: AppTheme.bodySmall.copyWith(
+                color: Colors.white.withOpacity(0.55),
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value.isEmpty ? '—' : value,
+              style: AppTheme.bodyMedium.copyWith(color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _capabilityChip({
+    required String label,
+    required bool enabled,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: enabled
+            ? AppTheme.primaryColor.withOpacity(0.15)
+            : Colors.white.withOpacity(0.06),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: enabled
+              ? AppTheme.primaryColor.withOpacity(0.45)
+              : Colors.white.withOpacity(0.08),
+        ),
+      ),
+      child: Text(
+        '$label ${enabled ? "✓" : "—"}',
+        style: AppTheme.bodySmall.copyWith(
+          color: enabled ? AppTheme.primaryColor : Colors.white70,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final sourceState = ref.watch(sourceSelectionProvider);
+    final qobuzState = ref.watch(qobuzAuthProvider);
 
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
@@ -448,7 +761,6 @@ class MusicSourceSettingsScreen extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // Info card
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -457,7 +769,8 @@ class MusicSourceSettingsScreen extends ConsumerWidget {
             ),
             child: Row(
               children: [
-                Icon(Icons.info_outline, color: AppTheme.primaryColor, size: 24),
+                Icon(Icons.info_outline,
+                    color: AppTheme.primaryColor, size: 24),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
@@ -470,56 +783,30 @@ class MusicSourceSettingsScreen extends ConsumerWidget {
               ],
             ),
           ),
-          
           const SizedBox(height: 24),
-          
-          // TIDAL Option
           _SourceOptionTile(
             icon: Icons.waves,
             iconColor: Colors.cyan,
             title: 'TIDAL',
             subtitle: 'HiFi streaming with recommendations',
             isSelected: sourceState.activeSource == ActiveSource.tidal,
-            onTap: () {
-              ref.read(sourceSelectionProvider.notifier).setActiveSource(ActiveSource.tidal);
-              ref.invalidate(homeDataProvider);
-            },
+            onTap: () => _activateSource(ActiveSource.tidal),
           ),
-          
           const SizedBox(height: 12),
-          
-          // Qobuz Option
           _SourceOptionTile(
             icon: Icons.high_quality,
             iconColor: Colors.blue,
             title: 'Qobuz',
-            subtitle: '24-bit Hi-Res FLAC streaming',
+            subtitle: qobuzState.isConnected
+                ? 'Connected Qobuz account with official playback'
+                : '24-bit Hi-Res FLAC streaming',
             isSelected: sourceState.activeSource == ActiveSource.qobuz,
-            onTap: () {
-              ref.read(sourceSelectionProvider.notifier).setActiveSource(ActiveSource.qobuz);
-              // Invalidate home data to force reload with new source
-              ref.invalidate(homeDataProvider);
-            },
+            onTap: () => _activateSource(ActiveSource.qobuz),
+            trailingIcon: qobuzState.isConnected ? Icons.verified : null,
           ),
-          
-          // TODO: HiFi Server disabled - backend (hifi.401658.xyz) is down
-          // Uncomment when backend is available again
-          // const SizedBox(height: 12),
-          // _SourceOptionTile(
-          //   icon: Icons.dns_outlined,
-          //   iconColor: Colors.green,
-          //   title: 'HiFi Server',
-          //   subtitle: 'Your personal music server',
-          //   isSelected: sourceState.activeSource == ActiveSource.subsonic,
-          //   onTap: () {
-          //     ref.read(sourceSelectionProvider.notifier).setActiveSource(ActiveSource.subsonic);
-          //     ref.invalidate(homeDataProvider);
-          //   },
-          // ),
-          
+          const SizedBox(height: 16),
+          _buildQobuzAccountCard(qobuzState),
           const SizedBox(height: 32),
-          
-          // Current source indicator
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -529,7 +816,8 @@ class MusicSourceSettingsScreen extends ConsumerWidget {
             ),
             child: Row(
               children: [
-                Icon(Icons.check_circle, color: AppTheme.primaryColor, size: 24),
+                Icon(Icons.check_circle,
+                    color: AppTheme.primaryColor, size: 24),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -582,7 +870,9 @@ class _SourceOptionTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: isSelected ? AppTheme.primaryColor.withOpacity(0.15) : AppTheme.surfaceColor,
+      color: isSelected
+          ? AppTheme.primaryColor.withOpacity(0.15)
+          : AppTheme.surfaceColor,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         onTap: onTap,
@@ -633,7 +923,8 @@ class _SourceOptionTile extends StatelessWidget {
               else if (isSelected)
                 Icon(Icons.radio_button_checked, color: AppTheme.primaryColor)
               else
-                Icon(Icons.radio_button_off, color: Colors.white.withOpacity(0.3)),
+                Icon(Icons.radio_button_off,
+                    color: Colors.white.withOpacity(0.3)),
             ],
           ),
         ),

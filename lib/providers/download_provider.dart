@@ -3,10 +3,12 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/models.dart';
 import '../services/download_service.dart';
+import '../services/qobuz_service.dart';
 import '../services/subsonic_service.dart';
 import '../services/tidal_service.dart';
 import '../data/database.dart';
 import 'music_provider.dart';
+import 'source_provider.dart';
 import 'subsonic_provider.dart';
 
 /// Download state - tracks queue and current download progress
@@ -65,10 +67,14 @@ class DownloadNotifier extends StateNotifier<DownloadState> {
 
   void configureServices({
     TidalService? tidalService,
+    QobuzServiceImpl? qobuzService,
     SubsonicServiceImpl? subsonicService,
   }) {
     if (tidalService != null) {
       _downloadService.initTidal(tidalService);
+    }
+    if (qobuzService != null) {
+      _downloadService.initQobuz(qobuzService);
     }
     if (subsonicService != null) {
       _downloadService.initSubsonic(subsonicService);
@@ -212,14 +218,20 @@ class DownloadNotifier extends StateNotifier<DownloadState> {
 final downloadProvider =
     StateNotifierProvider<DownloadNotifier, DownloadState>((ref) {
   final database = ref.watch(databaseProvider);
+  final qobuzService = ref.read(qobuzServiceProvider);
   final notifier = DownloadNotifier(database);
   notifier.configureServices(
     tidalService: ref.read(tidalServiceProvider),
+    qobuzService: qobuzService,
     subsonicService: ref.read(subsonicServiceProvider),
   );
 
   ref.listen<TidalService>(tidalServiceProvider, (_, next) {
     notifier.configureServices(tidalService: next);
+  });
+
+  ref.listen<QobuzServiceImpl>(qobuzServiceProvider, (_, next) {
+    notifier.configureServices(qobuzService: next);
   });
 
   ref.listen<SubsonicServiceImpl?>(subsonicServiceProvider, (_, next) {

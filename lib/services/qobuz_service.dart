@@ -1,8 +1,55 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 import '../models/models.dart';
 import 'music_service.dart';
+
+class QobuzAuthConfig {
+  final String userToken;
+  final String userId;
+  final String appId;
+  final String appSecret;
+
+  const QobuzAuthConfig({
+    required this.userToken,
+    required this.userId,
+    required this.appId,
+    required this.appSecret,
+  });
+
+  bool get isComplete =>
+      userToken.trim().isNotEmpty &&
+      userId.trim().isNotEmpty &&
+      appId.trim().isNotEmpty &&
+      appSecret.trim().isNotEmpty;
+}
+
+class QobuzAccountInfo {
+  final String userId;
+  final String displayName;
+  final String login;
+  final String email;
+  final String countryCode;
+  final String subscriptionLabel;
+  final String startDate;
+  final String endDate;
+  final bool losslessStreaming;
+  final bool hiResStreaming;
+
+  const QobuzAccountInfo({
+    required this.userId,
+    required this.displayName,
+    required this.login,
+    required this.email,
+    required this.countryCode,
+    required this.subscriptionLabel,
+    required this.startDate,
+    required this.endDate,
+    required this.losslessStreaming,
+    required this.hiResStreaming,
+  });
+}
 
 /// Qobuz Service Implementation
 /// Uses qobuz.squid.wtf as primary with dab.yeet.su and dabmusic.xyz as fallbacks
@@ -13,6 +60,7 @@ import 'music_service.dart';
 /// - Pagination for search results
 /// - Fallback stream endpoints
 class QobuzServiceImpl implements MusicService {
+  static const String _officialApiBase = 'https://www.qobuz.com/api.json/0.2';
   static const String _searchUrl = 'https://qobuz.squid.wtf/api/get-music';
   static const String _albumUrl = 'https://qobuz.squid.wtf/api/get-album';
   static const String _artistUrl = 'https://qobuz.squid.wtf/api/get-artist';
@@ -41,9 +89,14 @@ class QobuzServiceImpl implements MusicService {
 
   static int _lastWorkingStreamIndex = 0;
   static final http.Client _client = http.Client();
+  final QobuzAuthConfig? authConfig;
+
+  QobuzServiceImpl({this.authConfig});
 
   @override
   MusicSource get source => MusicSource.qobuz;
+
+  bool get _hasOfficialAuth => authConfig?.isComplete == true;
 
   // ============== HELPER FUNCTIONS ==============
 
@@ -61,6 +114,97 @@ class QobuzServiceImpl implements MusicService {
     if (value is double) return value.toInt();
     if (value is String) return int.tryParse(value);
     return null;
+  }
+
+  static int? _asSampleRateHz(dynamic value) {
+    if (value is num) {
+      final raw = value.toDouble();
+      if (raw <= 384) {
+        return (raw * 1000).round();
+      }
+      return raw.round();
+    }
+    if (value is String) {
+      final parsed = double.tryParse(value);
+      if (parsed != null) {
+        return parsed <= 384 ? (parsed * 1000).round() : parsed.round();
+      }
+    }
+    return null;
+  }
+
+  Map<String, String> _officialHeaders({bool authenticated = true}) {
+    final headers = <String, String>{
+      'User-Agent': 'Dreamin/1.0',
+    };
+
+    if (_hasOfficialAuth) {
+      headers['X-App-Id'] = authConfig!.appId;
+      if (authenticated) {
+        headers['X-User-Auth-Token'] = authConfig!.userToken;
+      }
+    }
+
+    return headers;
+  }
+
+  Uri _officialUri(String path, Map<String, String> params) {
+    final query = <String, String>{
+      ...params,
+      if (_hasOfficialAuth) 'app_id': authConfig!.appId,
+    };
+    return Uri.parse('$_officialApiBase$path').replace(queryParameters: query);
+  }
+
+  String _fileSignature(String formatId, String trackId, String timestamp) {
+    final secret = authConfig?.appSecret ?? '';
+    final payload = 'trackgetFileUrlformat_id'
+        '$formatId'
+        'intentstreamtrack_id'
+        '$trackId'
+        '$timestamp'
+        '$secret';
+    return md5.convert(utf8.encode(payload)).toString();
+  }
+
+  Future<QobuzAccountInfo> getAccountInfo() async {
+    if (!_hasOfficialAuth) {
+      throw Exception('Qobuz credentials are missing');
+    }
+
+    final uri = _officialUri('/user/get', {
+      'user_id': authConfig!.userId,
+    });
+    final response = await _client
+        .get(uri, headers: _officialHeaders())
+        .timeout(const Duration(seconds: 15));
+
+    if (response.statusCode != 200) {
+      throw Exception(
+          'Qobuz account validation failed: ${response.statusCode}');
+    }
+
+    final root = json.decode(response.body) as Map<String, dynamic>;
+    final subscription = root['subscription'] as Map<String, dynamic>? ?? {};
+    final credential = root['credential'] as Map<String, dynamic>? ?? {};
+    final parameters = credential['parameters'] as Map<String, dynamic>? ?? {};
+
+    return QobuzAccountInfo(
+      userId: (root['id'] ?? authConfig!.userId).toString(),
+      displayName: (root['display_name'] ?? root['login'] ?? '').toString(),
+      login: (root['login'] ?? '').toString(),
+      email: (root['email'] ?? '').toString(),
+      countryCode: (root['country_code'] ?? '').toString(),
+      subscriptionLabel: (parameters['label'] ??
+              credential['description'] ??
+              subscription['offer'] ??
+              'Qobuz')
+          .toString(),
+      startDate: (subscription['start_date'] ?? '').toString(),
+      endDate: (subscription['end_date'] ?? '').toString(),
+      losslessStreaming: parameters['lossless_streaming'] == true,
+      hiResStreaming: parameters['hires_streaming'] == true,
+    );
   }
 
   // ============== SEARCH ==============
@@ -83,6 +227,58 @@ class QobuzServiceImpl implements MusicService {
     final List<Artist> allArtists = [];
     final List<Playlist> allPlaylists = [];
     String? lastError;
+
+    if (_hasOfficialAuth) {
+      try {
+        final uri = _officialUri('/catalog/search', {
+          'query': query,
+          'limit': limit.clamp(1, 50).toString(),
+          'offset': '0',
+        });
+        final response = await _client
+            .get(uri, headers: _officialHeaders())
+            .timeout(const Duration(seconds: 15));
+
+        if (response.statusCode != 200) {
+          throw Exception('HTTP ${response.statusCode}');
+        }
+
+        final searchData = json.decode(response.body) as Map<String, dynamic>;
+        final trackItems = searchData['tracks']?['items'] as List? ?? [];
+        final albumItems = searchData['albums']?['items'] as List? ?? [];
+        final artistItems = searchData['artists']?['items'] as List? ?? [];
+        final playlistItems = searchData['playlists']?['items'] as List? ?? [];
+
+        for (final track in trackItems) {
+          final qTrack = _trackFromJson(track as Map<String, dynamic>);
+          if (!allTracks.any((t) => t.id == qTrack.id)) {
+            allTracks.add(qTrack);
+          }
+        }
+        for (final album in albumItems) {
+          final qAlbum = _albumFromJson(album as Map<String, dynamic>);
+          if (!allAlbums.any((a) => a.id == qAlbum.id)) {
+            allAlbums.add(qAlbum);
+          }
+        }
+        for (final artist in artistItems) {
+          allArtists.add(_artistFromJson(artist as Map<String, dynamic>));
+        }
+        for (final playlist in playlistItems) {
+          allPlaylists.add(_playlistFromJson(playlist as Map<String, dynamic>));
+        }
+
+        return SearchResult(
+          tracks: allTracks,
+          albums: allAlbums,
+          artists: allArtists,
+          playlists: allPlaylists,
+          source: MusicSource.qobuz,
+        );
+      } catch (e) {
+        print('[Qobuz] Official search failed, falling back to proxy: $e');
+      }
+    }
 
     // Fetch multiple pages (API returns ~10 per page)
     const int maxPages = 3;
@@ -219,10 +415,17 @@ class QobuzServiceImpl implements MusicService {
     print('[Qobuz] Getting album: $albumId');
 
     try {
-      final uri =
-          Uri.parse('$_albumUrl?album_id=${Uri.encodeComponent(albumId)}');
-      final response =
-          await _client.get(uri).timeout(const Duration(seconds: 15));
+      final uri = _hasOfficialAuth
+          ? _officialUri('/album/get', {
+              'album_id': albumId,
+            })
+          : Uri.parse('$_albumUrl?album_id=${Uri.encodeComponent(albumId)}');
+      final response = await _client
+          .get(
+            uri,
+            headers: _hasOfficialAuth ? _officialHeaders() : null,
+          )
+          .timeout(const Duration(seconds: 15));
 
       if (response.statusCode != 200) {
         print('[Qobuz] Album fetch failed: ${response.statusCode}');
@@ -445,11 +648,22 @@ class QobuzServiceImpl implements MusicService {
 
     try {
       while (hasMore) {
-        final uri = Uri.parse(
-            '$_playlistUrl?playlist_id=${Uri.encodeComponent(playlistId)}&limit=$limit&offset=$offset');
+        final uri = _hasOfficialAuth
+            ? _officialUri('/playlist/get', {
+                'playlist_id': playlistId,
+                'extra': 'tracks',
+                'limit': limit.toString(),
+                'offset': offset.toString(),
+              })
+            : Uri.parse(
+                '$_playlistUrl?playlist_id=${Uri.encodeComponent(playlistId)}&limit=$limit&offset=$offset');
 
-        final response =
-            await _client.get(uri).timeout(const Duration(seconds: 20));
+        final response = await _client
+            .get(
+              uri,
+              headers: _hasOfficialAuth ? _officialHeaders() : null,
+            )
+            .timeout(const Duration(seconds: 20));
 
         if (response.statusCode != 200) {
           print('[Qobuz] Playlist fetch failed: ${response.statusCode}');
@@ -520,6 +734,16 @@ class QobuzServiceImpl implements MusicService {
   }) async {
     final cleanId = trackId.replaceFirst('qobuz:', '');
     print('[Qobuz] Getting stream info for track: $cleanId');
+
+    if (_hasOfficialAuth) {
+      final official = await _getOfficialStreamInfo(
+        cleanId,
+        fallbackQuality: fallbackQuality,
+      );
+      if (official != null) {
+        return official;
+      }
+    }
 
     final endpoints = [
       ..._streamEndpoints.sublist(_lastWorkingStreamIndex),
@@ -595,7 +819,7 @@ class QobuzServiceImpl implements MusicService {
         final qualityCode =
             inferredBitDepth >= 24 ? 'HI_RES_LOSSLESS' : 'LOSSLESS';
         print(
-          '[Qobuz] Stream quality: $qualityCode (${inferredBitDepth}-bit/${inferredSampleRate}Hz) via ${endpoint['name']}',
+          '[Qobuz] Stream quality: $qualityCode (${inferredBitDepth}-bit/${inferredSampleRate}Hz) via ${endpoint['name'] ?? 'unknown'}',
         );
 
         return QobuzStreamInfo(
@@ -606,11 +830,75 @@ class QobuzServiceImpl implements MusicService {
           endpoint: endpoint['name'] ?? 'unknown',
         );
       } catch (e) {
-        print('[Qobuz] ${endpoint['name']} failed: $e');
+        print('[Qobuz] ${endpoint['name'] ?? 'unknown'} failed: $e');
       }
     }
 
     print('[Qobuz] All stream endpoints failed for track: $cleanId');
+    return null;
+  }
+
+  Future<QobuzStreamInfo?> _getOfficialStreamInfo(
+    String trackId, {
+    AudioQuality? fallbackQuality,
+  }) async {
+    if (!_hasOfficialAuth) {
+      return null;
+    }
+
+    const formats = ['27', '7', '6', '5'];
+    for (final format in formats) {
+      try {
+        final timestamp =
+            (DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000).toString();
+        final signature = _fileSignature(format, trackId, timestamp);
+        final uri = _officialUri('/track/getFileUrl', {
+          'track_id': trackId,
+          'format_id': format,
+          'intent': 'stream',
+          'request_ts': timestamp,
+          'request_sig': signature,
+        });
+        final response = await _client
+            .get(uri, headers: _officialHeaders())
+            .timeout(const Duration(seconds: 10));
+
+        if (response.statusCode != 200) {
+          continue;
+        }
+
+        final payload = json.decode(response.body) as Map<String, dynamic>;
+        final streamUrl = payload['url'];
+        if (streamUrl is! String || streamUrl.isEmpty) {
+          continue;
+        }
+
+        final bitDepth = _asInt(payload['bit_depth']) ??
+            (format == '27' || format == '7'
+                ? 24
+                : (fallbackQuality?.bitDepth ?? 16));
+        final sampleRate = _asSampleRateHz(payload['sampling_rate']) ??
+            (bitDepth >= 24
+                ? (format == '27' ? 192000 : 96000)
+                : (fallbackQuality?.sampleRate ?? 44100));
+        final qualityCode = bitDepth >= 24 ? 'HI_RES_LOSSLESS' : 'LOSSLESS';
+
+        print(
+          '[Qobuz] Official stream quality: $qualityCode (${bitDepth}-bit/${sampleRate}Hz)',
+        );
+
+        return QobuzStreamInfo(
+          url: streamUrl,
+          bitDepth: bitDepth,
+          sampleRate: sampleRate,
+          qualityCode: qualityCode,
+          endpoint: 'official',
+        );
+      } catch (e) {
+        print('[Qobuz] Official getFileUrl failed for format $format: $e');
+      }
+    }
+
     return null;
   }
 

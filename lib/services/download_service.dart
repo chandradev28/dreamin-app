@@ -20,7 +20,7 @@ class DownloadService {
 
   // Service instances for stream URL resolution
   TidalService? _tidalService;
-  final QobuzServiceImpl _qobuzService = QobuzServiceImpl();
+  QobuzServiceImpl _qobuzService = QobuzServiceImpl();
   SubsonicServiceImpl? _subsonicService;
 
   /// Initialize with Tidal service (requires credentials)
@@ -31,6 +31,11 @@ class DownloadService {
   /// Initialize with Subsonic service
   void initSubsonic(SubsonicServiceImpl service) {
     _subsonicService = service;
+  }
+
+  /// Initialize with Qobuz service
+  void initQobuz(QobuzServiceImpl service) {
+    _qobuzService = service;
   }
 
   /// Get the downloads directory path
