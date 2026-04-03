@@ -254,7 +254,8 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
       }
 
       // Check if user has enough listening history for personalization
-      final totalPlays = await _database.getTotalPlayCount();
+      final totalPlays =
+          await _database.getTotalPlayCount(source: _musicService.source.index);
       final hasPersonalization = totalPlays >= 10;
 
       print(
@@ -299,7 +300,10 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
   }
 
   Future<List<Track>> _loadRecentlyPlayedTracks({int limit = 12}) async {
-    final history = await _database.getRecentlyPlayed(limit: limit * 4);
+    final history = await _database.getRecentlyPlayed(
+      limit: limit * 4,
+      source: _musicService.source.index,
+    );
     final tracks = <Track>[];
     final seenIds = <String>{};
 
@@ -395,9 +399,18 @@ class HomeDataNotifier extends StateNotifier<HomeDataState> {
 
     // Get user preferences from local database (fast, local)
     final dbResults = await Future.wait([
-      _database.getTopArtistNames(limit: 10),
-      _database.getTopGenres(limit: 5),
-      _recommendationService.getRecommendations(limit: _homeSeeAllLimit),
+      _database.getTopArtistNames(
+        limit: 10,
+        source: _musicService.source.index,
+      ),
+      _database.getTopGenres(
+        limit: 5,
+        source: _musicService.source.index,
+      ),
+      _recommendationService.getRecommendations(
+        limit: _homeSeeAllLimit,
+        source: _musicService.source.index,
+      ),
       _loadRecentlyPlayedTracks(limit: 12),
     ]);
 

@@ -65,3 +65,36 @@ enum QualityPreference {
   high, // 16-bit from TIDAL
   original, // From Subsonic
 }
+
+enum QobuzStreamQuality {
+  maxHiRes,
+  hiRes,
+  cd,
+  mp3;
+
+  String get displayName {
+    switch (this) {
+      case QobuzStreamQuality.maxHiRes:
+        return 'Max Hi-Res';
+      case QobuzStreamQuality.hiRes:
+        return 'Hi-Res';
+      case QobuzStreamQuality.cd:
+        return 'CD Quality';
+      case QobuzStreamQuality.mp3:
+        return 'MP3';
+    }
+  }
+
+  String get description {
+    switch (this) {
+      case QobuzStreamQuality.maxHiRes:
+        return '24-bit / up to 192kHz';
+      case QobuzStreamQuality.hiRes:
+        return '24-bit / up to 96kHz';
+      case QobuzStreamQuality.cd:
+        return '16-bit / 44.1kHz';
+      case QobuzStreamQuality.mp3:
+        return '320kbps';
+    }
+  }
+}

@@ -422,6 +422,18 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
 
   String _trackKey(Track track) => '${track.source.name}:${track.id}';
 
+  bool _isSuspiciousLoadedDuration(Track track, Duration? loadedDuration) {
+    if (loadedDuration == null) {
+      return false;
+    }
+
+    final expectedSeconds = track.duration.inSeconds;
+    final actualSeconds = loadedDuration.inSeconds;
+    return expectedSeconds >= 90 &&
+        actualSeconds > 0 &&
+        (actualSeconds <= 35 || actualSeconds < (expectedSeconds * 0.45));
+  }
+
   List<String> _trimQueuedTrackKeys(
       List<Track> queue, int queueIndex, List<String> queuedTrackKeys) {
     if (queuedTrackKeys.isEmpty || queue.isEmpty) {
@@ -502,6 +514,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
 
       String? streamUrl;
       AudioSource? streamAudioSource;
+      List<QobuzStreamInfo> qobuzCandidates = const [];
       String?
           quality; // Don't set default - will be determined from stream info
       int bitDepth = 0;
@@ -582,13 +595,19 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
           case MusicSource.qobuz:
             final fallbackBitDepth = track.quality?.bitDepth ?? 16;
             final fallbackSampleRate = track.quality?.sampleRate ?? 44100;
+            final preferredQobuzQuality =
+                _ref.read(qobuzPreferredQualityProvider);
 
-            if (_musicService is QobuzServiceImpl) {
-              final qobuzInfo = await _musicService.getStreamInfo(
+            final qobuzService =
+                _musicService is QobuzServiceImpl ? _musicService : null;
+            if (qobuzService != null) {
+              qobuzCandidates = await qobuzService.getStreamCandidates(
                 track.id,
                 fallbackQuality: track.quality,
+                preferredQuality: preferredQobuzQuality,
               );
-              if (qobuzInfo != null) {
+              if (qobuzCandidates.isNotEmpty) {
+                final qobuzInfo = qobuzCandidates.first;
                 streamUrl = qobuzInfo.url;
                 quality = qobuzInfo.qualityCode;
                 bitDepth = qobuzInfo.bitDepth;
@@ -640,6 +659,36 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       if (streamAudioSource != null) {
         print('🔗 Loading DASH audio source: $streamUrl');
         loadedDuration = await _audioPlayer.setAudioSource(streamAudioSource);
+      } else if (track.source == MusicSource.qobuz &&
+          qobuzCandidates.isNotEmpty) {
+        Object? lastCandidateError;
+        for (final candidate in qobuzCandidates) {
+          try {
+            streamUrl = candidate.url;
+            quality = candidate.qualityCode;
+            bitDepth = candidate.bitDepth;
+            sampleRate = candidate.sampleRate;
+            codec = 'FLAC';
+            updateQualityState();
+            print(
+                'ðŸ”— Trying Qobuz candidate ${candidate.endpoint} ${candidate.bitDepth}-bit/${candidate.sampleRate}Hz');
+            loadedDuration = await _audioPlayer.setUrl(candidate.url);
+            if (_isSuspiciousLoadedDuration(track, loadedDuration)) {
+              throw Exception(
+                'Rejected short proxy stream (${loadedDuration!.inSeconds}s for expected ${track.duration.inSeconds}s)',
+              );
+            }
+            lastCandidateError = null;
+            break;
+          } catch (e) {
+            lastCandidateError = e;
+            print('âŒ Qobuz candidate failed: $e');
+          }
+        }
+
+        if (lastCandidateError != null) {
+          throw Exception(lastCandidateError.toString());
+        }
       } else {
         final resolvedStreamUrl = streamUrl!;
         print(
@@ -652,15 +701,13 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
         return;
       }
 
-      if (track.source == MusicSource.tidal && loadedDuration != null) {
-        final expectedSeconds = track.duration.inSeconds;
-        final actualSeconds = loadedDuration.inSeconds;
-        final suspiciouslyShort = expectedSeconds >= 90 &&
-            actualSeconds > 0 &&
-            (actualSeconds <= 35 || actualSeconds < (expectedSeconds * 0.45));
-        if (suspiciouslyShort) {
+      if ((track.source == MusicSource.tidal ||
+              track.source == MusicSource.qobuz) &&
+          _isSuspiciousLoadedDuration(track, loadedDuration)) {
+        final actualSeconds = loadedDuration?.inSeconds ?? 0;
+        if (actualSeconds > 0) {
           throw Exception(
-            'Rejected short proxy stream (${actualSeconds}s for expected ${expectedSeconds}s)',
+            'Rejected short proxy stream (${actualSeconds}s for expected ${track.duration.inSeconds}s)',
           );
         }
       }
@@ -1173,15 +1220,19 @@ class HistoryState {
 
 class HistoryNotifier extends StateNotifier<HistoryState> {
   final AppDatabase _database;
+  final int _source;
 
-  HistoryNotifier(this._database) : super(const HistoryState()) {
+  HistoryNotifier(this._database, this._source) : super(const HistoryState()) {
     loadHistory();
   }
 
   Future<void> loadHistory() async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final history = await _database.getRecentlyPlayed(limit: 50);
+      final history = await _database.getRecentlyPlayed(
+        limit: 50,
+        source: _source,
+      );
       final tracks = history
           .map((h) {
             try {
@@ -1202,7 +1253,7 @@ class HistoryNotifier extends StateNotifier<HistoryState> {
 
   Future<void> clearHistory() async {
     try {
-      await _database.clearHistory();
+      await _database.clearHistory(source: _source);
       state = state.copyWith(history: []);
     } catch (e) {
       state = state.copyWith(error: e.toString());
@@ -1213,5 +1264,6 @@ class HistoryNotifier extends StateNotifier<HistoryState> {
 final historyProvider =
     StateNotifierProvider<HistoryNotifier, HistoryState>((ref) {
   final database = ref.watch(databaseProvider);
-  return HistoryNotifier(database);
+  final source = ref.watch(sourceSelectionProvider).activeSource;
+  return HistoryNotifier(database, source.index);
 });

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme/app_theme.dart';
+import '../../models/music_source.dart';
 import '../../providers/music_provider.dart';
 import '../../providers/source_provider.dart';
 
@@ -432,13 +433,15 @@ class _MusicSourceSettingsScreenState
     ref.invalidate(homeDataProvider);
   }
 
-  Future<void> _showQobuzCredentialsDialog() async {
-    final qobuzState = ref.read(qobuzAuthProvider);
-    final tokenController = TextEditingController(text: qobuzState.userToken);
-    final userIdController = TextEditingController(text: qobuzState.userId);
-    final appIdController = TextEditingController(text: qobuzState.appId);
+  Future<void> _showQobuzCredentialsDialog({QobuzProfile? profile}) async {
+    final nameController = TextEditingController(
+        text: profile?.name ?? profile?.displayName ?? '');
+    final tokenController =
+        TextEditingController(text: profile?.userToken ?? '');
+    final userIdController = TextEditingController(text: profile?.userId ?? '');
+    final appIdController = TextEditingController(text: profile?.appId ?? '');
     final appSecretController =
-        TextEditingController(text: qobuzState.appSecret);
+        TextEditingController(text: profile?.appSecret ?? '');
 
     await showDialog<void>(
       context: context,
@@ -446,7 +449,7 @@ class _MusicSourceSettingsScreenState
         return AlertDialog(
           backgroundColor: AppTheme.surfaceColor,
           title: Text(
-            'Connect Qobuz',
+            profile == null ? 'Add Qobuz Profile' : 'Edit Qobuz Profile',
             style: AppTheme.titleLarge.copyWith(
               color: Colors.white,
               fontWeight: FontWeight.w700,
@@ -457,6 +460,11 @@ class _MusicSourceSettingsScreenState
               mainAxisSize: MainAxisSize.min,
               children: [
                 _buildTokenField(
+                  controller: nameController,
+                  label: 'Profile name',
+                ),
+                const SizedBox(height: 12),
+                _buildTokenField(
                   controller: tokenController,
                   label: 'User token',
                   obscureText: true,
@@ -464,18 +472,25 @@ class _MusicSourceSettingsScreenState
                 const SizedBox(height: 12),
                 _buildTokenField(
                   controller: userIdController,
-                  label: 'User ID',
+                  label: 'User ID (optional)',
                 ),
                 const SizedBox(height: 12),
                 _buildTokenField(
                   controller: appIdController,
-                  label: 'App ID',
+                  label: 'App ID (optional)',
                 ),
                 const SizedBox(height: 12),
                 _buildTokenField(
                   controller: appSecretController,
-                  label: 'App secret',
+                  label: 'App secret (optional)',
                   obscureText: true,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Token-only profiles are allowed, but official Qobuz playback, downloads, and account details need the app credentials too.',
+                  style: AppTheme.bodySmall.copyWith(
+                    color: Colors.white.withOpacity(0.7),
+                  ),
                 ),
               ],
             ),
@@ -488,7 +503,9 @@ class _MusicSourceSettingsScreenState
             FilledButton(
               onPressed: () async {
                 final messenger = ScaffoldMessenger.of(this.context);
-                await ref.read(qobuzAuthProvider.notifier).saveCredentials(
+                await ref.read(qobuzAuthProvider.notifier).saveProfile(
+                      profileId: profile?.id,
+                      name: nameController.text,
                       userToken: tokenController.text,
                       userId: userIdController.text,
                       appId: appIdController.text,
@@ -499,19 +516,28 @@ class _MusicSourceSettingsScreenState
                   return;
                 }
                 Navigator.of(this.context).pop();
+                await _activateSource(ActiveSource.qobuz);
 
                 if (nextState.isConnected) {
-                  await _activateSource(ActiveSource.qobuz);
                   messenger.showSnackBar(
                     const SnackBar(
-                      content: Text('Qobuz account connected'),
+                      content: Text('Qobuz profile connected'),
+                    ),
+                  );
+                } else if (nextState.activeProfile?.hasToken == true) {
+                  messenger.showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Qobuz profile saved. Add app credentials to unlock official playback.',
+                      ),
                     ),
                   );
                 } else {
                   messenger.showSnackBar(
                     SnackBar(
-                      content:
-                          Text(nextState.error ?? 'Qobuz validation failed'),
+                      content: Text(
+                        nextState.error ?? 'Unable to save Qobuz profile',
+                      ),
                     ),
                   );
                 }
@@ -527,6 +553,7 @@ class _MusicSourceSettingsScreenState
       },
     );
 
+    nameController.dispose();
     tokenController.dispose();
     userIdController.dispose();
     appIdController.dispose();
@@ -561,8 +588,104 @@ class _MusicSourceSettingsScreenState
     );
   }
 
+  Future<void> _showQobuzQualityDialog(QobuzAuthState qobuzState) async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: AppTheme.surfaceColor,
+          title: Text(
+            'Stream Quality',
+            style: AppTheme.titleLarge.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: QobuzStreamQuality.values.map((quality) {
+              return RadioListTile<QobuzStreamQuality>(
+                value: quality,
+                groupValue: qobuzState.preferredQuality,
+                onChanged: (value) async {
+                  if (value == null) return;
+                  await ref
+                      .read(qobuzAuthProvider.notifier)
+                      .setPreferredQuality(value);
+                  if (!mounted) return;
+                  Navigator.of(this.context).pop();
+                },
+                activeColor: AppTheme.primaryColor,
+                title: Text(
+                  quality.displayName,
+                  style: AppTheme.bodyLarge.copyWith(color: Colors.white),
+                ),
+                subtitle: Text(
+                  quality.description,
+                  style: AppTheme.bodySmall.copyWith(
+                    color: Colors.white.withOpacity(0.7),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildQobuzQualityCard(QobuzAuthState qobuzState) {
+    return Material(
+      color: AppTheme.surfaceColor,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: () => _showQobuzQualityDialog(qobuzState),
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.amber.withOpacity(0.14),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.graphic_eq, color: Colors.amber),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Qobuz Stream Quality',
+                      style: AppTheme.bodyLarge.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${qobuzState.preferredQuality.displayName} • Falls back automatically if a track is missing in that quality',
+                      style: AppTheme.bodySmall.copyWith(
+                        color: Colors.white.withOpacity(0.7),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: Colors.white70),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildQobuzAccountCard(QobuzAuthState qobuzState) {
-    final info = qobuzState.accountInfo;
+    final profile = qobuzState.activeProfile;
+    final info = profile?.accountInfo;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -599,9 +722,16 @@ class _MusicSourceSettingsScreenState
             ],
           ),
           const SizedBox(height: 14),
-          if (info != null) ...[
+          if (profile == null) ...[
             Text(
-              info.displayName.isNotEmpty ? info.displayName : info.login,
+              'Add one or more Qobuz profiles. You can save token-only profiles, then switch or complete them later.',
+              style: AppTheme.bodySmall.copyWith(
+                color: Colors.white.withOpacity(0.72),
+              ),
+            ),
+          ] else if (info != null) ...[
+            Text(
+              profile.displayName,
               style: AppTheme.titleMedium.copyWith(
                 color: Colors.white,
                 fontWeight: FontWeight.w700,
@@ -636,10 +766,29 @@ class _MusicSourceSettingsScreenState
             ),
           ] else ...[
             Text(
-              qobuzState.error ??
-                  'Add your Qobuz token, user ID, app ID, and app secret to use your personal Qobuz account across the app.',
+              profile.hasOfficialCredentials
+                  ? (profile.error ??
+                      'Qobuz profile saved, but the account could not be validated.')
+                  : 'This profile only has a user token right now. Add user ID, app ID, and app secret when you want official playback and account details.',
               style: AppTheme.bodySmall.copyWith(
                 color: Colors.white.withOpacity(0.72),
+              ),
+            ),
+          ],
+          if (qobuzState.profiles.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Text(
+              'Profiles',
+              style: AppTheme.bodyMedium.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            ...qobuzState.profiles.map(
+              (entry) => _buildQobuzProfileTile(
+                profile: entry,
+                isActive: qobuzState.activeProfile?.id == entry.id,
               ),
             ),
           ],
@@ -648,37 +797,109 @@ class _MusicSourceSettingsScreenState
             children: [
               Expanded(
                 child: OutlinedButton(
-                  onPressed: _showQobuzCredentialsDialog,
+                  onPressed: () => _showQobuzCredentialsDialog(),
                   style: OutlinedButton.styleFrom(
                     side: BorderSide(color: Colors.white.withOpacity(0.18)),
                     foregroundColor: Colors.white,
                   ),
-                  child: Text(info == null ? 'Add Token' : 'Update Token'),
+                  child: const Text('Add Profile'),
                 ),
               ),
-              if (qobuzState.hasCredentials) ...[
+              if (profile != null) ...[
                 const SizedBox(width: 10),
                 IconButton(
-                  onPressed: () =>
-                      ref.read(qobuzAuthProvider.notifier).refreshAccountInfo(),
+                  onPressed: profile.hasOfficialCredentials
+                      ? () => ref
+                          .read(qobuzAuthProvider.notifier)
+                          .refreshActiveProfile()
+                      : null,
                   icon: const Icon(Icons.refresh, color: Colors.white),
                 ),
                 IconButton(
                   onPressed: () async {
                     await ref
                         .read(qobuzAuthProvider.notifier)
-                        .clearCredentials();
-                    if (ref.read(sourceSelectionProvider).activeSource ==
-                        ActiveSource.qobuz) {
+                        .removeProfile(profile.id);
+                    if (ref.read(qobuzAuthProvider).profiles.isEmpty &&
+                        ref.read(sourceSelectionProvider).activeSource ==
+                            ActiveSource.qobuz) {
                       await _activateSource(ActiveSource.tidal);
                     }
                   },
-                  icon: const Icon(Icons.logout, color: Colors.white70),
+                  icon: const Icon(Icons.delete_outline, color: Colors.white70),
                 ),
               ],
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildQobuzProfileTile({
+    required QobuzProfile profile,
+    required bool isActive,
+  }) {
+    final subtitle = profile.isConnected
+        ? (profile.accountInfo?.subscriptionLabel ?? 'Connected')
+        : profile.hasOfficialCredentials
+            ? 'Needs refresh'
+            : 'Token only';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.03),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isActive
+              ? AppTheme.primaryColor.withOpacity(0.35)
+              : Colors.white.withOpacity(0.06),
+        ),
+      ),
+      child: ListTile(
+        onTap: () async {
+          await ref.read(qobuzAuthProvider.notifier).setActiveProfile(
+                profile.id,
+              );
+          if (ref.read(sourceSelectionProvider).activeSource ==
+              ActiveSource.qobuz) {
+            ref.invalidate(homeDataProvider);
+          }
+        },
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+        leading: Icon(
+          isActive ? Icons.radio_button_checked : Icons.radio_button_off,
+          color: isActive ? AppTheme.primaryColor : Colors.white54,
+        ),
+        title: Text(
+          profile.displayName,
+          style: AppTheme.bodyMedium.copyWith(
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        subtitle: Text(
+          subtitle,
+          style: AppTheme.bodySmall.copyWith(
+            color: Colors.white.withOpacity(0.68),
+          ),
+        ),
+        trailing: SizedBox(
+          width: 96,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              if (profile.isConnected)
+                const Icon(Icons.verified, color: Colors.greenAccent, size: 18)
+              else if (profile.hasToken)
+                const Icon(Icons.key, color: Colors.amber, size: 18),
+              IconButton(
+                onPressed: () => _showQobuzCredentialsDialog(profile: profile),
+                icon: const Icon(Icons.edit_outlined, color: Colors.white70),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -798,14 +1019,18 @@ class _MusicSourceSettingsScreenState
             iconColor: Colors.blue,
             title: 'Qobuz',
             subtitle: qobuzState.isConnected
-                ? 'Connected Qobuz account with official playback'
-                : '24-bit Hi-Res FLAC streaming',
+                ? 'Using ${qobuzState.activeProfile?.displayName ?? "Qobuz"} with official playback'
+                : qobuzState.activeProfile?.hasToken == true
+                    ? 'Profile saved. Add app credentials to unlock official playback'
+                    : '24-bit Hi-Res FLAC streaming',
             isSelected: sourceState.activeSource == ActiveSource.qobuz,
             onTap: () => _activateSource(ActiveSource.qobuz),
             trailingIcon: qobuzState.isConnected ? Icons.verified : null,
           ),
           const SizedBox(height: 16),
           _buildQobuzAccountCard(qobuzState),
+          const SizedBox(height: 12),
+          _buildQobuzQualityCard(qobuzState),
           const SizedBox(height: 32),
           Container(
             padding: const EdgeInsets.all(16),

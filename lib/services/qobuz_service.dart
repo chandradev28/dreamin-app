@@ -731,17 +731,37 @@ class QobuzServiceImpl implements MusicService {
   Future<QobuzStreamInfo?> getStreamInfo(
     String trackId, {
     AudioQuality? fallbackQuality,
+    QobuzStreamQuality? preferredQuality,
+  }) async {
+    final candidates = await getStreamCandidates(
+      trackId,
+      fallbackQuality: fallbackQuality,
+      preferredQuality: preferredQuality,
+    );
+    return candidates.isEmpty ? null : candidates.first;
+  }
+
+  Future<List<QobuzStreamInfo>> getStreamCandidates(
+    String trackId, {
+    AudioQuality? fallbackQuality,
+    QobuzStreamQuality? preferredQuality,
   }) async {
     final cleanId = trackId.replaceFirst('qobuz:', '');
+    final selectedQuality = preferredQuality ?? QobuzStreamQuality.maxHiRes;
     print('[Qobuz] Getting stream info for track: $cleanId');
+    final candidates = <QobuzStreamInfo>[];
+    final seenUrls = <String>{};
 
     if (_hasOfficialAuth) {
-      final official = await _getOfficialStreamInfo(
+      final officialCandidates = await _getOfficialStreamCandidates(
         cleanId,
         fallbackQuality: fallbackQuality,
+        preferredQuality: selectedQuality,
       );
-      if (official != null) {
-        return official;
+      for (final candidate in officialCandidates) {
+        if (seenUrls.add(candidate.url)) {
+          candidates.add(candidate);
+        }
       }
     }
 
@@ -749,105 +769,145 @@ class QobuzServiceImpl implements MusicService {
       ..._streamEndpoints.sublist(_lastWorkingStreamIndex),
       ..._streamEndpoints.sublist(0, _lastWorkingStreamIndex),
     ];
+    final proxyQualities = _proxyQualityParams(selectedQuality);
 
     for (int i = 0; i < endpoints.length; i++) {
       final endpoint = endpoints[i];
+      final endpointQualityParams =
+          endpoint['quality'] != null ? proxyQualities : <String?>[null];
 
-      try {
-        String url = '${endpoint['url']}?${endpoint['param']}=$cleanId';
-        if (endpoint['quality'] != null) {
-          url += '&quality=${endpoint['quality']}';
+      for (final qualityParam in endpointQualityParams) {
+        try {
+          String url = '${endpoint['url']}?${endpoint['param']}=$cleanId';
+          if (qualityParam != null) {
+            url += '&quality=$qualityParam';
+          }
+
+          print('[Qobuz] Trying ${endpoint['name']}: $url');
+
+          final response = await _client.get(Uri.parse(url)).timeout(
+                const Duration(seconds: 8),
+              );
+
+          if (response.statusCode != 200) {
+            print(
+                '[Qobuz] ${endpoint['name']} returned ${response.statusCode}');
+            continue;
+          }
+
+          final raw = json.decode(response.body);
+          final root = raw is Map<String, dynamic> ? raw : <String, dynamic>{};
+          final payload = root['data'] is Map<String, dynamic>
+              ? root['data'] as Map<String, dynamic>
+              : root;
+
+          final streamUrl = payload['url'] ?? root['url'];
+          if (streamUrl is! String ||
+              streamUrl.isEmpty ||
+              !seenUrls.add(streamUrl)) {
+            continue;
+          }
+
+          final bitDepthFromResponse = _asInt(
+            payload['maximum_bit_depth'] ??
+                payload['bit_depth'] ??
+                payload['bitDepth'] ??
+                payload['audio_info']?['maximum_bit_depth'] ??
+                root['maximum_bit_depth'] ??
+                root['bit_depth'] ??
+                root['bitDepth'],
+          );
+
+          final sampleRateFromResponse = _asInt(
+            payload['maximum_sampling_rate'] ??
+                payload['sample_rate'] ??
+                payload['sampleRate'] ??
+                payload['audio_info']?['maximum_sampling_rate'] ??
+                root['maximum_sampling_rate'] ??
+                root['sample_rate'] ??
+                root['sampleRate'],
+          );
+
+          final inferredBitDepth = bitDepthFromResponse ??
+              ((qualityParam == '7') ? 24 : (fallbackQuality?.bitDepth ?? 16));
+          final inferredSampleRate = sampleRateFromResponse ??
+              (inferredBitDepth >= 24
+                  ? (qualityParam == '27'
+                      ? 192000
+                      : (fallbackQuality?.sampleRate ?? 96000))
+                  : (fallbackQuality?.sampleRate ?? 44100));
+
+          final originalIndex =
+              _streamEndpoints.indexWhere((e) => e['name'] == endpoint['name']);
+          if (originalIndex != -1) {
+            _lastWorkingStreamIndex = originalIndex;
+          }
+
+          final qualityCode =
+              inferredBitDepth >= 24 ? 'HI_RES_LOSSLESS' : 'LOSSLESS';
+          print(
+            '[Qobuz] Stream quality: $qualityCode (${inferredBitDepth}-bit/${inferredSampleRate}Hz) via ${endpoint['name'] ?? 'unknown'}',
+          );
+
+          candidates.add(
+            QobuzStreamInfo(
+              url: streamUrl,
+              bitDepth: inferredBitDepth,
+              sampleRate: inferredSampleRate,
+              qualityCode: qualityCode,
+              endpoint: endpoint['name'] ?? 'unknown',
+            ),
+          );
+        } catch (e) {
+          print('[Qobuz] ${endpoint['name'] ?? 'unknown'} failed: $e');
         }
-
-        print('[Qobuz] Trying ${endpoint['name']}: $url');
-
-        final response = await _client.get(Uri.parse(url)).timeout(
-              const Duration(seconds: 8),
-            );
-
-        if (response.statusCode != 200) {
-          print('[Qobuz] ${endpoint['name']} returned ${response.statusCode}');
-          continue;
-        }
-
-        final raw = json.decode(response.body);
-        final root = raw is Map<String, dynamic> ? raw : <String, dynamic>{};
-        final payload = root['data'] is Map<String, dynamic>
-            ? root['data'] as Map<String, dynamic>
-            : root;
-
-        final streamUrl = payload['url'] ?? root['url'];
-        if (streamUrl is! String || streamUrl.isEmpty) {
-          continue;
-        }
-
-        final bitDepthFromResponse = _asInt(
-          payload['maximum_bit_depth'] ??
-              payload['bit_depth'] ??
-              payload['bitDepth'] ??
-              payload['audio_info']?['maximum_bit_depth'] ??
-              root['maximum_bit_depth'] ??
-              root['bit_depth'] ??
-              root['bitDepth'],
-        );
-
-        final sampleRateFromResponse = _asInt(
-          payload['maximum_sampling_rate'] ??
-              payload['sample_rate'] ??
-              payload['sampleRate'] ??
-              payload['audio_info']?['maximum_sampling_rate'] ??
-              root['maximum_sampling_rate'] ??
-              root['sample_rate'] ??
-              root['sampleRate'],
-        );
-
-        final inferredBitDepth = bitDepthFromResponse ??
-            (endpoint['quality'] == '7'
-                ? 24
-                : (fallbackQuality?.bitDepth ?? 16));
-        final inferredSampleRate = sampleRateFromResponse ??
-            (inferredBitDepth >= 24
-                ? (fallbackQuality?.sampleRate ?? 96000)
-                : (fallbackQuality?.sampleRate ?? 44100));
-
-        final originalIndex =
-            _streamEndpoints.indexWhere((e) => e['name'] == endpoint['name']);
-        if (originalIndex != -1) {
-          _lastWorkingStreamIndex = originalIndex;
-        }
-
-        final qualityCode =
-            inferredBitDepth >= 24 ? 'HI_RES_LOSSLESS' : 'LOSSLESS';
-        print(
-          '[Qobuz] Stream quality: $qualityCode (${inferredBitDepth}-bit/${inferredSampleRate}Hz) via ${endpoint['name'] ?? 'unknown'}',
-        );
-
-        return QobuzStreamInfo(
-          url: streamUrl,
-          bitDepth: inferredBitDepth,
-          sampleRate: inferredSampleRate,
-          qualityCode: qualityCode,
-          endpoint: endpoint['name'] ?? 'unknown',
-        );
-      } catch (e) {
-        print('[Qobuz] ${endpoint['name'] ?? 'unknown'} failed: $e');
       }
     }
 
-    print('[Qobuz] All stream endpoints failed for track: $cleanId');
-    return null;
+    if (candidates.isEmpty) {
+      print('[Qobuz] All stream endpoints failed for track: $cleanId');
+    }
+    return candidates;
   }
 
-  Future<QobuzStreamInfo?> _getOfficialStreamInfo(
+  List<String> _preferredFormats(QobuzStreamQuality quality) {
+    switch (quality) {
+      case QobuzStreamQuality.maxHiRes:
+        return const ['27', '7', '6', '5'];
+      case QobuzStreamQuality.hiRes:
+        return const ['7', '6', '5'];
+      case QobuzStreamQuality.cd:
+        return const ['6', '5'];
+      case QobuzStreamQuality.mp3:
+        return const ['5'];
+    }
+  }
+
+  List<String> _proxyQualityParams(QobuzStreamQuality quality) {
+    switch (quality) {
+      case QobuzStreamQuality.maxHiRes:
+        return const ['7', '6', '5'];
+      case QobuzStreamQuality.hiRes:
+        return const ['7', '6', '5'];
+      case QobuzStreamQuality.cd:
+        return const ['6', '5'];
+      case QobuzStreamQuality.mp3:
+        return const ['5'];
+    }
+  }
+
+  Future<List<QobuzStreamInfo>> _getOfficialStreamCandidates(
     String trackId, {
     AudioQuality? fallbackQuality,
+    QobuzStreamQuality preferredQuality = QobuzStreamQuality.maxHiRes,
   }) async {
     if (!_hasOfficialAuth) {
-      return null;
+      return const [];
     }
 
-    const formats = ['27', '7', '6', '5'];
-    for (final format in formats) {
+    final candidates = <QobuzStreamInfo>[];
+    final seenUrls = <String>{};
+    for (final format in _preferredFormats(preferredQuality)) {
       try {
         final timestamp =
             (DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000).toString();
@@ -869,7 +929,9 @@ class QobuzServiceImpl implements MusicService {
 
         final payload = json.decode(response.body) as Map<String, dynamic>;
         final streamUrl = payload['url'];
-        if (streamUrl is! String || streamUrl.isEmpty) {
+        if (streamUrl is! String ||
+            streamUrl.isEmpty ||
+            !seenUrls.add(streamUrl)) {
           continue;
         }
 
@@ -887,19 +949,21 @@ class QobuzServiceImpl implements MusicService {
           '[Qobuz] Official stream quality: $qualityCode (${bitDepth}-bit/${sampleRate}Hz)',
         );
 
-        return QobuzStreamInfo(
-          url: streamUrl,
-          bitDepth: bitDepth,
-          sampleRate: sampleRate,
-          qualityCode: qualityCode,
-          endpoint: 'official',
+        candidates.add(
+          QobuzStreamInfo(
+            url: streamUrl,
+            bitDepth: bitDepth,
+            sampleRate: sampleRate,
+            qualityCode: qualityCode,
+            endpoint: 'official',
+          ),
         );
       } catch (e) {
         print('[Qobuz] Official getFileUrl failed for format $format: $e');
       }
     }
 
-    return null;
+    return candidates;
   }
 
   @override

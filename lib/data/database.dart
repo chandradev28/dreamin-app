@@ -2,6 +2,7 @@ import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
+import 'dart:convert';
 import 'dart:io';
 
 part 'database.g.dart';
@@ -254,11 +255,17 @@ class AppDatabase extends _$AppDatabase {
     }
   }
 
-  Future<List<HistoryEntry>> getRecentlyPlayed({int limit = 50}) async {
-    return (select(historyEntries)
-          ..orderBy([(t) => OrderingTerm.desc(t.playedAt)])
-          ..limit(limit))
-        .get();
+  Future<List<HistoryEntry>> getRecentlyPlayed({
+    int limit = 50,
+    int? source,
+  }) async {
+    final query = select(historyEntries)
+      ..orderBy([(t) => OrderingTerm.desc(t.playedAt)])
+      ..limit(limit);
+    if (source != null) {
+      query.where((t) => t.source.equals(source));
+    }
+    return query.get();
   }
 
   Future<List<PlayCount>> getMostPlayed({int limit = 50}) async {
@@ -268,15 +275,28 @@ class AppDatabase extends _$AppDatabase {
         .get();
   }
 
-  Future<int> getTotalPlayCount() async {
+  Future<int> getTotalPlayCount({int? source}) async {
+    if (source == null) {
+      final result = await customSelect(
+        'SELECT COUNT(*) as count FROM history_entries',
+      ).getSingle();
+      return result.read<int>('count');
+    }
+
     final result = await customSelect(
-      'SELECT COUNT(*) as count FROM history_entries',
+      'SELECT COUNT(*) as count FROM history_entries WHERE source = ?',
+      variables: [Variable.withInt(source)],
     ).getSingle();
     return result.read<int>('count');
   }
 
-  Future<void> clearHistory() async {
-    await delete(historyEntries).go();
+  Future<void> clearHistory({int? source}) async {
+    if (source == null) {
+      await delete(historyEntries).go();
+      return;
+    }
+
+    await (delete(historyEntries)..where((t) => t.source.equals(source))).go();
   }
 
   // ==================== FAVORITES ====================
@@ -379,16 +399,45 @@ class AppDatabase extends _$AppDatabase {
 
   // ==================== RECOMMENDATIONS ====================
 
-  Future<List<String>> getTopGenres({int limit = 5}) async {
-    final results = await (select(genreFrequency)
-          ..orderBy([(t) => OrderingTerm.desc(t.playCount)])
-          ..limit(limit))
-        .get();
-    return results.map((r) => r.genre).toList();
+  Future<List<String>> getTopGenres({int limit = 5, int? source}) async {
+    if (source == null) {
+      final results = await (select(genreFrequency)
+            ..orderBy([(t) => OrderingTerm.desc(t.playCount)])
+            ..limit(limit))
+          .get();
+      return results.map((r) => r.genre).toList();
+    }
+
+    final entries = await getRecentlyPlayed(limit: 500, source: source);
+    final counts = <String, int>{};
+    for (final entry in entries) {
+      try {
+        final genreValue =
+            (jsonDecode(entry.trackJson) as Map<String, dynamic>)['genre']
+                ?.toString()
+                .trim();
+        if (genreValue != null && genreValue.isNotEmpty) {
+          counts.update(genreValue, (value) => value + 1, ifAbsent: () => 1);
+        }
+      } catch (_) {}
+    }
+
+    final ranked = counts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return ranked.take(limit).map((entry) => entry.key).toList();
   }
 
-  Future<List<String>> getTopArtistIds({int limit = 10}) async {
-    final results = await (select(artistFrequency)
+  Future<List<String>> getTopArtistIds({int limit = 10, int? source}) async {
+    if (source == null) {
+      final results = await (select(artistFrequency)
+            ..orderBy([(t) => OrderingTerm.desc(t.playCount)])
+            ..limit(limit))
+          .get();
+      return results.map((r) => r.artistId).toList();
+    }
+
+    final results = await (select(playCounts)
+          ..where((t) => t.source.equals(source))
           ..orderBy([(t) => OrderingTerm.desc(t.playCount)])
           ..limit(limit))
         .get();
@@ -396,23 +445,90 @@ class AppDatabase extends _$AppDatabase {
   }
 
   /// Get top artist names for search queries (personalization)
-  Future<List<String>> getTopArtistNames({int limit = 10}) async {
-    final results = await (select(artistFrequency)
-          ..orderBy([(t) => OrderingTerm.desc(t.playCount)])
-          ..limit(limit))
-        .get();
-    return results
-        .map((r) => r.artistName.trim())
-        .where((name) => name.isNotEmpty)
-        .toList();
+  Future<List<String>> getTopArtistNames({int limit = 10, int? source}) async {
+    if (source == null) {
+      final results = await (select(artistFrequency)
+            ..orderBy([(t) => OrderingTerm.desc(t.playCount)])
+            ..limit(limit))
+          .get();
+      return results
+          .map((r) => r.artistName.trim())
+          .where((name) => name.isNotEmpty)
+          .toList();
+    }
+
+    final entries = await getRecentlyPlayed(limit: 500, source: source);
+    final counts = <String, int>{};
+    for (final entry in entries) {
+      try {
+        final artistName =
+            (jsonDecode(entry.trackJson) as Map<String, dynamic>)['artist']
+                ?.toString()
+                .trim();
+        if (artistName != null && artistName.isNotEmpty) {
+          counts.update(artistName, (value) => value + 1, ifAbsent: () => 1);
+        }
+      } catch (_) {}
+    }
+
+    final ranked = counts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return ranked.take(limit).map((entry) => entry.key).toList();
   }
 
   /// Get top artist data with full info (for artists screen)
-  Future<List<ArtistFrequencyData>> getTopArtistData({int limit = 50}) async {
-    return (select(artistFrequency)
-          ..orderBy([(t) => OrderingTerm.desc(t.playCount)])
-          ..limit(limit))
-        .get();
+  Future<List<ArtistFrequencyData>> getTopArtistData({
+    int limit = 50,
+    int? source,
+  }) async {
+    if (source == null) {
+      return (select(artistFrequency)
+            ..orderBy([(t) => OrderingTerm.desc(t.playCount)])
+            ..limit(limit))
+          .get();
+    }
+
+    final entries = await getRecentlyPlayed(limit: 1000, source: source);
+    final counts = <String, ArtistFrequencyData>{};
+    for (final entry in entries) {
+      try {
+        final json = jsonDecode(entry.trackJson) as Map<String, dynamic>;
+        final artistId =
+            (json['artistId']?.toString().trim().isNotEmpty == true)
+                ? json['artistId'].toString().trim()
+                : entry.artistId;
+        final artistName = json['artist']?.toString().trim() ?? '';
+        if (artistId.isEmpty) {
+          continue;
+        }
+        final existing = counts[artistId];
+        if (existing == null) {
+          counts[artistId] = ArtistFrequencyData(
+            id: 0,
+            artistId: artistId,
+            artistName: artistName,
+            playCount: 1,
+            lastPlayedAt: entry.playedAt,
+          );
+        } else {
+          counts[artistId] = ArtistFrequencyData(
+            id: existing.id,
+            artistId: existing.artistId,
+            artistName:
+                artistName.isNotEmpty ? artistName : existing.artistName,
+            playCount: existing.playCount + 1,
+            lastPlayedAt:
+                entry.playedAt.isAfter(existing.lastPlayedAt ?? entry.playedAt)
+                    ? entry.playedAt
+                    : existing.lastPlayedAt,
+          );
+        }
+      } catch (_) {}
+    }
+
+    final ranked = counts.values.toList()
+      ..sort((a, b) => b.playCount.compareTo(a.playCount));
+    return ranked.take(limit).toList();
   }
 
   Future<Map<String, int>> getListeningPatterns() async {

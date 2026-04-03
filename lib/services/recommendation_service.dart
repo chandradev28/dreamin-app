@@ -8,36 +8,42 @@ import '../services/tidal_service.dart';
 class RecommendationService {
   final AppDatabase _database;
   final TidalService _tidalService;
-  
+
   // Cache recommendations to avoid recalculating too often
-  List<Track>? _cachedRecommendations;
-  DateTime? _lastRecommendationTime;
+  final Map<int, List<Track>> _cachedRecommendations = {};
+  final Map<int, DateTime> _lastRecommendationTime = {};
   static const _cacheValidDuration = Duration(minutes: 30);
 
   RecommendationService(this._database, this._tidalService);
 
   /// Get personalized recommendations based on listening history
-  Future<List<Track>> getRecommendations({int limit = 20}) async {
+  Future<List<Track>> getRecommendations({
+    int limit = 20,
+    int source = 0,
+  }) async {
     // Return cached if still valid
-    if (_cachedRecommendations != null && 
-        _lastRecommendationTime != null &&
-        DateTime.now().difference(_lastRecommendationTime!) < _cacheValidDuration) {
-      return _cachedRecommendations!;
+    final cached = _cachedRecommendations[source];
+    final cachedAt = _lastRecommendationTime[source];
+    if (cached != null &&
+        cachedAt != null &&
+        DateTime.now().difference(cachedAt) < _cacheValidDuration) {
+      return cached;
     }
 
-    final totalPlays = await _database.getTotalPlayCount();
-    
+    final totalPlays = await _database.getTotalPlayCount(source: source);
+
     // If insufficient history, return popular/random tracks
     if (totalPlays < 10) {
       return _getDefaultRecommendations(limit);
     }
 
     final recommendations = <Track>[];
-    
+
     // Get user preferences
-    final topGenres = await _database.getTopGenres(limit: 5);
-    final topArtistIds = await _database.getTopArtistIds(limit: 10);
-    
+    final topGenres = await _database.getTopGenres(limit: 5, source: source);
+    final topArtistIds =
+        await _database.getTopArtistIds(limit: 10, source: source);
+
     // 1. Get tracks from top genres (40% of recommendations)
     final genreCount = (limit * 0.4).round();
     if (topGenres.isNotEmpty) {
@@ -68,14 +74,16 @@ class RecommendationService {
       uniqueTracks['${track.id}_${track.source.name}'] = track;
     }
 
-    _cachedRecommendations = uniqueTracks.values.take(limit).toList();
-    _lastRecommendationTime = DateTime.now();
+    final next = uniqueTracks.values.take(limit).toList();
+    _cachedRecommendations[source] = next;
+    _lastRecommendationTime[source] = DateTime.now();
 
-    return _cachedRecommendations!;
+    return next;
   }
 
   /// Get genre-based recommendations
-  Future<List<Track>> getGenreRecommendations(String genre, {int limit = 10}) async {
+  Future<List<Track>> getGenreRecommendations(String genre,
+      {int limit = 10}) async {
     try {
       // Search for tracks in this genre
       final result = await _tidalService.search(genre, limit: limit * 2);
@@ -89,7 +97,7 @@ class RecommendationService {
   Future<List<Track>> _getTracksByGenres(List<String> genres, int limit) async {
     final tracks = <Track>[];
     final perGenre = (limit / genres.length).ceil();
-    
+
     for (final genre in genres) {
       try {
         final result = await _tidalService.search(genre, limit: perGenre);
@@ -98,15 +106,16 @@ class RecommendationService {
         // Skip failed searches
       }
     }
-    
+
     return tracks.take(limit).toList();
   }
 
   /// Get tracks from user's top artists
-  Future<List<Track>> _getTracksByArtists(List<String> artistIds, int limit) async {
+  Future<List<Track>> _getTracksByArtists(
+      List<String> artistIds, int limit) async {
     final tracks = <Track>[];
     final perArtist = (limit / artistIds.length).ceil();
-    
+
     for (final artistId in artistIds.take(5)) {
       try {
         final artist = await _tidalService.getArtist(artistId);
@@ -125,7 +134,7 @@ class RecommendationService {
         // Skip failed fetches
       }
     }
-    
+
     return tracks.take(limit).toList();
   }
 
@@ -134,7 +143,7 @@ class RecommendationService {
     try {
       final newAlbums = await _tidalService.getNewAlbums(limit: 5);
       final tracks = <Track>[];
-      
+
       for (final album in newAlbums.take(3)) {
         try {
           final albumDetail = await _tidalService.getAlbum(album.id);
@@ -143,7 +152,7 @@ class RecommendationService {
           // Skip failed fetches
         }
       }
-      
+
       return tracks.take(limit).toList();
     } catch (e) {
       return [];
@@ -156,7 +165,7 @@ class RecommendationService {
       // Get popular playlists and extract tracks
       final playlists = await _tidalService.getPopularPlaylists(limit: 3);
       final tracks = <Track>[];
-      
+
       for (final playlist in playlists) {
         try {
           final detail = await _tidalService.getPlaylist(playlist.id);
@@ -165,7 +174,7 @@ class RecommendationService {
           // Skip failed fetches
         }
       }
-      
+
       if (tracks.isEmpty) {
         // Fallback to search for popular genres
         final popularGenres = ['pop', 'hip hop', 'rock', 'electronic'];
@@ -178,7 +187,7 @@ class RecommendationService {
           }
         }
       }
-      
+
       return tracks.take(limit).toList();
     } catch (e) {
       return [];
@@ -190,7 +199,7 @@ class RecommendationService {
     final hourCounts = await _database.getListeningPatterns();
     final topGenres = await _database.getTopGenres(limit: 5);
     final topArtists = await _database.getTopArtistIds(limit: 5);
-    
+
     return ListeningPatterns(
       hourlyDistribution: hourCounts,
       topGenres: topGenres,
@@ -200,14 +209,16 @@ class RecommendationService {
 
   /// Refresh recommendations (call after significant listening activity)
   void invalidateCache() {
-    _cachedRecommendations = null;
-    _lastRecommendationTime = null;
+    _cachedRecommendations.clear();
+    _lastRecommendationTime.clear();
   }
 
   /// Check if recommendations should be refreshed
   bool shouldRefresh() {
-    if (_lastRecommendationTime == null) return true;
-    return DateTime.now().difference(_lastRecommendationTime!) > _cacheValidDuration;
+    if (_lastRecommendationTime.isEmpty) return true;
+    return _lastRecommendationTime.values.any(
+      (timestamp) => DateTime.now().difference(timestamp) > _cacheValidDuration,
+    );
   }
 }
 
