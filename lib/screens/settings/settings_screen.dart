@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme/app_theme.dart';
-import '../../models/music_source.dart';
 import '../../providers/music_provider.dart';
 import '../../providers/source_provider.dart';
 
@@ -475,21 +474,48 @@ class _MusicSourceSettingsScreenState
                   label: 'User ID (optional)',
                 ),
                 const SizedBox(height: 12),
-                _buildTokenField(
-                  controller: appIdController,
-                  label: 'App ID (optional)',
-                ),
-                const SizedBox(height: 12),
-                _buildTokenField(
-                  controller: appSecretController,
-                  label: 'App secret (optional)',
-                  obscureText: true,
-                ),
-                const SizedBox(height: 12),
                 Text(
-                  'Token-only profiles are allowed, but official Qobuz playback, downloads, and account details need the app credentials too.',
+                  'Dreamin can try to fetch the current Qobuz web-player app credentials automatically, so token login can work like QBDLX. Add custom app credentials only if your token needs a specific app version.',
                   style: AppTheme.bodySmall.copyWith(
                     color: Colors.white.withOpacity(0.7),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Theme(
+                  data: Theme.of(context).copyWith(
+                    dividerColor: Colors.transparent,
+                  ),
+                  child: ExpansionTile(
+                    tilePadding: EdgeInsets.zero,
+                    childrenPadding: EdgeInsets.zero,
+                    iconColor: Colors.white70,
+                    collapsedIconColor: Colors.white70,
+                    title: Text(
+                      'Custom App Credentials',
+                      style: AppTheme.bodyMedium.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    subtitle: Text(
+                      'Optional override for app ID and secret',
+                      style: AppTheme.bodySmall.copyWith(
+                        color: Colors.white.withOpacity(0.6),
+                      ),
+                    ),
+                    children: [
+                      const SizedBox(height: 8),
+                      _buildTokenField(
+                        controller: appIdController,
+                        label: 'App ID (optional)',
+                      ),
+                      const SizedBox(height: 12),
+                      _buildTokenField(
+                        controller: appSecretController,
+                        label: 'App secret (optional)',
+                        obscureText: true,
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -526,9 +552,10 @@ class _MusicSourceSettingsScreenState
                   );
                 } else if (nextState.activeProfile?.hasToken == true) {
                   messenger.showSnackBar(
-                    const SnackBar(
+                    SnackBar(
                       content: Text(
-                        'Qobuz profile saved. Add app credentials to unlock official playback.',
+                        nextState.error ??
+                            'Qobuz profile saved, but Dreamin could not validate the token yet.',
                       ),
                     ),
                   );
@@ -588,101 +615,6 @@ class _MusicSourceSettingsScreenState
     );
   }
 
-  Future<void> _showQobuzQualityDialog(QobuzAuthState qobuzState) async {
-    await showDialog<void>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          backgroundColor: AppTheme.surfaceColor,
-          title: Text(
-            'Stream Quality',
-            style: AppTheme.titleLarge.copyWith(
-              color: Colors.white,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: QobuzStreamQuality.values.map((quality) {
-              return RadioListTile<QobuzStreamQuality>(
-                value: quality,
-                groupValue: qobuzState.preferredQuality,
-                onChanged: (value) async {
-                  if (value == null) return;
-                  await ref
-                      .read(qobuzAuthProvider.notifier)
-                      .setPreferredQuality(value);
-                  if (!mounted) return;
-                  Navigator.of(this.context).pop();
-                },
-                activeColor: AppTheme.primaryColor,
-                title: Text(
-                  quality.displayName,
-                  style: AppTheme.bodyLarge.copyWith(color: Colors.white),
-                ),
-                subtitle: Text(
-                  quality.description,
-                  style: AppTheme.bodySmall.copyWith(
-                    color: Colors.white.withOpacity(0.7),
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildQobuzQualityCard(QobuzAuthState qobuzState) {
-    return Material(
-      color: AppTheme.surfaceColor,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        onTap: () => _showQobuzQualityDialog(qobuzState),
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.amber.withOpacity(0.14),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(Icons.graphic_eq, color: Colors.amber),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Qobuz Stream Quality',
-                      style: AppTheme.bodyLarge.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${qobuzState.preferredQuality.displayName} • Falls back automatically if a track is missing in that quality',
-                      style: AppTheme.bodySmall.copyWith(
-                        color: Colors.white.withOpacity(0.7),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const Icon(Icons.chevron_right, color: Colors.white70),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildQobuzAccountCard(QobuzAuthState qobuzState) {
     final profile = qobuzState.activeProfile;
     final info = profile?.accountInfo;
@@ -724,7 +656,7 @@ class _MusicSourceSettingsScreenState
           const SizedBox(height: 14),
           if (profile == null) ...[
             Text(
-              'Add one or more Qobuz profiles. You can save token-only profiles, then switch or complete them later.',
+              'Add one or more Qobuz profiles. Token login is supported, and Dreamin will try to fetch the current web-player app credentials automatically.',
               style: AppTheme.bodySmall.copyWith(
                 color: Colors.white.withOpacity(0.72),
               ),
@@ -769,7 +701,9 @@ class _MusicSourceSettingsScreenState
               profile.hasOfficialCredentials
                   ? (profile.error ??
                       'Qobuz profile saved, but the account could not be validated.')
-                  : 'This profile only has a user token right now. Add user ID, app ID, and app secret when you want official playback and account details.',
+                  : profile.usesWebPlayerCredentials
+                      ? 'Dreamin will keep trying token login with web-player credentials. Add custom app credentials only if your token belongs to a different app version.'
+                      : 'This profile needs Dreamin to resolve matching app credentials before official Qobuz playback can work.',
               style: AppTheme.bodySmall.copyWith(
                 color: Colors.white.withOpacity(0.72),
               ),
@@ -808,7 +742,7 @@ class _MusicSourceSettingsScreenState
               if (profile != null) ...[
                 const SizedBox(width: 10),
                 IconButton(
-                  onPressed: profile.hasOfficialCredentials
+                  onPressed: profile.hasToken
                       ? () => ref
                           .read(qobuzAuthProvider.notifier)
                           .refreshActiveProfile()
@@ -843,8 +777,10 @@ class _MusicSourceSettingsScreenState
     final subtitle = profile.isConnected
         ? (profile.accountInfo?.subscriptionLabel ?? 'Connected')
         : profile.hasOfficialCredentials
-            ? 'Needs refresh'
-            : 'Token only';
+            ? (profile.usesWebPlayerCredentials
+                ? 'Web-player credentials'
+                : 'Custom app credentials')
+            : 'Token login';
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
@@ -1029,8 +965,6 @@ class _MusicSourceSettingsScreenState
           ),
           const SizedBox(height: 16),
           _buildQobuzAccountCard(qobuzState),
-          const SizedBox(height: 12),
-          _buildQobuzQualityCard(qobuzState),
           const SizedBox(height: 32),
           Container(
             padding: const EdgeInsets.all(16),

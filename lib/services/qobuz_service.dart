@@ -51,6 +51,28 @@ class QobuzAccountInfo {
   });
 }
 
+class QobuzResolvedAuth {
+  final QobuzAuthConfig authConfig;
+  final QobuzAccountInfo accountInfo;
+  final bool usedWebPlayerCredentials;
+
+  const QobuzResolvedAuth({
+    required this.authConfig,
+    required this.accountInfo,
+    required this.usedWebPlayerCredentials,
+  });
+}
+
+class QobuzWebPlayerCredentials {
+  final String appId;
+  final String appSecret;
+
+  const QobuzWebPlayerCredentials({
+    required this.appId,
+    required this.appSecret,
+  });
+}
+
 /// Qobuz Service Implementation
 /// Uses qobuz.squid.wtf as primary with dab.yeet.su and dabmusic.xyz as fallbacks
 /// Provides 24-bit Hi-Res FLAC streaming
@@ -61,6 +83,7 @@ class QobuzAccountInfo {
 /// - Fallback stream endpoints
 class QobuzServiceImpl implements MusicService {
   static const String _officialApiBase = 'https://www.qobuz.com/api.json/0.2';
+  static const String _webPlayerBase = 'https://play.qobuz.com';
   static const String _searchUrl = 'https://qobuz.squid.wtf/api/get-music';
   static const String _albumUrl = 'https://qobuz.squid.wtf/api/get-album';
   static const String _artistUrl = 'https://qobuz.squid.wtf/api/get-artist';
@@ -88,6 +111,7 @@ class QobuzServiceImpl implements MusicService {
   ];
 
   static int _lastWorkingStreamIndex = 0;
+  static QobuzWebPlayerCredentials? _cachedWebPlayerCredentials;
   static final http.Client _client = http.Client();
   final QobuzAuthConfig? authConfig;
 
@@ -97,6 +121,137 @@ class QobuzServiceImpl implements MusicService {
   MusicSource get source => MusicSource.qobuz;
 
   bool get _hasOfficialAuth => authConfig?.isComplete == true;
+
+  static Future<QobuzResolvedAuth> resolveTokenLogin({
+    required String userToken,
+    String userId = '',
+    String appId = '',
+    String appSecret = '',
+  }) async {
+    final cleanedToken = userToken.trim();
+    if (cleanedToken.isEmpty) {
+      throw Exception('Qobuz token is required');
+    }
+
+    final hasCustomCredentials =
+        appId.trim().isNotEmpty && appSecret.trim().isNotEmpty;
+    final credentials = hasCustomCredentials
+        ? QobuzWebPlayerCredentials(
+            appId: appId.trim(),
+            appSecret: appSecret.trim(),
+          )
+        : await fetchWebPlayerCredentials();
+
+    final provisionalConfig = QobuzAuthConfig(
+      userToken: cleanedToken,
+      userId: userId.trim().isNotEmpty ? userId.trim() : '0',
+      appId: credentials.appId,
+      appSecret: credentials.appSecret,
+    );
+
+    final provisionalService = QobuzServiceImpl(authConfig: provisionalConfig);
+    final info = await provisionalService._getAccountInfoWithTokenOnlyFallback(
+      userIdHint: userId.trim(),
+    );
+
+    return QobuzResolvedAuth(
+      authConfig: QobuzAuthConfig(
+        userToken: cleanedToken,
+        userId: info.userId,
+        appId: credentials.appId,
+        appSecret: credentials.appSecret,
+      ),
+      accountInfo: info,
+      usedWebPlayerCredentials: !hasCustomCredentials,
+    );
+  }
+
+  static Future<QobuzWebPlayerCredentials> fetchWebPlayerCredentials() async {
+    final cached = _cachedWebPlayerCredentials;
+    if (cached != null) {
+      return cached;
+    }
+
+    final htmlResponse = await _client.get(
+      Uri.parse('$_webPlayerBase/login'),
+      headers: {'User-Agent': 'Mozilla/5.0'},
+    ).timeout(const Duration(seconds: 20));
+
+    if (htmlResponse.statusCode != 200) {
+      throw Exception(
+        'Failed to load Qobuz web player login page: ${htmlResponse.statusCode}',
+      );
+    }
+
+    final html = htmlResponse.body;
+    final bundleMatch = RegExp(
+      r'<script src="(?<bundle>/resources/\d+\.\d+\.\d+-[a-z]\d{3}/bundle\.js)',
+    ).firstMatch(html);
+    final bundlePath = bundleMatch?.namedGroup('bundle');
+    if (bundlePath == null || bundlePath.isEmpty) {
+      throw Exception('Could not locate Qobuz web player bundle');
+    }
+
+    final bundleResponse = await _client.get(
+      Uri.parse('$_webPlayerBase$bundlePath'),
+      headers: {'User-Agent': 'Mozilla/5.0'},
+    ).timeout(const Duration(seconds: 20));
+
+    if (bundleResponse.statusCode != 200) {
+      throw Exception(
+        'Failed to load Qobuz web player bundle: ${bundleResponse.statusCode}',
+      );
+    }
+
+    final bundle = bundleResponse.body;
+    final appIdMatch = RegExp(
+      r'production:\{api:\{appId:"(?<appId>.*?)",appSecret:',
+    ).firstMatch(bundle);
+    final appId = appIdMatch?.namedGroup('appId')?.trim() ?? '';
+    if (appId.isEmpty) {
+      throw Exception('Could not extract Qobuz web player app ID');
+    }
+
+    final seedMatch = RegExp(
+      r'\):[a-z]\.initialSeed\("(?<seed>.*?)",window\.utimezone\.(?<timezone>[a-z]+)\)',
+    ).firstMatch(bundle);
+    final seed = seedMatch?.namedGroup('seed') ?? '';
+    final timezone = seedMatch?.namedGroup('timezone') ?? '';
+    if (seed.isEmpty || timezone.isEmpty) {
+      throw Exception('Could not extract Qobuz web player seed');
+    }
+
+    final timezoneTitle =
+        timezone.substring(0, 1).toUpperCase() + timezone.substring(1);
+    final infoExtrasPattern = RegExp(
+      'timezones:\\[.*?name:".*?/$timezoneTitle",info:\\\\"(?<info>.*?)\\\\",extras:\\\\"(?<extras>.*?)\\\\"',
+    );
+    final infoExtrasMatch = infoExtrasPattern.firstMatch(bundle);
+    final info = infoExtrasMatch?.namedGroup('info') ?? '';
+    final extras = infoExtrasMatch?.namedGroup('extras') ?? '';
+    if (info.isEmpty || extras.isEmpty) {
+      throw Exception('Could not extract Qobuz web player app secret');
+    }
+
+    final encodedSecret = (seed + info + extras);
+    if (encodedSecret.length <= 44) {
+      throw Exception('Qobuz web player secret payload was too short');
+    }
+
+    final appSecret = utf8.decode(
+      base64Decode(encodedSecret.substring(0, encodedSecret.length - 44)),
+    );
+    if (appSecret.isEmpty) {
+      throw Exception('Could not decode Qobuz web player app secret');
+    }
+
+    final credentials = QobuzWebPlayerCredentials(
+      appId: appId,
+      appSecret: appSecret,
+    );
+    _cachedWebPlayerCredentials = credentials;
+    return credentials;
+  }
 
   // ============== HELPER FUNCTIONS ==============
 
@@ -191,6 +346,60 @@ class QobuzServiceImpl implements MusicService {
 
     return QobuzAccountInfo(
       userId: (root['id'] ?? authConfig!.userId).toString(),
+      displayName: (root['display_name'] ?? root['login'] ?? '').toString(),
+      login: (root['login'] ?? '').toString(),
+      email: (root['email'] ?? '').toString(),
+      countryCode: (root['country_code'] ?? '').toString(),
+      subscriptionLabel: (parameters['label'] ??
+              credential['description'] ??
+              subscription['offer'] ??
+              'Qobuz')
+          .toString(),
+      startDate: (subscription['start_date'] ?? '').toString(),
+      endDate: (subscription['end_date'] ?? '').toString(),
+      losslessStreaming: parameters['lossless_streaming'] == true,
+      hiResStreaming: parameters['hires_streaming'] == true,
+    );
+  }
+
+  Future<QobuzAccountInfo> _getAccountInfoWithTokenOnlyFallback({
+    String userIdHint = '',
+  }) async {
+    if (authConfig == null || authConfig!.appId.trim().isEmpty) {
+      throw Exception('Qobuz app credentials are missing');
+    }
+    if (authConfig!.userToken.trim().isEmpty) {
+      throw Exception('Qobuz token is missing');
+    }
+
+    final params = <String, String>{
+      'app_id': authConfig!.appId,
+      if (userIdHint.trim().isNotEmpty) 'user_id': userIdHint.trim(),
+    };
+    final uri = Uri.parse('$_officialApiBase/user/get')
+        .replace(queryParameters: params.isEmpty ? null : params);
+    final response = await _client.get(
+      uri,
+      headers: {
+        'User-Agent': 'Dreamin/1.0',
+        'X-App-Id': authConfig!.appId,
+        'X-User-Auth-Token': authConfig!.userToken,
+      },
+    ).timeout(const Duration(seconds: 15));
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Qobuz token validation failed: ${response.statusCode}',
+      );
+    }
+
+    final root = json.decode(response.body) as Map<String, dynamic>;
+    final subscription = root['subscription'] as Map<String, dynamic>? ?? {};
+    final credential = root['credential'] as Map<String, dynamic>? ?? {};
+    final parameters = credential['parameters'] as Map<String, dynamic>? ?? {};
+
+    return QobuzAccountInfo(
+      userId: (root['id'] ?? userIdHint).toString(),
       displayName: (root['display_name'] ?? root['login'] ?? '').toString(),
       login: (root['login'] ?? '').toString(),
       email: (root['email'] ?? '').toString(),
@@ -731,12 +940,10 @@ class QobuzServiceImpl implements MusicService {
   Future<QobuzStreamInfo?> getStreamInfo(
     String trackId, {
     AudioQuality? fallbackQuality,
-    QobuzStreamQuality? preferredQuality,
   }) async {
     final candidates = await getStreamCandidates(
       trackId,
       fallbackQuality: fallbackQuality,
-      preferredQuality: preferredQuality,
     );
     return candidates.isEmpty ? null : candidates.first;
   }
@@ -744,10 +951,8 @@ class QobuzServiceImpl implements MusicService {
   Future<List<QobuzStreamInfo>> getStreamCandidates(
     String trackId, {
     AudioQuality? fallbackQuality,
-    QobuzStreamQuality? preferredQuality,
   }) async {
     final cleanId = trackId.replaceFirst('qobuz:', '');
-    final selectedQuality = preferredQuality ?? QobuzStreamQuality.maxHiRes;
     print('[Qobuz] Getting stream info for track: $cleanId');
     final candidates = <QobuzStreamInfo>[];
     final seenUrls = <String>{};
@@ -756,7 +961,6 @@ class QobuzServiceImpl implements MusicService {
       final officialCandidates = await _getOfficialStreamCandidates(
         cleanId,
         fallbackQuality: fallbackQuality,
-        preferredQuality: selectedQuality,
       );
       for (final candidate in officialCandidates) {
         if (seenUrls.add(candidate.url)) {
@@ -769,7 +973,7 @@ class QobuzServiceImpl implements MusicService {
       ..._streamEndpoints.sublist(_lastWorkingStreamIndex),
       ..._streamEndpoints.sublist(0, _lastWorkingStreamIndex),
     ];
-    final proxyQualities = _proxyQualityParams(selectedQuality);
+    final proxyQualities = _proxyQualityParams();
 
     for (int i = 0; i < endpoints.length; i++) {
       final endpoint = endpoints[i];
@@ -870,36 +1074,17 @@ class QobuzServiceImpl implements MusicService {
     return candidates;
   }
 
-  List<String> _preferredFormats(QobuzStreamQuality quality) {
-    switch (quality) {
-      case QobuzStreamQuality.maxHiRes:
-        return const ['27', '7', '6', '5'];
-      case QobuzStreamQuality.hiRes:
-        return const ['7', '6', '5'];
-      case QobuzStreamQuality.cd:
-        return const ['6', '5'];
-      case QobuzStreamQuality.mp3:
-        return const ['5'];
-    }
+  List<String> _preferredFormats() {
+    return const ['27', '7', '6', '5'];
   }
 
-  List<String> _proxyQualityParams(QobuzStreamQuality quality) {
-    switch (quality) {
-      case QobuzStreamQuality.maxHiRes:
-        return const ['7', '6', '5'];
-      case QobuzStreamQuality.hiRes:
-        return const ['7', '6', '5'];
-      case QobuzStreamQuality.cd:
-        return const ['6', '5'];
-      case QobuzStreamQuality.mp3:
-        return const ['5'];
-    }
+  List<String> _proxyQualityParams() {
+    return const ['7', '6', '5'];
   }
 
   Future<List<QobuzStreamInfo>> _getOfficialStreamCandidates(
     String trackId, {
     AudioQuality? fallbackQuality,
-    QobuzStreamQuality preferredQuality = QobuzStreamQuality.maxHiRes,
   }) async {
     if (!_hasOfficialAuth) {
       return const [];
@@ -907,7 +1092,7 @@ class QobuzServiceImpl implements MusicService {
 
     final candidates = <QobuzStreamInfo>[];
     final seenUrls = <String>{};
-    for (final format in _preferredFormats(preferredQuality)) {
+    for (final format in _preferredFormats()) {
       try {
         final timestamp =
             (DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000).toString();

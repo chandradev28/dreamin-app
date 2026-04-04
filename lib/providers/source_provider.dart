@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/theme/app_theme.dart';
-import '../models/music_source.dart';
 import '../services/music_service.dart';
 import '../services/qobuz_service.dart';
 import '../services/subsonic_service.dart';
@@ -44,6 +43,7 @@ class QobuzProfile {
   final String userId;
   final String appId;
   final String appSecret;
+  final bool usesWebPlayerCredentials;
   final QobuzAccountInfo? accountInfo;
   final String? error;
 
@@ -54,6 +54,7 @@ class QobuzProfile {
     this.userId = '',
     this.appId = '',
     this.appSecret = '',
+    this.usesWebPlayerCredentials = false,
     this.accountInfo,
     this.error,
   });
@@ -95,6 +96,7 @@ class QobuzProfile {
     String? userId,
     String? appId,
     String? appSecret,
+    bool? usesWebPlayerCredentials,
     QobuzAccountInfo? accountInfo,
     String? error,
     bool clearAccountInfo = false,
@@ -107,6 +109,8 @@ class QobuzProfile {
       userId: userId ?? this.userId,
       appId: appId ?? this.appId,
       appSecret: appSecret ?? this.appSecret,
+      usesWebPlayerCredentials:
+          usesWebPlayerCredentials ?? this.usesWebPlayerCredentials,
       accountInfo: clearAccountInfo ? null : (accountInfo ?? this.accountInfo),
       error: clearError ? null : (error ?? this.error),
     );
@@ -120,6 +124,7 @@ class QobuzProfile {
       'userId': userId,
       'appId': appId,
       'appSecret': appSecret,
+      'usesWebPlayerCredentials': usesWebPlayerCredentials,
       'accountInfo': accountInfo == null
           ? null
           : {
@@ -147,6 +152,7 @@ class QobuzProfile {
       userId: (json['userId'] ?? '').toString(),
       appId: (json['appId'] ?? '').toString(),
       appSecret: (json['appSecret'] ?? '').toString(),
+      usesWebPlayerCredentials: json['usesWebPlayerCredentials'] == true,
       accountInfo: infoJson == null
           ? null
           : QobuzAccountInfo(
@@ -170,7 +176,6 @@ class QobuzProfile {
 class QobuzAuthState {
   final List<QobuzProfile> profiles;
   final String? activeProfileId;
-  final QobuzStreamQuality preferredQuality;
   final bool isLoading;
   final bool isInitialized;
   final String? error;
@@ -178,7 +183,6 @@ class QobuzAuthState {
   const QobuzAuthState({
     this.profiles = const [],
     this.activeProfileId,
-    this.preferredQuality = QobuzStreamQuality.maxHiRes,
     this.isLoading = false,
     this.isInitialized = false,
     this.error,
@@ -206,7 +210,6 @@ class QobuzAuthState {
   QobuzAuthState copyWith({
     List<QobuzProfile>? profiles,
     String? activeProfileId,
-    QobuzStreamQuality? preferredQuality,
     bool? isLoading,
     bool? isInitialized,
     String? error,
@@ -217,7 +220,6 @@ class QobuzAuthState {
       profiles: profiles ?? this.profiles,
       activeProfileId:
           clearActiveProfile ? null : (activeProfileId ?? this.activeProfileId),
-      preferredQuality: preferredQuality ?? this.preferredQuality,
       isLoading: isLoading ?? this.isLoading,
       isInitialized: isInitialized ?? this.isInitialized,
       error: clearError ? null : (error ?? this.error),
@@ -232,7 +234,6 @@ class QobuzAuthNotifier extends StateNotifier<QobuzAuthState> {
 
   static const _profilesKey = 'qobuz_profiles_v2';
   static const _activeProfileKey = 'qobuz_active_profile_id';
-  static const _preferredQualityKey = 'qobuz_preferred_quality';
   static const _legacyTokenKey = 'qobuz_user_token';
   static const _legacyUserIdKey = 'qobuz_user_id';
   static const _legacyAppIdKey = 'qobuz_app_id';
@@ -241,11 +242,6 @@ class QobuzAuthNotifier extends StateNotifier<QobuzAuthState> {
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
     final profilesJson = prefs.getString(_profilesKey);
-    final qualityName = prefs.getString(_preferredQualityKey);
-    final preferredQuality = QobuzStreamQuality.values.firstWhere(
-      (value) => value.name == qualityName,
-      orElse: () => QobuzStreamQuality.maxHiRes,
-    );
 
     List<QobuzProfile> profiles = [];
     if (profilesJson != null && profilesJson.isNotEmpty) {
@@ -270,7 +266,6 @@ class QobuzAuthNotifier extends StateNotifier<QobuzAuthState> {
       activeProfileId: profiles.any((profile) => profile.id == activeProfileId)
           ? activeProfileId
           : (profiles.isNotEmpty ? profiles.first.id : null),
-      preferredQuality: preferredQuality,
       isInitialized: true,
       clearError: true,
     );
@@ -328,7 +323,9 @@ class QobuzAuthNotifier extends StateNotifier<QobuzAuthState> {
       return;
     }
 
-    final cleanedProfile = QobuzProfile(
+    state = state.copyWith(isLoading: true, clearError: true);
+
+    var cleanedProfile = QobuzProfile(
       id: profileId ?? DateTime.now().millisecondsSinceEpoch.toString(),
       name: name.trim(),
       userToken: cleanedToken,
@@ -336,6 +333,30 @@ class QobuzAuthNotifier extends StateNotifier<QobuzAuthState> {
       appId: appId.trim(),
       appSecret: appSecret.trim(),
     );
+
+    try {
+      final resolved = await QobuzServiceImpl.resolveTokenLogin(
+        userToken: cleanedProfile.userToken,
+        userId: cleanedProfile.userId,
+        appId: cleanedProfile.appId,
+        appSecret: cleanedProfile.appSecret,
+      );
+      cleanedProfile = cleanedProfile.copyWith(
+        userId: resolved.authConfig.userId,
+        appId: resolved.authConfig.appId,
+        appSecret: resolved.authConfig.appSecret,
+        usesWebPlayerCredentials: resolved.usedWebPlayerCredentials,
+        accountInfo: resolved.accountInfo,
+        clearError: true,
+      );
+    } catch (e) {
+      cleanedProfile = cleanedProfile.copyWith(
+        error: e.toString(),
+        clearAccountInfo: true,
+        usesWebPlayerCredentials: cleanedProfile.appId.trim().isEmpty ||
+            cleanedProfile.appSecret.trim().isEmpty,
+      );
+    }
 
     final nextProfiles = [...state.profiles];
     final existingIndex =
@@ -353,14 +374,59 @@ class QobuzAuthNotifier extends StateNotifier<QobuzAuthState> {
     state = state.copyWith(
       profiles: nextProfiles,
       activeProfileId: nextActiveId,
+      isLoading: false,
+      isInitialized: true,
+      error: cleanedProfile.error,
+    );
+    await _persistProfiles(nextProfiles, nextActiveId);
+  }
+
+  Future<void> _refreshProfile(String profileId) async {
+    final profile = state.profiles.firstWhere(
+      (entry) => entry.id == profileId,
+      orElse: () => throw StateError('Qobuz profile not found'),
+    );
+
+    if (!profile.hasToken) {
+      state = state.copyWith(
+        isLoading: false,
+        isInitialized: true,
+        error: 'Qobuz token is required',
+      );
+      return;
+    }
+
+    final appId = profile.appId.trim();
+    final appSecret = profile.appSecret.trim();
+
+    final resolved = await QobuzServiceImpl.resolveTokenLogin(
+      userToken: profile.userToken,
+      userId: profile.userId,
+      appId: appId,
+      appSecret: appSecret,
+    );
+    final updatedProfiles = state.profiles
+        .map(
+          (entry) => entry.id == profile.id
+              ? entry.copyWith(
+                  userId: resolved.authConfig.userId,
+                  appId: resolved.authConfig.appId,
+                  appSecret: resolved.authConfig.appSecret,
+                  usesWebPlayerCredentials: resolved.usedWebPlayerCredentials,
+                  accountInfo: resolved.accountInfo,
+                  clearError: true,
+                )
+              : entry,
+        )
+        .toList();
+
+    state = state.copyWith(
+      profiles: updatedProfiles,
+      isLoading: false,
       isInitialized: true,
       clearError: true,
     );
-    await _persistProfiles(nextProfiles, nextActiveId);
-
-    if (cleanedProfile.hasOfficialCredentials) {
-      await refreshActiveProfile();
-    }
+    await _persistProfiles(updatedProfiles, state.activeProfileId);
   }
 
   Future<void> setActiveProfile(String profileId) async {
@@ -374,7 +440,7 @@ class QobuzAuthNotifier extends StateNotifier<QobuzAuthState> {
     );
     await _persistProfiles(state.profiles, profileId);
 
-    if (state.activeProfile?.hasOfficialCredentials == true) {
+    if (state.activeProfile?.hasToken == true) {
       await refreshActiveProfile();
     }
   }
@@ -389,35 +455,9 @@ class QobuzAuthNotifier extends StateNotifier<QobuzAuthState> {
       return;
     }
 
-    if (!profile.hasOfficialCredentials) {
-      state = state.copyWith(
-        isInitialized: true,
-        clearError: true,
-      );
-      return;
-    }
-
     state = state.copyWith(isLoading: true, clearError: true);
     try {
-      final info = await QobuzServiceImpl(authConfig: profile.authConfig)
-          .getAccountInfo();
-      final updatedProfiles = state.profiles
-          .map(
-            (entry) => entry.id == profile.id
-                ? entry.copyWith(
-                    accountInfo: info,
-                    clearError: true,
-                  )
-                : entry,
-          )
-          .toList();
-      state = state.copyWith(
-        profiles: updatedProfiles,
-        isLoading: false,
-        isInitialized: true,
-        clearError: true,
-      );
-      await _persistProfiles(updatedProfiles, state.activeProfileId);
+      await _refreshProfile(profile.id);
     } catch (e) {
       final updatedProfiles = state.profiles
           .map(
@@ -466,6 +506,8 @@ class QobuzAuthNotifier extends StateNotifier<QobuzAuthState> {
       await prefs.remove(_legacyAppSecretKey);
     } else if (state.activeProfile?.hasOfficialCredentials == true) {
       await refreshActiveProfile();
+    } else if (state.activeProfile?.hasToken == true) {
+      await refreshActiveProfile();
     }
   }
 
@@ -483,12 +525,6 @@ class QobuzAuthNotifier extends StateNotifier<QobuzAuthState> {
       isInitialized: true,
       clearError: true,
     );
-  }
-
-  Future<void> setPreferredQuality(QobuzStreamQuality quality) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_preferredQualityKey, quality.name);
-    state = state.copyWith(preferredQuality: quality);
   }
 }
 
@@ -551,10 +587,6 @@ final qobuzAuthProvider =
 final sourceSelectionProvider =
     StateNotifierProvider<SourceSelectionNotifier, SourceSelectionState>((ref) {
   return SourceSelectionNotifier();
-});
-
-final qobuzPreferredQualityProvider = Provider<QobuzStreamQuality>((ref) {
-  return ref.watch(qobuzAuthProvider).preferredQuality;
 });
 
 final qobuzServiceProvider = Provider<QobuzServiceImpl>((ref) {

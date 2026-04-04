@@ -721,8 +721,6 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
           case MusicSource.qobuz:
             final fallbackBitDepth = track.quality?.bitDepth ?? 16;
             final fallbackSampleRate = track.quality?.sampleRate ?? 44100;
-            final preferredQobuzQuality =
-                _ref.read(qobuzPreferredQualityProvider);
 
             final qobuzService =
                 _musicService is QobuzServiceImpl ? _musicService : null;
@@ -730,7 +728,6 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
               qobuzCandidates = await qobuzService.getStreamCandidates(
                 track.id,
                 fallbackQuality: track.quality,
-                preferredQuality: preferredQobuzQuality,
               );
               if (qobuzCandidates.isNotEmpty) {
                 playbackCandidates.addAll(
