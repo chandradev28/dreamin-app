@@ -713,6 +713,12 @@ class TidalService {
   /// Avoids DASH segment URLs that can cause short playback and auto-skips.
   Future<StreamInfo> getStreamInfo(String trackId,
       {TidalQuality? quality}) async {
+    final candidates = await getStreamCandidates(trackId, quality: quality);
+    return candidates.first;
+  }
+
+  Future<List<StreamInfo>> getStreamCandidates(String trackId,
+      {TidalQuality? quality}) async {
     // Parse track ID - ensure it's numeric
     final numericId = int.tryParse(trackId.replaceAll(RegExp(r'[^0-9]'), ''));
     if (numericId == null || numericId == 0) {
@@ -725,44 +731,66 @@ class TidalService {
     print(
         '[TIDAL] Getting stream for track $numericId (quality: ${requestedQuality.apiValue})');
 
-    try {
-      final primary = await _fetchStreamInfo(numericId, requestedQuality);
-      print('[TIDAL] Got stream URL from primary quality');
-      return primary;
-    } catch (e) {
-      // If higher quality fails (or returns non-playable DASH segments), retry LOSSLESS.
-      if (requestedQuality != TidalQuality.hifi) {
-        print(
-            '[TIDAL] ${requestedQuality.apiValue} failed, retrying LOSSLESS...');
+    final candidates = <StreamInfo>[];
+    final seenUrls = <String>{};
+    final qualitiesToTry = <TidalQuality>[
+      requestedQuality,
+      if (requestedQuality != TidalQuality.hifi) TidalQuality.hifi,
+    ];
+
+    for (final candidateQuality in qualitiesToTry) {
+      for (final endpoint in TidalEndpoints.streamEndpoints) {
         try {
-          final fallback = await _fetchStreamInfo(numericId, TidalQuality.hifi);
-          print('[TIDAL] Got LOSSLESS fallback stream URL');
-          return fallback;
-        } catch (fallbackError) {
-          print('[TIDAL] LOSSLESS fallback failed: $fallbackError');
-          throw TidalApiException(
-            'Failed to get stream (primary + LOSSLESS fallback): $fallbackError',
+          final streamInfo = await _fetchStreamInfoFromEndpoint(
+            endpoint,
+            numericId,
+            candidateQuality,
+          );
+          if (streamInfo.url.isNotEmpty && seenUrls.add(streamInfo.url)) {
+            candidates.add(streamInfo);
+          }
+        } catch (e) {
+          print(
+            '[TIDAL] ${candidateQuality.apiValue} failed on $endpoint: $e',
           );
         }
       }
-
-      print('[TIDAL] Stream error: $e');
-      throw TidalApiException('Failed to get stream: $e');
     }
+
+    if (candidates.isEmpty) {
+      throw TidalApiException(
+        'Failed to get stream: no playable candidates returned',
+      );
+    }
+
+    print('[TIDAL] Found ${candidates.length} playable stream candidates');
+    return candidates;
   }
 
   Future<StreamInfo> _fetchStreamInfo(
       int numericId, TidalQuality quality) async {
-    final response = await _executeStreamWithFallback((baseUrl) {
-      print('[TIDAL] Trying stream endpoint: $baseUrl');
-      return _dio.get(
-        '$baseUrl${TidalEndpoints.trackPath}',
-        queryParameters: {
-          'id': numericId,
-          'quality': quality.apiValue,
-        },
-      );
-    });
+    for (final endpoint in TidalEndpoints.streamEndpoints) {
+      try {
+        return await _fetchStreamInfoFromEndpoint(endpoint, numericId, quality);
+      } catch (_) {}
+    }
+    throw TidalApiException(
+        'All stream endpoints failed for ${quality.apiValue}');
+  }
+
+  Future<StreamInfo> _fetchStreamInfoFromEndpoint(
+    String baseUrl,
+    int numericId,
+    TidalQuality quality,
+  ) async {
+    print('[TIDAL] Trying stream endpoint: $baseUrl');
+    final response = await _dio.get(
+      '$baseUrl${TidalEndpoints.trackPath}',
+      queryParameters: {
+        'id': numericId,
+        'quality': quality.apiValue,
+      },
+    );
 
     final data = response.data as Map<String, dynamic>;
     var streamInfo = StreamInfo.fromJson(data);
@@ -782,6 +810,7 @@ class TidalService {
         bitrate: streamInfo.bitrate,
         isDashManifest: true,
         dashManifestContent: streamInfo.dashManifestContent,
+        endpoint: baseUrl,
       );
     }
 
@@ -789,7 +818,7 @@ class TidalService {
       throw TidalApiException('No playable stream URL in response');
     }
 
-    return streamInfo;
+    return streamInfo.copyWith(endpoint: baseUrl);
   }
 
   Future<Response<T>> _executeStreamWithFallback<T>(
@@ -1010,6 +1039,7 @@ class StreamInfo {
   final int bitrate;
   final bool isDashManifest;
   final String? dashManifestContent;
+  final String? endpoint;
 
   StreamInfo({
     required this.url,
@@ -1020,7 +1050,32 @@ class StreamInfo {
     this.bitrate = 1411,
     this.isDashManifest = false,
     this.dashManifestContent,
+    this.endpoint,
   });
+
+  StreamInfo copyWith({
+    String? url,
+    String? codec,
+    int? bitDepth,
+    int? sampleRate,
+    String? quality,
+    int? bitrate,
+    bool? isDashManifest,
+    String? dashManifestContent,
+    String? endpoint,
+  }) {
+    return StreamInfo(
+      url: url ?? this.url,
+      codec: codec ?? this.codec,
+      bitDepth: bitDepth ?? this.bitDepth,
+      sampleRate: sampleRate ?? this.sampleRate,
+      quality: quality ?? this.quality,
+      bitrate: bitrate ?? this.bitrate,
+      isDashManifest: isDashManifest ?? this.isDashManifest,
+      dashManifestContent: dashManifestContent ?? this.dashManifestContent,
+      endpoint: endpoint ?? this.endpoint,
+    );
+  }
 
   factory StreamInfo.fromJson(Map<String, dynamic> json) {
     // hifi-api returns the stream data in 'data' field
@@ -1103,6 +1158,7 @@ class StreamInfo {
           dashManifestContent != null &&
           dashManifestContent.isNotEmpty,
       dashManifestContent: dashManifestContent,
+      endpoint: streamData['endpoint'] as String?,
     );
   }
 
@@ -1400,6 +1456,11 @@ class TidalServiceImpl implements MusicService {
   /// Get stream info with quality options (TIDAL-specific)
   Future<StreamInfo?> getStreamInfo(String trackId, {TidalQuality? quality}) {
     return _service.getStreamInfo(trackId, quality: quality);
+  }
+
+  Future<List<StreamInfo>> getStreamCandidates(String trackId,
+      {TidalQuality? quality}) {
+    return _service.getStreamCandidates(trackId, quality: quality);
   }
 
   /// Get lyrics (TIDAL-specific)

@@ -132,6 +132,28 @@ class PlayerState {
   }
 }
 
+class _PlaybackCandidate {
+  final String url;
+  final AudioSource? audioSource;
+  final String? quality;
+  final int bitDepth;
+  final int sampleRate;
+  final String? codec;
+  final String sourceLabel;
+
+  const _PlaybackCandidate({
+    required this.url,
+    this.audioSource,
+    this.quality,
+    this.bitDepth = 0,
+    this.sampleRate = 0,
+    this.codec,
+    required this.sourceLabel,
+  });
+
+  String get endpoint => sourceLabel;
+}
+
 /// Player Notifier with History Recording
 class PlayerNotifier extends StateNotifier<PlayerState> {
   final AudioPlayer _audioPlayer;
@@ -144,6 +166,11 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   int _consecutiveFailures = 0; // Track consecutive play failures
   int _playRequestCounter = 0; // Prevent stale async play operations
   DateTime? _lastAutoSkipAt; // Debounce duplicate auto-skip triggers
+  List<_PlaybackCandidate> _activePlaybackCandidates = const [];
+  int _activePlaybackCandidateIndex = 0;
+  String? _activePlaybackTrackKey;
+  final Map<String, int> _candidateRetryStartIndex = {};
+  bool _isRecoveringShortTrack = false;
   static const _minimumPlayDuration = Duration(seconds: 30);
   static const _maxConsecutiveFailures = 3; // Stop skipping after 3 failures
 
@@ -247,8 +274,23 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   }
 
   PlaybackStatus _handleCompletion() {
-    // Record play to history
-    _recordPlayToHistory();
+    final endedTooEarly = _didCurrentTrackEndTooEarly();
+    if (endedTooEarly &&
+        _activePlaybackCandidateIndex + 1 < _activePlaybackCandidates.length) {
+      print(
+        'Retrying ${state.currentTrack?.title} with another stream candidate after early completion',
+      );
+      _retryCurrentTrackWithNextCandidate();
+      return PlaybackStatus.loading;
+    }
+
+    if (!endedTooEarly) {
+      // Record play to history
+      _recordPlayToHistory();
+    } else {
+      print(
+          'Track ended early with no more candidates, skipping history record');
+    }
 
     // Handle track completion based on repeat mode
     if (state.repeatMode == RepeatMode.one) {
@@ -434,6 +476,71 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
         (actualSeconds <= 35 || actualSeconds < (expectedSeconds * 0.45));
   }
 
+  bool _didCurrentTrackEndTooEarly() {
+    final track = state.currentTrack;
+    if (track == null) {
+      return false;
+    }
+
+    if (track.source != MusicSource.tidal &&
+        track.source != MusicSource.qobuz) {
+      return false;
+    }
+
+    if (_activePlaybackTrackKey != _trackKey(track)) {
+      return false;
+    }
+
+    final expectedSeconds = track.duration.inSeconds;
+    final actualSeconds = state.position.inSeconds;
+    return expectedSeconds >= 90 &&
+        actualSeconds > 0 &&
+        (actualSeconds <= 35 || actualSeconds < (expectedSeconds * 0.45));
+  }
+
+  void _setActivePlaybackCandidates(
+    Track track,
+    List<_PlaybackCandidate> candidates, {
+    required int selectedIndex,
+  }) {
+    _activePlaybackTrackKey = _trackKey(track);
+    _activePlaybackCandidates = List<_PlaybackCandidate>.from(candidates);
+    _activePlaybackCandidateIndex = selectedIndex;
+  }
+
+  void _clearActivePlaybackCandidates() {
+    _activePlaybackTrackKey = null;
+    _activePlaybackCandidates = const [];
+    _activePlaybackCandidateIndex = 0;
+  }
+
+  void _retryCurrentTrackWithNextCandidate() {
+    final track = state.currentTrack;
+    if (track == null || _isRecoveringShortTrack) {
+      return;
+    }
+
+    final nextIndex = _activePlaybackCandidateIndex + 1;
+    if (nextIndex >= _activePlaybackCandidates.length) {
+      return;
+    }
+
+    _candidateRetryStartIndex[_trackKey(track)] = nextIndex;
+    _isRecoveringShortTrack = true;
+    state = state.copyWith(
+      status: PlaybackStatus.loading,
+      error: 'Retrying a full stream for "${track.title}"...',
+    );
+
+    Future.microtask(() async {
+      try {
+        await play(track);
+      } finally {
+        _isRecoveringShortTrack = false;
+      }
+    });
+  }
+
   List<String> _trimQueuedTrackKeys(
       List<Track> queue, int queueIndex, List<String> queuedTrackKeys) {
     if (queuedTrackKeys.isEmpty || queue.isEmpty) {
@@ -515,6 +622,8 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       String? streamUrl;
       AudioSource? streamAudioSource;
       List<QobuzStreamInfo> qobuzCandidates = const [];
+      List<StreamInfo> tidalCandidates = const [];
+      final playbackCandidates = <_PlaybackCandidate>[];
       String?
           quality; // Don't set default - will be determined from stream info
       int bitDepth = 0;
@@ -556,16 +665,33 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
           case MusicSource.tidal:
             final tidalService = _tidalService;
             if (tidalService != null) {
-              final streamInfo = await tidalService.getStreamInfo(track.id);
-              streamUrl = streamInfo.url;
-              if (streamInfo.isDashManifest) {
-                streamAudioSource =
-                    DashAudioSource(Uri.file(streamInfo.url), tag: track);
+              tidalCandidates =
+                  await tidalService.getStreamCandidates(track.id);
+              if (tidalCandidates.isNotEmpty) {
+                playbackCandidates.addAll(
+                  tidalCandidates.map(
+                    (streamInfo) => _PlaybackCandidate(
+                      url: streamInfo.url,
+                      audioSource: streamInfo.isDashManifest
+                          ? DashAudioSource(Uri.file(streamInfo.url),
+                              tag: track)
+                          : null,
+                      quality: streamInfo.quality,
+                      bitDepth: streamInfo.bitDepth,
+                      sampleRate: streamInfo.sampleRate,
+                      codec: streamInfo.codec,
+                      sourceLabel: streamInfo.endpoint ?? 'tidal',
+                    ),
+                  ),
+                );
+                final firstCandidate = playbackCandidates.first;
+                streamUrl = firstCandidate.url;
+                streamAudioSource = firstCandidate.audioSource;
+                quality = firstCandidate.quality;
+                bitDepth = firstCandidate.bitDepth;
+                sampleRate = firstCandidate.sampleRate;
+                codec = firstCandidate.codec;
               }
-              quality = streamInfo.quality;
-              bitDepth = streamInfo.bitDepth;
-              sampleRate = streamInfo.sampleRate;
-              codec = streamInfo.codec;
               updateQualityState();
               print(
                   '📊 TIDAL Quality: $quality, BitDepth: $bitDepth, SampleRate: $sampleRate');
@@ -607,12 +733,24 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
                 preferredQuality: preferredQobuzQuality,
               );
               if (qobuzCandidates.isNotEmpty) {
-                final qobuzInfo = qobuzCandidates.first;
-                streamUrl = qobuzInfo.url;
-                quality = qobuzInfo.qualityCode;
-                bitDepth = qobuzInfo.bitDepth;
-                sampleRate = qobuzInfo.sampleRate;
-                codec = 'FLAC';
+                playbackCandidates.addAll(
+                  qobuzCandidates.map(
+                    (qobuzInfo) => _PlaybackCandidate(
+                      url: qobuzInfo.url,
+                      quality: qobuzInfo.qualityCode,
+                      bitDepth: qobuzInfo.bitDepth,
+                      sampleRate: qobuzInfo.sampleRate,
+                      codec: 'FLAC',
+                      sourceLabel: qobuzInfo.endpoint,
+                    ),
+                  ),
+                );
+                final firstCandidate = playbackCandidates.first;
+                streamUrl = firstCandidate.url;
+                quality = firstCandidate.quality;
+                bitDepth = firstCandidate.bitDepth;
+                sampleRate = firstCandidate.sampleRate;
+                codec = firstCandidate.codec;
               }
             }
 
@@ -656,29 +794,36 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
         return;
       }
 
-      if (streamAudioSource != null) {
-        print('🔗 Loading DASH audio source: $streamUrl');
-        loadedDuration = await _audioPlayer.setAudioSource(streamAudioSource);
-      } else if (track.source == MusicSource.qobuz &&
-          qobuzCandidates.isNotEmpty) {
+      final retryStartIndex = playbackCandidates.isNotEmpty
+          ? (_candidateRetryStartIndex.remove(_trackKey(track)) ?? 0)
+              .clamp(0, playbackCandidates.length - 1)
+          : 0;
+      print('🔗 Loading DASH audio source: $streamUrl');
+      if (playbackCandidates.isNotEmpty) {
         Object? lastCandidateError;
-        for (final candidate in qobuzCandidates) {
+        int? selectedCandidateIndex;
+        for (int i = retryStartIndex; i < playbackCandidates.length; i++) {
+          final candidate = playbackCandidates[i];
           try {
             streamUrl = candidate.url;
-            quality = candidate.qualityCode;
+            streamAudioSource = candidate.audioSource;
+            quality = candidate.quality;
             bitDepth = candidate.bitDepth;
             sampleRate = candidate.sampleRate;
-            codec = 'FLAC';
+            codec = candidate.codec;
             updateQualityState();
             print(
                 'ðŸ”— Trying Qobuz candidate ${candidate.endpoint} ${candidate.bitDepth}-bit/${candidate.sampleRate}Hz');
-            loadedDuration = await _audioPlayer.setUrl(candidate.url);
+            loadedDuration = streamAudioSource != null
+                ? await _audioPlayer.setAudioSource(streamAudioSource)
+                : await _audioPlayer.setUrl(candidate.url);
             if (_isSuspiciousLoadedDuration(track, loadedDuration)) {
               throw Exception(
                 'Rejected short proxy stream (${loadedDuration!.inSeconds}s for expected ${track.duration.inSeconds}s)',
               );
             }
             lastCandidateError = null;
+            selectedCandidateIndex = i;
             break;
           } catch (e) {
             lastCandidateError = e;
@@ -689,11 +834,17 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
         if (lastCandidateError != null) {
           throw Exception(lastCandidateError.toString());
         }
+        _setActivePlaybackCandidates(
+          track,
+          playbackCandidates,
+          selectedIndex: selectedCandidateIndex ?? retryStartIndex,
+        );
       } else {
         final resolvedStreamUrl = streamUrl!;
         print(
             '🔗 Stream URL: ${resolvedStreamUrl.substring(0, 50.clamp(0, resolvedStreamUrl.length))}...');
         loadedDuration = await _audioPlayer.setUrl(resolvedStreamUrl);
+        _clearActivePlaybackCandidates();
       }
       print('✅ URL set successfully');
 
