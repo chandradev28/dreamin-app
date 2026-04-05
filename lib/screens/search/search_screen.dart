@@ -252,13 +252,21 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   double _tileWidthFor(_BrowseTileData item) {
-    if (item.label.length >= 14) {
-      return 142;
-    }
-    if (item.label.length >= 10) {
-      return 124;
-    }
-    return 98;
+    final painter = TextPainter(
+      text: TextSpan(
+        text: item.label,
+        style: AppTheme.titleMedium.copyWith(
+          color: Colors.white,
+          fontWeight: FontWeight.w600,
+          fontSize: 15,
+          letterSpacing: -0.2,
+        ),
+      ),
+      maxLines: 1,
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    return (painter.width + 42).clamp(98.0, 170.0);
   }
 
   Widget _buildShortcutList(List<_BrowseShortcutData> items) {
@@ -740,7 +748,8 @@ class _BrowseBentoTile extends StatelessWidget {
             alignment: Alignment.centerLeft,
             child: Text(
               label,
-              maxLines: 2,
+              maxLines: 1,
+              softWrap: false,
               overflow: TextOverflow.ellipsis,
               style: AppTheme.titleMedium.copyWith(
                 color: Colors.white,

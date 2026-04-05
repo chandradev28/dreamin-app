@@ -479,8 +479,8 @@ class _MusicSourceSettingsScreenState
                 const SizedBox(height: 12),
                 Text(
                   showAppCredentials
-                      ? 'Use this when your token needs a specific app ID and app secret.'
-                      : 'Paste your Qobuz token and Dreamin will try to resolve the matching app credentials automatically.',
+                      ? 'Enter your app ID and app secret.'
+                      : 'Paste your Qobuz token.',
                   style: AppTheme.bodySmall.copyWith(
                     color: Colors.white.withOpacity(0.7),
                   ),
@@ -708,38 +708,39 @@ class _MusicSourceSettingsScreenState
           Row(
             children: [
               Expanded(
-                child: OutlinedButton(
+                child: _buildQobuzActionButton(
+                  label: 'Token Login',
+                  icon: Icons.key_outlined,
                   onPressed: () => _showQobuzCredentialsDialog(),
-                  style: OutlinedButton.styleFrom(
-                    side: BorderSide(color: Colors.white.withOpacity(0.18)),
-                    foregroundColor: Colors.white,
-                  ),
-                  child: const Text('Token Login'),
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: OutlinedButton(
+                child: _buildQobuzActionButton(
+                  label: 'App Credentials',
+                  icon: Icons.settings_outlined,
                   onPressed: () =>
                       _showQobuzCredentialsDialog(showAppCredentials: true),
-                  style: OutlinedButton.styleFrom(
-                    side: BorderSide(color: Colors.white.withOpacity(0.18)),
-                    foregroundColor: Colors.white,
-                  ),
-                  child: const Text('App Credentials'),
                 ),
               ),
-              if (profile != null) ...[
-                const SizedBox(width: 10),
-                IconButton(
+            ],
+          ),
+          if (profile != null) ...[
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                _buildQobuzIconAction(
+                  icon: Icons.refresh,
                   onPressed: profile.hasToken
                       ? () => ref
                           .read(qobuzAuthProvider.notifier)
                           .refreshActiveProfile()
                       : null,
-                  icon: const Icon(Icons.refresh, color: Colors.white),
                 ),
-                IconButton(
+                const SizedBox(width: 10),
+                _buildQobuzIconAction(
+                  icon: Icons.delete_outline,
                   onPressed: () async {
                     await ref
                         .read(qobuzAuthProvider.notifier)
@@ -750,20 +751,81 @@ class _MusicSourceSettingsScreenState
                       await _activateSource(ActiveSource.tidal);
                     }
                   },
-                  icon: const Icon(Icons.delete_outline, color: Colors.white70),
                 ),
               ],
-            ],
-          ),
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  Widget _buildQobuzActionButton({
+    required String label,
+    required IconData icon,
+    required VoidCallback onPressed,
+  }) {
+    return OutlinedButton.icon(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size.fromHeight(52),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        side: BorderSide(color: Colors.white.withOpacity(0.18)),
+        foregroundColor: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+        ),
+      ),
+      icon: Icon(icon, size: 18),
+      label: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text(
+          label,
+          maxLines: 1,
+          softWrap: false,
+          style: AppTheme.bodyMedium.copyWith(
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQobuzIconAction({
+    required IconData icon,
+    required VoidCallback? onPressed,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withOpacity(0.08)),
+      ),
+      child: IconButton(
+        onPressed: onPressed,
+        icon: Icon(icon, color: Colors.white70),
+      ),
+    );
+  }
+
+  Color _qobuzProfileAccent(QobuzProfile profile) {
+    const palette = [
+      Color(0xFF35C2A1),
+      Color(0xFF5A8CFF),
+      Color(0xFFB07CFF),
+      Color(0xFFFF8B5E),
+      Color(0xFF9ACD5A),
+      Color(0xFFF0B94B),
+    ];
+    return palette[profile.id.hashCode.abs() % palette.length];
   }
 
   Widget _buildQobuzProfileTile({
     required QobuzProfile profile,
     required bool isActive,
   }) {
+    final accent = _qobuzProfileAccent(profile);
     final subtitle = profile.isConnected
         ? (profile.accountInfo?.subscriptionLabel ?? 'Connected')
         : profile.hasOfficialCredentials
@@ -774,13 +836,18 @@ class _MusicSourceSettingsScreenState
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.03),
+        color: accent.withOpacity(isActive ? 0.16 : 0.09),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: isActive
-              ? AppTheme.primaryColor.withOpacity(0.35)
-              : Colors.white.withOpacity(0.06),
+          color: isActive ? accent.withOpacity(0.55) : accent.withOpacity(0.24),
         ),
+        boxShadow: [
+          BoxShadow(
+            color: accent.withOpacity(isActive ? 0.16 : 0.08),
+            blurRadius: isActive ? 18 : 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
       ),
       child: ListTile(
         onTap: () async {
@@ -795,7 +862,7 @@ class _MusicSourceSettingsScreenState
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
         leading: Icon(
           isActive ? Icons.radio_button_checked : Icons.radio_button_off,
-          color: isActive ? AppTheme.primaryColor : Colors.white54,
+          color: isActive ? accent : Colors.white70,
         ),
         title: Text(
           profile.displayName,
@@ -807,7 +874,7 @@ class _MusicSourceSettingsScreenState
         subtitle: Text(
           subtitle,
           style: AppTheme.bodySmall.copyWith(
-            color: Colors.white.withOpacity(0.68),
+            color: Colors.white.withOpacity(0.74),
           ),
         ),
         trailing: SizedBox(
@@ -816,16 +883,19 @@ class _MusicSourceSettingsScreenState
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
               if (profile.isConnected)
-                const Icon(Icons.verified, color: Colors.greenAccent, size: 18)
+                Icon(Icons.verified, color: accent, size: 18)
               else if (profile.hasToken)
-                const Icon(Icons.key, color: Colors.amber, size: 18),
+                Icon(Icons.key, color: accent.withOpacity(0.92), size: 18),
               IconButton(
                 onPressed: () => _showQobuzCredentialsDialog(
                   profile: profile,
                   showAppCredentials: profile.appId.trim().isNotEmpty ||
                       profile.appSecret.trim().isNotEmpty,
                 ),
-                icon: const Icon(Icons.edit_outlined, color: Colors.white70),
+                icon: Icon(
+                  Icons.edit_outlined,
+                  color: Colors.white.withOpacity(0.78),
+                ),
               ),
             ],
           ),

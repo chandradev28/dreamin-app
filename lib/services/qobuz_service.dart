@@ -899,6 +899,72 @@ class QobuzServiceImpl implements MusicService {
     print('[Qobuz] Getting artist: $artistId');
 
     try {
+      if (_hasOfficialAuth) {
+        try {
+          final uri = _officialUri('/artist/get', {
+            'artist_id': artistId,
+          });
+          final response = await _client
+              .get(uri, headers: _officialHeaders())
+              .timeout(const Duration(seconds: 15));
+
+          if (response.statusCode == 200) {
+            final artistData =
+                json.decode(response.body) as Map<String, dynamic>;
+            final artistName =
+                (artistData['name'] ?? 'Unknown Artist').toString();
+            final imageUrl =
+                _extractCoverUrl(artistData['image'] as Map<String, dynamic>?);
+
+            final biography = artistData['biography'];
+            String? bio;
+            if (biography is Map) {
+              bio = (biography['content'] ?? biography['summary'])?.toString();
+            } else if (biography is String) {
+              bio = biography;
+            } else if (artistData['information'] is String) {
+              bio = artistData['information'] as String;
+            }
+
+            final searchResult = await search(artistName, limit: 50);
+            final albums = <Album>[];
+            final tracks = <Track>[];
+            final seenAlbumIds = <String>{};
+            final seenTrackIds = <String>{};
+
+            bool nameMatches(String value) =>
+                value.trim().toLowerCase() == artistName.trim().toLowerCase();
+
+            for (final album in searchResult.albums) {
+              if ((album.artistId == artistId || nameMatches(album.artist)) &&
+                  seenAlbumIds.add(album.id)) {
+                albums.add(album);
+              }
+            }
+
+            for (final track in searchResult.tracks) {
+              if ((track.artistId == artistId || nameMatches(track.artist)) &&
+                  seenTrackIds.add(track.id)) {
+                tracks.add(track);
+              }
+            }
+
+            return ArtistDetail(
+              id: 'qobuz:$artistId',
+              name: artistName,
+              imageUrl: imageUrl,
+              albumCount: artistData['albums_count'] as int?,
+              source: MusicSource.qobuz,
+              albums: albums,
+              topTracks: tracks.take(30).toList(),
+              bio: bio,
+            );
+          }
+        } catch (e) {
+          print('[Qobuz] Official artist fetch failed, falling back: $e');
+        }
+      }
+
       final uri =
           Uri.parse('$_artistUrl?artist_id=${Uri.encodeComponent(artistId)}');
       final response =
@@ -956,7 +1022,13 @@ class QobuzServiceImpl implements MusicService {
             for (final albumData in items) {
               try {
                 if (albumData is Map<String, dynamic>) {
-                  albums.add(_albumFromQobuzArtist(albumData, artistName));
+                  albums.add(
+                    _albumFromQobuzArtist(
+                      albumData,
+                      artistName,
+                      releaseType: releaseType?.toString(),
+                    ),
+                  );
                 }
               } catch (e) {
                 print('[Qobuz] Failed to parse album: $e');
@@ -1446,6 +1518,7 @@ class QobuzServiceImpl implements MusicService {
       year: year,
       trackCount: json['tracks_count'] ?? 0,
       source: MusicSource.qobuz,
+      albumType: _inferQobuzAlbumType(json),
     );
   }
 
@@ -1480,7 +1553,11 @@ class QobuzServiceImpl implements MusicService {
 
   /// Parse album from artist endpoint response
   /// Artist endpoint returns different structure: name can be {display: "..."} or string
-  Album _albumFromQobuzArtist(Map<String, dynamic> json, String artistName) {
+  Album _albumFromQobuzArtist(
+    Map<String, dynamic> json,
+    String artistName, {
+    String? releaseType,
+  }) {
     final image = json['image'] as Map<String, dynamic>?;
 
     int? year;
@@ -1510,7 +1587,40 @@ class QobuzServiceImpl implements MusicService {
       year: year,
       trackCount: json['tracks_count'] ?? 0,
       source: MusicSource.qobuz,
+      albumType: _inferQobuzAlbumType(json, releaseType: releaseType),
     );
+  }
+
+  AlbumType _inferQobuzAlbumType(
+    Map<String, dynamic> json, {
+    String? releaseType,
+  }) {
+    final type = (releaseType ??
+            json['release_type'] ??
+            json['product_type'] ??
+            json['album_type'] ??
+            json['type'] ??
+            '')
+        .toString()
+        .toLowerCase();
+    final title =
+        (json['title'] ?? json['name'] ?? '').toString().toLowerCase();
+
+    if (type.contains('live') || title.contains('live')) {
+      return AlbumType.live;
+    }
+    if (type.contains('ep')) {
+      return AlbumType.ep;
+    }
+    if (type.contains('single')) {
+      return AlbumType.single;
+    }
+    if (type.contains('compilation') ||
+        type.contains('best') ||
+        type.contains('greatest')) {
+      return AlbumType.compilation;
+    }
+    return AlbumType.album;
   }
 
   /// Parse track from artist endpoint response (top_tracks, tracks_appears_on)
