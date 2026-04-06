@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../data/database.dart';
 import '../services/tidal_service.dart';
 import '../services/music_service.dart';
@@ -37,6 +38,57 @@ final recommendationServiceProvider = Provider<RecommendationService>((ref) {
   final database = ref.watch(databaseProvider);
   final tidalService = ref.watch(tidalServiceProvider);
   return RecommendationService(database, tidalService);
+});
+
+class SearchHistoryNotifier extends StateNotifier<List<String>> {
+  static const String _prefsKey = 'search_history_queries';
+  static const int _maxEntries = 10;
+
+  SearchHistoryNotifier() : super(const []) {
+    _load();
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = prefs.getStringList(_prefsKey) ?? const [];
+  }
+
+  Future<void> add(String query) async {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty || trimmed.length < 2) return;
+
+    final normalized = trimmed.toLowerCase();
+    final next = [
+      trimmed,
+      ...state.where((entry) => entry.toLowerCase() != normalized),
+    ];
+    final limited = next.take(_maxEntries).toList(growable: false);
+
+    state = limited;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_prefsKey, limited);
+  }
+
+  Future<void> remove(String query) async {
+    final normalized = query.trim().toLowerCase();
+    final next = state
+        .where((entry) => entry.toLowerCase() != normalized)
+        .toList(growable: false);
+    state = next;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_prefsKey, next);
+  }
+
+  Future<void> clear() async {
+    state = const [];
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_prefsKey);
+  }
+}
+
+final searchHistoryProvider =
+    StateNotifierProvider<SearchHistoryNotifier, List<String>>((ref) {
+  return SearchHistoryNotifier();
 });
 
 /// Search State

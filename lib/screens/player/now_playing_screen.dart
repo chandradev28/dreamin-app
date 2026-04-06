@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:palette_generator/palette_generator.dart';
 import '../../core/theme/app_theme.dart';
@@ -28,11 +29,15 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
   Color _secondaryColor = AppTheme.surfaceColor;
   String? _lastCoverUrl;
   String? _lastPrefetchedTrackKey;
+  String? _lastLyricsTrackKey;
   String? _lastNextUpTrackKey;
   List<String> _nextUpOrderKeys = const [];
   _PlayerView _activeView = _PlayerView.player;
   final ScrollController _lyricsScrollController = ScrollController();
+  final Map<int, GlobalKey> _lyricLineKeys = {};
   int _lastLyricIndex = -1;
+  bool _lyricsAutoSyncEnabled = true;
+  bool _isAutoScrollingLyrics = false;
 
   @override
   void initState() {
@@ -91,6 +96,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
       return _buildEmptyState(context, responsive);
     }
 
+    _resetLyricsStateIfNeeded(track);
     _prefetchTrackDetails(track);
 
     return GestureDetector(
@@ -629,7 +635,10 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
           label: 'Lyrics',
           iconSize: compact ? 24 : 26,
           showLabel: showLabels,
-          onTap: () => setState(() => _activeView = _PlayerView.lyrics),
+          onTap: () => setState(() {
+            _lyricsAutoSyncEnabled = true;
+            _activeView = _PlayerView.lyrics;
+          }),
         ),
         _buildPanelActionButton(
           icon: Icons.info_outline_rounded,
@@ -1340,45 +1349,95 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
         lyrics.syncedLyrics,
         playerState.position.inMilliseconds,
       );
-      _syncLyricScroll(activeIndex);
+      if (_lyricsAutoSyncEnabled) {
+        _syncLyricScroll(activeIndex);
+      }
 
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Lyrics',
-            style: AppTheme.headlineMedium.copyWith(
-              color: Colors.white,
-              fontWeight: FontWeight.w700,
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Lyrics',
+                style: AppTheme.headlineMedium.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              AnimatedOpacity(
+                duration: const Duration(milliseconds: 180),
+                opacity:
+                    playerState.isPlaying && !_lyricsAutoSyncEnabled ? 1 : 0,
+                child: IgnorePointer(
+                  ignoring: !playerState.isPlaying || _lyricsAutoSyncEnabled,
+                  child: TextButton.icon(
+                    onPressed: () {
+                      setState(() => _lyricsAutoSyncEnabled = true);
+                      _syncLyricScroll(activeIndex, force: true);
+                    },
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      backgroundColor: Colors.white.withOpacity(0.12),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    icon: const Icon(Icons.sync_rounded, size: 18),
+                    label: const Text('Sync'),
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 18),
           Expanded(
-            child: ListView.builder(
-              controller: _lyricsScrollController,
-              itemCount: lyrics.syncedLyrics.length,
-              itemBuilder: (context, index) {
-                final line = lyrics.syncedLyrics[index];
-                final isActive = index == activeIndex;
-                final opacity = isActive
-                    ? 1.0
-                    : index < activeIndex
-                        ? 0.38
-                        : 0.56;
-
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 22),
-                  child: Text(
-                    line.text.isEmpty ? '...' : line.text,
-                    style: AppTheme.headlineLarge.copyWith(
-                      color: Colors.white.withOpacity(opacity),
-                      fontSize: 26,
-                      fontWeight: isActive ? FontWeight.w700 : FontWeight.w600,
-                      height: 1.24,
-                    ),
-                  ),
-                );
+            child: NotificationListener<UserScrollNotification>(
+              onNotification: (notification) {
+                if (_isAutoScrollingLyrics ||
+                    !playerState.isPlaying ||
+                    notification.direction == ScrollDirection.idle) {
+                  return false;
+                }
+                if (_lyricsAutoSyncEnabled) {
+                  setState(() => _lyricsAutoSyncEnabled = false);
+                }
+                return false;
               },
+              child: ListView.builder(
+                controller: _lyricsScrollController,
+                padding: const EdgeInsets.symmetric(vertical: 120),
+                itemCount: lyrics.syncedLyrics.length,
+                itemBuilder: (context, index) {
+                  final line = lyrics.syncedLyrics[index];
+                  final isActive = index == activeIndex;
+                  final opacity = isActive
+                      ? 1.0
+                      : index < activeIndex
+                          ? 0.38
+                          : 0.56;
+
+                  return Padding(
+                    key: _lyricKeyFor(index),
+                    padding: const EdgeInsets.only(bottom: 22),
+                    child: Text(
+                      line.text.isEmpty ? '...' : line.text,
+                      style: AppTheme.headlineLarge.copyWith(
+                        color: Colors.white.withOpacity(opacity),
+                        fontSize: isActive ? 28 : 26,
+                        fontWeight:
+                            isActive ? FontWeight.w700 : FontWeight.w600,
+                        height: 1.24,
+                      ),
+                    ),
+                  );
+                },
+              ),
             ),
           ),
         ],
@@ -1631,6 +1690,23 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
     ref.read(playerSuggestedTracksProvider(track).future);
   }
 
+  void _resetLyricsStateIfNeeded(Track track) {
+    final trackKey = _trackKey(track);
+    if (_lastLyricsTrackKey == trackKey) {
+      return;
+    }
+
+    _lastLyricsTrackKey = trackKey;
+    _lastLyricIndex = -1;
+    _lyricsAutoSyncEnabled = true;
+    _isAutoScrollingLyrics = false;
+    _lyricLineKeys.clear();
+  }
+
+  GlobalKey _lyricKeyFor(int index) {
+    return _lyricLineKeys.putIfAbsent(index, GlobalKey.new);
+  }
+
   int _findActiveLyricIndex(List<LyricLine> lines, int positionMs) {
     if (lines.isEmpty) return -1;
     for (var index = 0; index < lines.length; index++) {
@@ -1644,18 +1720,28 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
     return lines.length - 1;
   }
 
-  void _syncLyricScroll(int activeIndex) {
-    if (activeIndex < 0 || activeIndex == _lastLyricIndex) return;
+  void _syncLyricScroll(int activeIndex, {bool force = false}) {
+    if (activeIndex < 0) return;
+    if (!_lyricsAutoSyncEnabled && !force) return;
+    if (!force && activeIndex == _lastLyricIndex) return;
     _lastLyricIndex = activeIndex;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_lyricsScrollController.hasClients) return;
-      final offset = (activeIndex * 76.0) - 120.0;
-      _lyricsScrollController.animateTo(
-        offset < 0 ? 0 : offset,
+      final targetContext = _lyricKeyFor(activeIndex).currentContext;
+      if (targetContext == null) return;
+
+      _isAutoScrollingLyrics = true;
+      Scrollable.ensureVisible(
+        targetContext,
+        alignment: 0.5,
         duration: const Duration(milliseconds: 260),
         curve: Curves.easeOut,
-      );
+      ).whenComplete(() {
+        if (mounted) {
+          _isAutoScrollingLyrics = false;
+        }
+      });
     });
   }
 

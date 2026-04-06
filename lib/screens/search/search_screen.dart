@@ -77,27 +77,59 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     super.dispose();
   }
 
+  Future<void> _commitSearch(String query) async {
+    await ref.read(searchHistoryProvider.notifier).add(query);
+  }
+
+  void _runSearch(String query, {bool saveToHistory = false}) {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) {
+      ref.read(searchProvider.notifier).clear();
+      setState(() => _isSearching = false);
+      return;
+    }
+
+    if (saveToHistory) {
+      unawaited(_commitSearch(trimmed));
+    }
+
+    ref.read(searchProvider.notifier).search(trimmed);
+    setState(() => _isSearching = true);
+  }
+
   void _onSearchChanged(String query) {
     if (_debounce?.isActive ?? false) _debounce!.cancel();
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) {
+      ref.read(searchProvider.notifier).clear();
+      setState(() => _isSearching = false);
+      return;
+    }
+
     _debounce = Timer(const Duration(milliseconds: 400), () {
-      if (query.trim().isNotEmpty) {
-        ref.read(searchProvider.notifier).search(query.trim());
-      }
+      _runSearch(trimmed, saveToHistory: true);
     });
-    setState(() {
-      _isSearching = query.isNotEmpty;
-    });
+    setState(() => _isSearching = true);
   }
 
   void _onCategoryTap(String category) {
     _searchController.text = category;
-    _onSearchChanged(category);
+    _runSearch(category, saveToHistory: true);
+    FocusScope.of(context).unfocus();
+  }
+
+  void _onHistoryTap(String query) {
+    _searchController.text = query;
+    _searchController.selection =
+        TextSelection.collapsed(offset: _searchController.text.length);
+    _runSearch(query, saveToHistory: true);
     FocusScope.of(context).unfocus();
   }
 
   @override
   Widget build(BuildContext context) {
     final searchState = ref.watch(searchProvider);
+    final searchHistory = ref.watch(searchHistoryProvider);
     final responsive = Responsive(context);
 
     return Scaffold(
@@ -116,6 +148,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   child: TextField(
                     controller: _searchController,
                     onChanged: _onSearchChanged,
+                    onSubmitted: (value) =>
+                        _runSearch(value, saveToHistory: true),
                     onTapOutside: (_) =>
                         FocusManager.instance.primaryFocus?.unfocus(),
                     style: AppTheme.titleMedium.copyWith(
@@ -157,7 +191,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               Expanded(
                 child: _isSearching
                     ? _buildSearchResults(searchState, responsive)
-                    : _buildBrowseSection(responsive),
+                    : _buildBrowseSection(searchHistory, responsive),
               ),
             ],
           ),
@@ -170,7 +204,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   // BROWSE SECTION
   // ===========================================================================
 
-  Widget _buildBrowseSection(Responsive responsive) {
+  Widget _buildBrowseSection(
+      List<String> searchHistory, Responsive responsive) {
     final horizontal = responsive.horizontalPadding;
 
     return ListView(
@@ -182,6 +217,28 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         responsive.miniPlayerHeight + responsive.bottomNavHeight + 24,
       ),
       children: [
+        if (searchHistory.isNotEmpty) ...[
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: horizontal),
+            child: _SearchHistoryHeader(
+              onClearAll: () {
+                ref.read(searchHistoryProvider.notifier).clear();
+              },
+            ),
+          ),
+          const SizedBox(height: 10),
+          ...searchHistory.map(
+            (entry) => _SearchHistoryTile(
+              query: entry,
+              horizontalPadding: horizontal,
+              onTap: () => _onHistoryTap(entry),
+              onRemove: () {
+                ref.read(searchHistoryProvider.notifier).remove(entry);
+              },
+            ),
+          ),
+          const SizedBox(height: 26),
+        ],
         Padding(
           padding: EdgeInsets.symmetric(horizontal: horizontal),
           child: _BrowseSectionHeader(title: 'Genres', onViewAll: () {}),
@@ -387,7 +444,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               title: _buildHighlightedText(s, query),
               onTap: () {
                 _searchController.text = s;
-                _onSearchChanged(s);
+                _runSearch(s, saveToHistory: true);
               },
             ))
         .toList();
@@ -431,12 +488,19 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               padding: const EdgeInsets.only(right: 12),
               child: _AlbumCard(
                 album: album,
-                onTap: () => Navigator.push(
+                onTap: () {
+                  final trimmedQuery = query.trim();
+                  if (trimmedQuery.isNotEmpty) {
+                    unawaited(_commitSearch(trimmedQuery));
+                  }
+                  Navigator.push(
                     context,
                     MaterialPageRoute(
                       builder: (_) =>
                           AlbumDetailScreen(albumId: album.id, album: album),
-                    )),
+                    ),
+                  );
+                },
               ),
             );
           },
@@ -484,13 +548,19 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       padding: EdgeInsets.symmetric(
           horizontal: responsive.horizontalPadding, vertical: 24),
       child: GestureDetector(
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) =>
-                SearchAllResultsScreen(query: query, result: result),
-          ),
-        ),
+        onTap: () {
+          final trimmedQuery = query.trim();
+          if (trimmedQuery.isNotEmpty) {
+            unawaited(_commitSearch(trimmedQuery));
+          }
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) =>
+                  SearchAllResultsScreen(query: query, result: result),
+            ),
+          );
+        },
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -513,12 +583,19 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   Widget _buildArtistCard(Artist artist) {
     return ListTile(
-      onTap: () => Navigator.push(
+      onTap: () {
+        final trimmedQuery = _searchController.text.trim();
+        if (trimmedQuery.isNotEmpty) {
+          unawaited(_commitSearch(trimmedQuery));
+        }
+        Navigator.push(
           context,
           MaterialPageRoute(
             builder: (_) =>
                 ArtistDetailScreen(artistId: artist.id, artist: artist),
-          )),
+          ),
+        );
+      },
       leading: Container(
         width: 56,
         height: 56,
@@ -570,9 +647,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   Widget _buildTrackTile(Track track, List<Track> allTracks) {
     return ListTile(
-      onTap: () => ref
-          .read(playerProvider.notifier)
-          .playQueue(allTracks, startIndex: allTracks.indexOf(track)),
+      onTap: () {
+        final trimmedQuery = _searchController.text.trim();
+        if (trimmedQuery.isNotEmpty) {
+          unawaited(_commitSearch(trimmedQuery));
+        }
+        ref
+            .read(playerProvider.notifier)
+            .playQueue(allTracks, startIndex: allTracks.indexOf(track));
+      },
       leading: ClipRRect(
         borderRadius: BorderRadius.circular(4),
         child: track.coverArtUrl != null
@@ -604,12 +687,19 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   Widget _buildPlaylistTile(Playlist playlist) {
     return ListTile(
-      onTap: () => Navigator.push(
+      onTap: () {
+        final trimmedQuery = _searchController.text.trim();
+        if (trimmedQuery.isNotEmpty) {
+          unawaited(_commitSearch(trimmedQuery));
+        }
+        Navigator.push(
           context,
           MaterialPageRoute(
             builder: (_) => PlaylistDetailScreen(
                 playlistId: playlist.id, playlist: playlist),
-          )),
+          ),
+        );
+      },
       leading: ClipRRect(
         borderRadius: BorderRadius.circular(4),
         child: playlist.coverArtUrl != null
@@ -666,6 +756,107 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 // =============================================================================
 // WIDGETS
 // =============================================================================
+
+class _SearchHistoryHeader extends StatelessWidget {
+  final VoidCallback onClearAll;
+
+  const _SearchHistoryHeader({required this.onClearAll});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          'Search History',
+          style: AppTheme.headlineMedium.copyWith(
+            fontSize: 21,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.4,
+          ),
+        ),
+        TextButton(
+          onPressed: onClearAll,
+          style: TextButton.styleFrom(
+            foregroundColor: Colors.white.withOpacity(0.72),
+            padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          child: Text(
+            'Clear all',
+            style: AppTheme.bodyMedium.copyWith(
+              color: Colors.white.withOpacity(0.72),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SearchHistoryTile extends StatelessWidget {
+  final String query;
+  final double horizontalPadding;
+  final VoidCallback onTap;
+  final VoidCallback onRemove;
+
+  const _SearchHistoryTile({
+    required this.query,
+    required this.horizontalPadding,
+    required this.onTap,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(14),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+            child: Row(
+              children: [
+                const SizedBox(
+                  width: 36,
+                  child: Icon(
+                    Icons.history_rounded,
+                    color: AppTheme.secondaryColor,
+                    size: 20,
+                  ),
+                ),
+                Expanded(
+                  child: Text(
+                    query,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTheme.titleMedium.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: onRemove,
+                  splashRadius: 18,
+                  icon: const Icon(
+                    Icons.close,
+                    color: AppTheme.secondaryColor,
+                    size: 18,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class _BrowseSectionHeader extends StatelessWidget {
   final String title;
