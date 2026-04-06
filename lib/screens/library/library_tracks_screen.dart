@@ -5,6 +5,7 @@ import '../../core/theme/app_theme.dart';
 import '../../providers/providers.dart';
 import '../../models/models.dart';
 import '../../widgets/track_options_sheet.dart';
+import '../scaffold_with_mini_player.dart';
 
 /// Library Tracks Screen - TIDAL Style (Liked Songs)
 class LibraryTracksScreen extends ConsumerWidget {
@@ -14,8 +15,8 @@ class LibraryTracksScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final favoritesState = ref.watch(favoritesProvider);
     final favorites = favoritesState.favorites;
-    
-    return Scaffold(
+
+    return ScaffoldWithMiniPlayer(
       backgroundColor: AppTheme.backgroundColor,
       appBar: AppBar(
         backgroundColor: AppTheme.backgroundColor,
@@ -76,7 +77,8 @@ class LibraryTracksScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildTracksList(List<Track> favorites, WidgetRef ref, BuildContext context) {
+  Widget _buildTracksList(
+      List<Track> favorites, WidgetRef ref, BuildContext context) {
     // Tracks are already parsed by FavoritesNotifier
     final tracks = favorites;
 
@@ -85,12 +87,15 @@ class LibraryTracksScreen extends ConsumerWidget {
       itemCount: tracks.length,
       itemBuilder: (context, index) {
         final track = tracks[index];
-        
+
         return ListTile(
           onTap: () {
-            ref.read(playerProvider.notifier).playQueue(tracks, startIndex: index);
+            ref
+                .read(playerProvider.notifier)
+                .playQueue(tracks, startIndex: index);
           },
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
           leading: ClipRRect(
             borderRadius: BorderRadius.circular(4),
             child: track.coverArtUrl != null
@@ -135,7 +140,8 @@ class LibraryTracksScreen extends ConsumerWidget {
       width: 48,
       height: 48,
       color: AppTheme.surfaceLight,
-      child: const Icon(Icons.music_note, color: AppTheme.secondaryColor, size: 24),
+      child: const Icon(Icons.music_note,
+          color: AppTheme.secondaryColor, size: 24),
     );
   }
 }

@@ -6,6 +6,7 @@ import '../../models/models.dart';
 import '../../providers/providers.dart';
 import '../../widgets/artist_options_sheet.dart';
 import '../artist/artist_detail_screen.dart';
+import '../scaffold_with_mini_player.dart';
 
 /// Library Artists Screen - saved/followed artists
 class LibraryArtistsScreen extends ConsumerStatefulWidget {
@@ -35,7 +36,7 @@ class _LibraryArtistsScreenState extends ConsumerState<LibraryArtistsScreen> {
     final savedArtistsState = ref.watch(savedArtistsProvider);
     final artists = _sortedArtists(_filteredArtists(savedArtistsState.artists));
 
-    return Scaffold(
+    return ScaffoldWithMiniPlayer(
       backgroundColor: AppTheme.backgroundColor,
       appBar: AppBar(
         backgroundColor: AppTheme.backgroundColor,

@@ -7,6 +7,7 @@ import '../../providers/providers.dart';
 import '../../models/models.dart';
 import '../../data/database.dart';
 import '../../widgets/widgets.dart';
+import '../scaffold_with_mini_player.dart';
 
 /// Library Downloads Screen - TIDAL Style
 class LibraryDownloadsScreen extends ConsumerWidget {
@@ -17,7 +18,7 @@ class LibraryDownloadsScreen extends ConsumerWidget {
     ref.watch(downloadProvider);
     final database = ref.watch(databaseProvider);
 
-    return Scaffold(
+    return ScaffoldWithMiniPlayer(
       backgroundColor: Colors.transparent,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
@@ -35,25 +36,23 @@ class LibraryDownloadsScreen extends ConsumerWidget {
         ),
         centerTitle: false,
       ),
-      body: PosterGradientBackground(
-        child: FutureBuilder<List<CachedTrack>>(
-          future: database.getAllCachedTracks(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(
-                child: CircularProgressIndicator(color: AppTheme.primaryColor),
-              );
-            }
+      body: FutureBuilder<List<CachedTrack>>(
+        future: database.getAllCachedTracks(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: CircularProgressIndicator(color: AppTheme.primaryColor),
+            );
+          }
 
-            final downloads = snapshot.data ?? const <CachedTrack>[];
+          final downloads = snapshot.data ?? const <CachedTrack>[];
 
-            if (downloads.isEmpty) {
-              return _buildEmptyState();
-            }
+          if (downloads.isEmpty) {
+            return _buildEmptyState();
+          }
 
-            return _buildDownloadsList(downloads, ref);
-          },
-        ),
+          return _buildDownloadsList(downloads, ref);
+        },
       ),
     );
   }

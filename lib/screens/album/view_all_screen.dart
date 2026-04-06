@@ -8,6 +8,7 @@ import '../../widgets/playlist_options_sheet.dart';
 import '../album/album_detail_screen.dart';
 import '../artist/artist_detail_screen.dart';
 import '../playlist/playlist_detail_screen.dart';
+import '../scaffold_with_mini_player.dart';
 
 /// View All Screen - Grid display for albums/artists/playlists
 /// Shows 20 items max in a 2-column grid layout (TIDAL style)
@@ -29,7 +30,7 @@ class ViewAllScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final responsive = Responsive(context);
 
-    return Scaffold(
+    return ScaffoldWithMiniPlayer(
       backgroundColor: AppTheme.backgroundColor,
       appBar: AppBar(
         backgroundColor: AppTheme.backgroundColor,

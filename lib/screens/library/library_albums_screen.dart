@@ -6,6 +6,7 @@ import '../../models/models.dart';
 import '../../providers/providers.dart';
 import '../../widgets/album_options_sheet.dart';
 import '../album/album_detail_screen.dart';
+import '../scaffold_with_mini_player.dart';
 
 /// Library Albums Screen - saved albums with working search and sort
 class LibraryAlbumsScreen extends ConsumerStatefulWidget {
@@ -35,7 +36,7 @@ class _LibraryAlbumsScreenState extends ConsumerState<LibraryAlbumsScreen> {
     final savedAlbumsState = ref.watch(savedAlbumsProvider);
     final albums = _sortedAlbums(_filteredAlbums(savedAlbumsState.albums));
 
-    return Scaffold(
+    return ScaffoldWithMiniPlayer(
       backgroundColor: AppTheme.backgroundColor,
       appBar: AppBar(
         backgroundColor: AppTheme.backgroundColor,

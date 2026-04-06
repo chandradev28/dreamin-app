@@ -10,6 +10,7 @@ import '../../widgets/album_options_sheet.dart';
 import '../album/album_detail_screen.dart';
 import '../playlist/playlist_detail_screen.dart';
 import '../artist/artist_detail_screen.dart';
+import '../scaffold_with_mini_player.dart';
 
 /// Search All Results Screen - TIDAL Style
 /// Tabs: Top Results, Albums, Tracks, Playlists
@@ -24,10 +25,12 @@ class SearchAllResultsScreen extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<SearchAllResultsScreen> createState() => _SearchAllResultsScreenState();
+  ConsumerState<SearchAllResultsScreen> createState() =>
+      _SearchAllResultsScreenState();
 }
 
-class _SearchAllResultsScreenState extends ConsumerState<SearchAllResultsScreen> with SingleTickerProviderStateMixin {
+class _SearchAllResultsScreenState extends ConsumerState<SearchAllResultsScreen>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
   @override
@@ -46,7 +49,7 @@ class _SearchAllResultsScreenState extends ConsumerState<SearchAllResultsScreen>
   Widget build(BuildContext context) {
     final responsive = Responsive(context);
 
-    return Scaffold(
+    return ScaffoldWithMiniPlayer(
       backgroundColor: AppTheme.backgroundColor,
       appBar: AppBar(
         backgroundColor: AppTheme.backgroundColor,
@@ -64,7 +67,8 @@ class _SearchAllResultsScreenState extends ConsumerState<SearchAllResultsScreen>
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.search, color: AppTheme.secondaryColor, size: 20),
+              const Icon(Icons.search,
+                  color: AppTheme.secondaryColor, size: 20),
               const SizedBox(width: 8),
               Text(
                 widget.query,
@@ -73,7 +77,8 @@ class _SearchAllResultsScreenState extends ConsumerState<SearchAllResultsScreen>
               const SizedBox(width: 8),
               GestureDetector(
                 onTap: () => Navigator.pop(context),
-                child: const Icon(Icons.close, color: AppTheme.secondaryColor, size: 18),
+                child: const Icon(Icons.close,
+                    color: AppTheme.secondaryColor, size: 18),
               ),
             ],
           ),
@@ -88,8 +93,10 @@ class _SearchAllResultsScreenState extends ConsumerState<SearchAllResultsScreen>
           unselectedLabelColor: AppTheme.secondaryColor,
           indicatorColor: Colors.white,
           indicatorSize: TabBarIndicatorSize.label,
-          labelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-          unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
+          labelStyle:
+              const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+          unselectedLabelStyle:
+              const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
           labelPadding: const EdgeInsets.symmetric(horizontal: 16),
           tabs: const [
             Tab(text: 'Top results'),
@@ -139,26 +146,27 @@ class _SearchAllResultsScreenState extends ConsumerState<SearchAllResultsScreen>
         if (widget.result.albums.isNotEmpty) ...[
           _buildSectionHeader('Albums'),
           ...widget.result.albums.take(3).map((album) => _AlbumTile(
-            album: album,
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => AlbumDetailScreen(albumId: album.id, album: album),
-              ),
-            ),
-          )),
+                album: album,
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        AlbumDetailScreen(albumId: album.id, album: album),
+                  ),
+                ),
+              )),
         ],
 
         // Tracks section
         if (widget.result.tracks.isNotEmpty) ...[
           _buildSectionHeader('Tracks'),
           ...widget.result.tracks.take(4).map((track) => _TrackTile(
-            track: track,
-            onTap: () => ref.read(playerProvider.notifier).playQueue(
-              widget.result.tracks,
-              startIndex: widget.result.tracks.indexOf(track),
-            ),
-          )),
+                track: track,
+                onTap: () => ref.read(playerProvider.notifier).playQueue(
+                      widget.result.tracks,
+                      startIndex: widget.result.tracks.indexOf(track),
+                    ),
+              )),
         ],
       ],
     );
@@ -167,7 +175,9 @@ class _SearchAllResultsScreenState extends ConsumerState<SearchAllResultsScreen>
   // ALBUMS TAB - All albums in grid
   Widget _buildAlbumsTab(Responsive responsive) {
     if (widget.result.albums.isEmpty) {
-      return const Center(child: Text('No albums found', style: TextStyle(color: AppTheme.secondaryColor)));
+      return const Center(
+          child: Text('No albums found',
+              style: TextStyle(color: AppTheme.secondaryColor)));
     }
 
     return GridView.builder(
@@ -186,7 +196,8 @@ class _SearchAllResultsScreenState extends ConsumerState<SearchAllResultsScreen>
           onTap: () => Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => AlbumDetailScreen(albumId: album.id, album: album),
+              builder: (_) =>
+                  AlbumDetailScreen(albumId: album.id, album: album),
             ),
           ),
         );
@@ -197,7 +208,9 @@ class _SearchAllResultsScreenState extends ConsumerState<SearchAllResultsScreen>
   // TRACKS TAB - Top 50 tracks max
   Widget _buildTracksTab(Responsive responsive) {
     if (widget.result.tracks.isEmpty) {
-      return const Center(child: Text('No tracks found', style: TextStyle(color: AppTheme.secondaryColor)));
+      return const Center(
+          child: Text('No tracks found',
+              style: TextStyle(color: AppTheme.secondaryColor)));
     }
 
     final tracks = widget.result.tracks.take(50).toList();
@@ -213,9 +226,9 @@ class _SearchAllResultsScreenState extends ConsumerState<SearchAllResultsScreen>
         return _TrackTile(
           track: track,
           onTap: () => ref.read(playerProvider.notifier).playQueue(
-            tracks,
-            startIndex: index,
-          ),
+                tracks,
+                startIndex: index,
+              ),
         );
       },
     );
@@ -224,7 +237,9 @@ class _SearchAllResultsScreenState extends ConsumerState<SearchAllResultsScreen>
   // PLAYLISTS TAB - All playlists
   Widget _buildPlaylistsTab(Responsive responsive) {
     if (widget.result.playlists.isEmpty) {
-      return const Center(child: Text('No playlists found', style: TextStyle(color: AppTheme.secondaryColor)));
+      return const Center(
+          child: Text('No playlists found',
+              style: TextStyle(color: AppTheme.secondaryColor)));
     }
 
     return ListView.builder(
@@ -240,7 +255,8 @@ class _SearchAllResultsScreenState extends ConsumerState<SearchAllResultsScreen>
           onTap: () => Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => PlaylistDetailScreen(playlistId: playlist.id, playlist: playlist),
+              builder: (_) => PlaylistDetailScreen(
+                  playlistId: playlist.id, playlist: playlist),
             ),
           ),
         );
@@ -280,7 +296,8 @@ class _ArtistCard extends StatelessWidget {
         ),
         child: ClipOval(
           child: artist.imageUrl != null
-              ? CachedNetworkImage(imageUrl: artist.imageUrl!, fit: BoxFit.cover)
+              ? CachedNetworkImage(
+                  imageUrl: artist.imageUrl!, fit: BoxFit.cover)
               : Center(
                   child: Text(
                     artist.name.isNotEmpty ? artist.name[0].toUpperCase() : '?',
@@ -309,10 +326,21 @@ class _AlbumTile extends StatelessWidget {
       leading: ClipRRect(
         borderRadius: BorderRadius.circular(4),
         child: album.coverArtUrl != null
-            ? CachedNetworkImage(imageUrl: album.coverArtUrl!, width: 56, height: 56, fit: BoxFit.cover)
-            : Container(width: 56, height: 56, color: AppTheme.surfaceColor, child: const Icon(Icons.album, color: AppTheme.secondaryColor)),
+            ? CachedNetworkImage(
+                imageUrl: album.coverArtUrl!,
+                width: 56,
+                height: 56,
+                fit: BoxFit.cover)
+            : Container(
+                width: 56,
+                height: 56,
+                color: AppTheme.surfaceColor,
+                child: const Icon(Icons.album, color: AppTheme.secondaryColor)),
       ),
-      title: Text(album.title, style: AppTheme.bodyLarge, maxLines: 1, overflow: TextOverflow.ellipsis),
+      title: Text(album.title,
+          style: AppTheme.bodyLarge,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis),
       subtitle: Text(
         'Album by ${album.artist}${album.year != null ? ' • ${album.year}' : ''}',
         style: AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor),
@@ -350,12 +378,16 @@ class _AlbumGridCard extends StatelessWidget {
                     )
                   : Container(
                       color: AppTheme.surfaceColor,
-                      child: const Icon(Icons.album, size: 48, color: AppTheme.secondaryColor),
+                      child: const Icon(Icons.album,
+                          size: 48, color: AppTheme.secondaryColor),
                     ),
             ),
           ),
           const SizedBox(height: 8),
-          Text(album.title, style: AppTheme.bodyMedium, maxLines: 1, overflow: TextOverflow.ellipsis),
+          Text(album.title,
+              style: AppTheme.bodyMedium,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis),
           Text(
             'Album by ${album.artist}${album.year != null ? ' • ${album.year}' : ''}',
             style: AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor),
@@ -381,11 +413,25 @@ class _TrackTile extends StatelessWidget {
       leading: ClipRRect(
         borderRadius: BorderRadius.circular(4),
         child: track.coverArtUrl != null
-            ? CachedNetworkImage(imageUrl: track.coverArtUrl!, width: 56, height: 56, fit: BoxFit.cover)
-            : Container(width: 56, height: 56, color: AppTheme.surfaceColor, child: const Icon(Icons.music_note, color: AppTheme.secondaryColor)),
+            ? CachedNetworkImage(
+                imageUrl: track.coverArtUrl!,
+                width: 56,
+                height: 56,
+                fit: BoxFit.cover)
+            : Container(
+                width: 56,
+                height: 56,
+                color: AppTheme.surfaceColor,
+                child: const Icon(Icons.music_note,
+                    color: AppTheme.secondaryColor)),
       ),
-      title: Text(track.title, style: AppTheme.bodyLarge, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Text('Track by ${track.artist}', style: AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor), maxLines: 1),
+      title: Text(track.title,
+          style: AppTheme.bodyLarge,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis),
+      subtitle: Text('Track by ${track.artist}',
+          style: AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor),
+          maxLines: 1),
       trailing: GestureDetector(
         onTap: () => TrackOptionsSheet.show(context, track),
         child: const Icon(Icons.more_vert, color: AppTheme.secondaryColor),
@@ -408,15 +454,32 @@ class _PlaylistTile extends StatelessWidget {
       leading: ClipRRect(
         borderRadius: BorderRadius.circular(4),
         child: playlist.coverArtUrl != null
-            ? CachedNetworkImage(imageUrl: playlist.coverArtUrl!, width: 56, height: 56, fit: BoxFit.cover)
-            : Container(width: 56, height: 56, color: AppTheme.surfaceColor, child: const Icon(Icons.playlist_play, color: AppTheme.secondaryColor)),
+            ? CachedNetworkImage(
+                imageUrl: playlist.coverArtUrl!,
+                width: 56,
+                height: 56,
+                fit: BoxFit.cover)
+            : Container(
+                width: 56,
+                height: 56,
+                color: AppTheme.surfaceColor,
+                child: const Icon(Icons.playlist_play,
+                    color: AppTheme.secondaryColor)),
       ),
-      title: Text(playlist.title, style: AppTheme.bodyLarge, maxLines: 1, overflow: TextOverflow.ellipsis),
+      title: Text(playlist.title,
+          style: AppTheme.bodyLarge,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('by ${playlist.creatorName ?? "TIDAL"}', style: AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor), maxLines: 1),
-          Text('${playlist.trackCount} TRACKS', style: AppTheme.labelSmall.copyWith(color: AppTheme.tertiaryColor, letterSpacing: 0.5)),
+          Text('by ${playlist.creatorName ?? "TIDAL"}',
+              style:
+                  AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor),
+              maxLines: 1),
+          Text('${playlist.trackCount} TRACKS',
+              style: AppTheme.labelSmall
+                  .copyWith(color: AppTheme.tertiaryColor, letterSpacing: 0.5)),
         ],
       ),
       isThreeLine: true,

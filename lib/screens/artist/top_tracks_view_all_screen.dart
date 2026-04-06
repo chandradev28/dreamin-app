@@ -5,6 +5,7 @@ import '../../core/theme/app_theme.dart';
 import '../../models/models.dart';
 import '../../providers/providers.dart';
 import '../../widgets/track_options_sheet.dart';
+import '../scaffold_with_mini_player.dart';
 
 class TopTracksViewAllScreen extends ConsumerWidget {
   final String title;
@@ -22,7 +23,7 @@ class TopTracksViewAllScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final playerState = ref.watch(playerProvider);
 
-    return Scaffold(
+    return ScaffoldWithMiniPlayer(
       backgroundColor: AppTheme.backgroundColor,
       appBar: AppBar(
         backgroundColor: AppTheme.backgroundColor,

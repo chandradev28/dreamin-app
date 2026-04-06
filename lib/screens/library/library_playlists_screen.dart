@@ -8,6 +8,7 @@ import '../../models/models.dart';
 import '../../data/database.dart';
 import '../../widgets/playlist_options_sheet.dart';
 import '../playlist/playlist_detail_screen.dart';
+import '../scaffold_with_mini_player.dart';
 
 /// Library Playlists Screen - Shows saved playlists (TIDAL-style list layout)
 class LibraryPlaylistsScreen extends ConsumerStatefulWidget {
@@ -182,7 +183,7 @@ class _LibraryPlaylistsScreenState
     final hasAnyPlaylists =
         userPlaylists.isNotEmpty || tidalPlaylists.isNotEmpty;
 
-    return Scaffold(
+    return ScaffoldWithMiniPlayer(
       backgroundColor: AppTheme.backgroundColor,
       appBar: AppBar(
         backgroundColor: AppTheme.backgroundColor,
