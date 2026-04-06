@@ -45,17 +45,35 @@ class _ArtistPageExtras {
   });
 }
 
+class _ArtistDiscographyGroups {
+  final List<Album> albums;
+  final List<Album> epsSingles;
+  final List<Album> liveAlbums;
+  final List<Album> compilations;
+  final List<Album> others;
+  final List<Album> otherVersions;
+
+  const _ArtistDiscographyGroups({
+    this.albums = const [],
+    this.epsSingles = const [],
+    this.liveAlbums = const [],
+    this.compilations = const [],
+    this.others = const [],
+    this.otherVersions = const [],
+  });
+}
+
 final artistPageExtrasProvider =
     FutureProvider.family<_ArtistPageExtras, _ArtistExtrasArgs>((
   ref,
   args,
 ) async {
-  final tidalService = ref.watch(tidalServiceProvider);
+  final musicService = ref.watch(musicServiceProvider);
   final lastFmService = ref.watch(lastFmServiceProvider);
 
   final results = await Future.wait<dynamic>([
     lastFmService.getArtistInfo(args.artistName),
-    tidalService.searchPlaylists(args.artistName, limit: 12),
+    musicService.searchPlaylists(args.artistName, limit: 12),
     lastFmService.getSimilarArtists(args.artistName, limit: 10),
   ]);
 
@@ -71,13 +89,17 @@ final artistPageExtrasProvider =
       .toList();
 
   final similar = <Artist>[];
+  final seenArtistIds = <String>{};
   for (final item in (results[2] as List).take(8)) {
     try {
       final lastFmArtist = item;
-      final searchResults = await tidalService
+      final searchResults = await musicService
           .searchArtists(lastFmArtist.name as String, limit: 3);
       if (searchResults.isNotEmpty) {
-        similar.add(searchResults.first);
+        final bestMatch = searchResults.first;
+        if (seenArtistIds.add(bestMatch.id)) {
+          similar.add(bestMatch);
+        }
       }
     } catch (_) {}
   }
@@ -185,25 +207,22 @@ class ArtistDetailScreen extends ConsumerWidget {
         ),
       ),
     );
-    final albums = artistDetail.albums
-        .where((a) => a.albumType == AlbumType.album)
-        .toList();
-    final epsSingles = artistDetail.albums
-        .where(
-          (a) => a.albumType == AlbumType.ep || a.albumType == AlbumType.single,
-        )
-        .toList();
-    final compilations = artistDetail.albums
-        .where((a) => a.albumType == AlbumType.compilation)
-        .toList();
-    final liveAlbums = artistDetail.albums
-        .where((a) => a.albumType == AlbumType.live)
-        .toList();
+    final discography = _buildDiscographyGroups(artistDetail.albums);
     final topTracks = artistDetail.topTracks.take(30).toList();
     final bioText = _cleanBio(
       artistDetail.bio?.isNotEmpty == true
           ? artistDetail.bio
           : extrasAsync.valueOrNull?.bioSummary,
+    );
+    final playlists = _mergePlaylists(
+      artistDetail.playlists,
+      extrasAsync.valueOrNull?.playlists ?? const [],
+    );
+    final relatedArtists = _mergeArtists(
+      artistDetail.relatedArtists,
+      extrasAsync.valueOrNull?.similarArtists ?? const [],
+      currentArtistId: artistDetail.id,
+      currentArtistName: artistDetail.name,
     );
     final artistSummary = Artist(
       id: artistDetail.id,
@@ -252,9 +271,9 @@ class ArtistDetailScreen extends ConsumerWidget {
                               borderRadius: BorderRadius.circular(24),
                             ),
                           ),
-                          child: Row(
+                          child: const Row(
                             mainAxisAlignment: MainAxisAlignment.center,
-                            children: const [
+                            children: [
                               Icon(Icons.play_arrow, size: 22),
                               SizedBox(width: 6),
                               Text('Play',
@@ -288,9 +307,9 @@ class ArtistDetailScreen extends ConsumerWidget {
                               borderRadius: BorderRadius.circular(24),
                             ),
                           ),
-                          child: Row(
+                          child: const Row(
                             mainAxisAlignment: MainAxisAlignment.center,
-                            children: const [
+                            children: [
                               Icon(Icons.shuffle, size: 20),
                               SizedBox(width: 6),
                               Text('Shuffle',
@@ -383,324 +402,54 @@ class ArtistDetailScreen extends ConsumerWidget {
             ),
             const SliverToBoxAdapter(child: SizedBox(height: 24)),
           ],
-          if (albums.isNotEmpty) ...[
-            _buildSectionHeader(
-              context,
-              'Albums',
-              onSeeAll: albums.length > 4
-                  ? () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => ViewAllScreen(
-                            title: 'Albums by ${artistDetail.name}',
-                            albums: albums,
-                          ),
-                        ),
-                      );
-                    }
-                  : null,
-            ),
-            SliverToBoxAdapter(
-              child: SizedBox(
-                height: 200,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: albums.length.clamp(0, 10),
-                  itemBuilder: (context, index) {
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 12),
-                      child: _AlbumCard(
-                        album: albums[index],
-                        subtitle: albums[index].year?.toString(),
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) =>
-                                  AlbumDetailScreen(albumId: albums[index].id),
-                            ),
-                          );
-                        },
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ),
-            const SliverToBoxAdapter(child: SizedBox(height: 24)),
-          ],
-          if (epsSingles.isNotEmpty) ...[
-            _buildSectionHeader(
-              context,
-              'EP & Singles',
-              onSeeAll: epsSingles.length > 4
-                  ? () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => ViewAllScreen(
-                            title: 'EPs & Singles by ${artistDetail.name}',
-                            albums: epsSingles,
-                          ),
-                        ),
-                      );
-                    }
-                  : null,
-            ),
-            SliverToBoxAdapter(
-              child: SizedBox(
-                height: 200,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: epsSingles.length.clamp(0, 10),
-                  itemBuilder: (context, index) {
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 12),
-                      child: _AlbumCard(
-                        album: epsSingles[index],
-                        subtitle: epsSingles[index].year?.toString(),
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => AlbumDetailScreen(
-                                  albumId: epsSingles[index].id),
-                            ),
-                          );
-                        },
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ),
-            const SliverToBoxAdapter(child: SizedBox(height: 24)),
-          ],
-          if (compilations.isNotEmpty) ...[
-            _buildSectionHeader(
-              context,
-              'Compilations',
-              onSeeAll: compilations.length > 4
-                  ? () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => ViewAllScreen(
-                            title: 'Compilations by ${artistDetail.name}',
-                            albums: compilations,
-                          ),
-                        ),
-                      );
-                    }
-                  : null,
-            ),
-            SliverToBoxAdapter(
-              child: SizedBox(
-                height: 218,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: compilations.length.clamp(0, 10),
-                  itemBuilder: (context, index) {
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 12),
-                      child: _AlbumCard(
-                        album: compilations[index],
-                        subtitle: compilations[index].year?.toString(),
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => AlbumDetailScreen(
-                                albumId: compilations[index].id,
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ),
-            const SliverToBoxAdapter(child: SizedBox(height: 24)),
-          ],
-          if (liveAlbums.isNotEmpty) ...[
-            _buildSectionHeader(
-              context,
-              'Live Albums',
-              onSeeAll: liveAlbums.length > 4
-                  ? () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => ViewAllScreen(
-                            title: 'Live Albums by ${artistDetail.name}',
-                            albums: liveAlbums,
-                          ),
-                        ),
-                      );
-                    }
-                  : null,
-            ),
-            SliverToBoxAdapter(
-              child: SizedBox(
-                height: 200,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: liveAlbums.length.clamp(0, 10),
-                  itemBuilder: (context, index) {
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 12),
-                      child: _AlbumCard(
-                        album: liveAlbums[index],
-                        subtitle: liveAlbums[index].year?.toString(),
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => AlbumDetailScreen(
-                                  albumId: liveAlbums[index].id),
-                            ),
-                          );
-                        },
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ),
-            const SliverToBoxAdapter(child: SizedBox(height: 24)),
-          ],
-          extrasAsync.when(
-            data: (extras) {
-              if (extras.playlists.isEmpty) {
-                return const SliverToBoxAdapter(child: SizedBox.shrink());
-              }
-
-              return SliverMainAxisGroup(
-                slivers: [
-                  _buildSectionHeader(
-                    context,
-                    'Playlists',
-                    onSeeAll: extras.playlists.length > 4
-                        ? () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => ViewAllScreen(
-                                  title: 'Playlists for ${artistDetail.name}',
-                                  playlists: extras.playlists,
-                                ),
-                              ),
-                            );
-                          }
-                        : null,
-                  ),
-                  SliverToBoxAdapter(
-                    child: SizedBox(
-                      height: 218,
-                      child: ListView.builder(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        itemCount: extras.playlists.length.clamp(0, 10),
-                        itemBuilder: (context, index) {
-                          final playlist = extras.playlists[index];
-                          return Padding(
-                            padding: const EdgeInsets.only(right: 12),
-                            child: _PlaylistCard(
-                              playlist: playlist,
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => PlaylistDetailScreen(
-                                      playlistId: playlist.id,
-                                      playlist: playlist,
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                  const SliverToBoxAdapter(child: SizedBox(height: 24)),
-                ],
-              );
-            },
-            loading: () => const SliverToBoxAdapter(child: SizedBox.shrink()),
-            error: (_, __) =>
-                const SliverToBoxAdapter(child: SizedBox.shrink()),
+          ..._buildAlbumRailSection(
+            context,
+            title: 'Albums',
+            viewAllTitle: 'Albums by ${artistDetail.name}',
+            albums: discography.albums,
           ),
-          extrasAsync.when(
-            data: (extras) {
-              if (extras.similarArtists.isEmpty) {
-                return const SliverToBoxAdapter(child: SizedBox.shrink());
-              }
-
-              return SliverMainAxisGroup(
-                slivers: [
-                  _buildSectionHeader(
-                    context,
-                    'Fans Also Like',
-                    onSeeAll: extras.similarArtists.length > 4
-                        ? () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => ViewAllScreen(
-                                  title: 'Fans Also Like',
-                                  artists: extras.similarArtists,
-                                ),
-                              ),
-                            );
-                          }
-                        : null,
-                  ),
-                  SliverToBoxAdapter(
-                    child: SizedBox(
-                      height: 190,
-                      child: ListView.builder(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        itemCount: extras.similarArtists.length.clamp(0, 10),
-                        itemBuilder: (context, index) {
-                          final similarArtist = extras.similarArtists[index];
-                          return Padding(
-                            padding: const EdgeInsets.only(right: 16),
-                            child: _ArtistCard(
-                              artist: similarArtist,
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => ArtistDetailScreen(
-                                      artistId: similarArtist.id,
-                                      artist: similarArtist,
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                  const SliverToBoxAdapter(child: SizedBox(height: 24)),
-                ],
-              );
-            },
-            loading: () => const SliverToBoxAdapter(child: SizedBox.shrink()),
-            error: (_, __) =>
-                const SliverToBoxAdapter(child: SizedBox.shrink()),
+          ..._buildAlbumRailSection(
+            context,
+            title: 'EP & Singles',
+            viewAllTitle: 'EPs & Singles by ${artistDetail.name}',
+            albums: discography.epsSingles,
+          ),
+          ..._buildAlbumRailSection(
+            context,
+            title: 'Live Albums',
+            viewAllTitle: 'Live Albums by ${artistDetail.name}',
+            albums: discography.liveAlbums,
+          ),
+          ..._buildAlbumRailSection(
+            context,
+            title: 'Compilations',
+            viewAllTitle: 'Compilations by ${artistDetail.name}',
+            albums: discography.compilations,
+            railHeight: 218,
+          ),
+          ..._buildAlbumRailSection(
+            context,
+            title: 'Others',
+            viewAllTitle: 'Other Releases by ${artistDetail.name}',
+            albums: discography.others,
+          ),
+          ..._buildAlbumRailSection(
+            context,
+            title: 'Other Versions',
+            viewAllTitle: 'Other Versions by ${artistDetail.name}',
+            albums: discography.otherVersions,
+          ),
+          ..._buildPlaylistRailSection(
+            context,
+            title: 'Playlists',
+            viewAllTitle: 'Playlists for ${artistDetail.name}',
+            playlists: playlists,
+          ),
+          ..._buildArtistRailSection(
+            context,
+            title: 'Related Artists',
+            viewAllTitle: 'Related Artists',
+            artists: relatedArtists,
           ),
           SliverToBoxAdapter(
             child: SizedBox(
@@ -876,8 +625,8 @@ class ArtistDetailScreen extends ConsumerWidget {
             if (onSeeAll != null)
               GestureDetector(
                 onTap: onSeeAll,
-                child: Row(
-                  children: const [
+                child: const Row(
+                  children: [
                     Icon(Icons.chevron_right,
                         color: AppTheme.secondaryColor, size: 24),
                   ],
@@ -887,6 +636,355 @@ class ArtistDetailScreen extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  List<Widget> _buildAlbumRailSection(
+    BuildContext context, {
+    required String title,
+    required String viewAllTitle,
+    required List<Album> albums,
+    double railHeight = 200,
+  }) {
+    if (albums.isEmpty) {
+      return const [];
+    }
+
+    return [
+      _buildSectionHeader(
+        context,
+        title,
+        onSeeAll: albums.length > 4
+            ? () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ViewAllScreen(
+                      title: viewAllTitle,
+                      albums: albums,
+                    ),
+                  ),
+                );
+              }
+            : null,
+      ),
+      SliverToBoxAdapter(
+        child: SizedBox(
+          height: railHeight,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: albums.length.clamp(0, 10),
+            itemBuilder: (context, index) {
+              final album = albums[index];
+              return Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: _AlbumCard(
+                  album: album,
+                  subtitle: album.year?.toString(),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => AlbumDetailScreen(albumId: album.id),
+                      ),
+                    );
+                  },
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+      const SliverToBoxAdapter(child: SizedBox(height: 24)),
+    ];
+  }
+
+  List<Widget> _buildPlaylistRailSection(
+    BuildContext context, {
+    required String title,
+    required String viewAllTitle,
+    required List<Playlist> playlists,
+  }) {
+    if (playlists.isEmpty) {
+      return const [];
+    }
+
+    return [
+      _buildSectionHeader(
+        context,
+        title,
+        onSeeAll: playlists.length > 4
+            ? () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ViewAllScreen(
+                      title: viewAllTitle,
+                      playlists: playlists,
+                    ),
+                  ),
+                );
+              }
+            : null,
+      ),
+      SliverToBoxAdapter(
+        child: SizedBox(
+          height: 218,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: playlists.length.clamp(0, 10),
+            itemBuilder: (context, index) {
+              final playlist = playlists[index];
+              return Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: _PlaylistCard(
+                  playlist: playlist,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => PlaylistDetailScreen(
+                          playlistId: playlist.id,
+                          playlist: playlist,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+      const SliverToBoxAdapter(child: SizedBox(height: 24)),
+    ];
+  }
+
+  List<Widget> _buildArtistRailSection(
+    BuildContext context, {
+    required String title,
+    required String viewAllTitle,
+    required List<Artist> artists,
+  }) {
+    if (artists.isEmpty) {
+      return const [];
+    }
+
+    return [
+      _buildSectionHeader(
+        context,
+        title,
+        onSeeAll: artists.length > 4
+            ? () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ViewAllScreen(
+                      title: viewAllTitle,
+                      artists: artists,
+                    ),
+                  ),
+                );
+              }
+            : null,
+      ),
+      SliverToBoxAdapter(
+        child: SizedBox(
+          height: 190,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: artists.length.clamp(0, 10),
+            itemBuilder: (context, index) {
+              final relatedArtist = artists[index];
+              return Padding(
+                padding: const EdgeInsets.only(right: 16),
+                child: _ArtistCard(
+                  artist: relatedArtist,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ArtistDetailScreen(
+                          artistId: relatedArtist.id,
+                          artist: relatedArtist,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+      const SliverToBoxAdapter(child: SizedBox(height: 24)),
+    ];
+  }
+
+  _ArtistDiscographyGroups _buildDiscographyGroups(List<Album> albums) {
+    final uniqueAlbums = <Album>[];
+    final seenKeys = <String>{};
+    for (final album in albums) {
+      final key = album.id.isNotEmpty
+          ? album.id
+          : '${album.title}|${album.artist}|${album.year}|${album.albumType.name}';
+      if (seenKeys.add(key)) {
+        uniqueAlbums.add(album);
+      }
+    }
+
+    final albumReleases = <Album>[];
+    final epsSingles = <Album>[];
+    final liveAlbums = <Album>[];
+    final compilations = <Album>[];
+    final others = <Album>[];
+    final versionFamilies = <String, List<Album>>{};
+
+    for (final album in uniqueAlbums) {
+      switch (album.albumType) {
+        case AlbumType.ep:
+        case AlbumType.single:
+          epsSingles.add(album);
+          break;
+        case AlbumType.live:
+          liveAlbums.add(album);
+          break;
+        case AlbumType.compilation:
+          compilations.add(album);
+          break;
+        case AlbumType.other:
+          others.add(album);
+          break;
+        case AlbumType.album:
+          albumReleases.add(album);
+          break;
+      }
+
+      if (album.albumType != AlbumType.live) {
+        final normalizedTitle = _normalizedAlbumTitle(album.title);
+        if (normalizedTitle.isNotEmpty) {
+          versionFamilies.putIfAbsent(normalizedTitle, () => []).add(album);
+        }
+      }
+    }
+
+    final otherVersions = <Album>[];
+    final seenVersionIds = <String>{};
+    for (final family in versionFamilies.values) {
+      if (family.length < 2) {
+        continue;
+      }
+
+      final sortedFamily = List<Album>.from(family)
+        ..sort((a, b) {
+          final priorityCompare =
+              _albumVersionPriority(a).compareTo(_albumVersionPriority(b));
+          if (priorityCompare != 0) {
+            return priorityCompare;
+          }
+
+          final yearA = a.year ?? 9999;
+          final yearB = b.year ?? 9999;
+          if (yearA != yearB) {
+            return yearA.compareTo(yearB);
+          }
+
+          return a.title.toLowerCase().compareTo(b.title.toLowerCase());
+        });
+
+      for (final version in sortedFamily.skip(1)) {
+        if (seenVersionIds.add(version.id)) {
+          otherVersions.add(version);
+        }
+      }
+    }
+
+    return _ArtistDiscographyGroups(
+      albums: albumReleases,
+      epsSingles: epsSingles,
+      liveAlbums: liveAlbums,
+      compilations: compilations,
+      others: others,
+      otherVersions: otherVersions,
+    );
+  }
+
+  List<Playlist> _mergePlaylists(
+    List<Playlist> primary,
+    List<Playlist> secondary,
+  ) {
+    final merged = <Playlist>[];
+    final seenIds = <String>{};
+    for (final playlist in [...primary, ...secondary]) {
+      if (playlist.id.isEmpty) {
+        continue;
+      }
+      if (seenIds.add(playlist.id)) {
+        merged.add(playlist);
+      }
+    }
+    return merged;
+  }
+
+  List<Artist> _mergeArtists(
+    List<Artist> primary,
+    List<Artist> secondary, {
+    required String currentArtistId,
+    required String currentArtistName,
+  }) {
+    final merged = <Artist>[];
+    final seenIds = <String>{currentArtistId};
+    final seenNames = <String>{_normalizedArtistName(currentArtistName)};
+
+    for (final artist in [...primary, ...secondary]) {
+      final normalizedName = _normalizedArtistName(artist.name);
+      if (artist.id.isNotEmpty && !seenIds.add(artist.id)) {
+        continue;
+      }
+      if (normalizedName.isNotEmpty && !seenNames.add(normalizedName)) {
+        continue;
+      }
+      merged.add(artist);
+    }
+
+    return merged;
+  }
+
+  String _normalizedAlbumTitle(String title) {
+    var normalized = title.toLowerCase();
+    normalized = normalized.replaceAll(RegExp(r'\((.*?)\)|\[(.*?)\]'), ' ');
+    normalized = normalized.replaceAll(
+      RegExp(
+        r'\b(remaster(ed)?|deluxe|expanded|edition|version|mono|stereo|anniversary|bonus|track|disc|single|ep|album)\b',
+      ),
+      ' ',
+    );
+    normalized = normalized.replaceAll(RegExp(r'[^a-z0-9]+'), ' ');
+    return normalized.replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
+  int _albumVersionPriority(Album album) {
+    final title = album.title.toLowerCase();
+    if (RegExp(
+      r'\b(deluxe|expanded|anniversary|collector|super deluxe|box set)\b',
+    ).hasMatch(title)) {
+      return 2;
+    }
+    if (RegExp(
+      r'\b(remaster(ed)?|edition|version|mono|stereo|mix)\b',
+    ).hasMatch(title)) {
+      return 1;
+    }
+    if (title.contains('(') || title.contains('[')) {
+      return 1;
+    }
+    return 0;
+  }
+
+  String _normalizedArtistName(String name) {
+    return name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
   }
 }
 
@@ -1118,6 +1216,12 @@ class _PlaylistCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final fallbackCreator = switch (playlist.source) {
+      MusicSource.qobuz => 'by Qobuz',
+      MusicSource.subsonic => 'Playlist',
+      MusicSource.tidal => 'by TIDAL',
+    };
+
     return GestureDetector(
       onTap: onTap,
       child: SizedBox(
@@ -1160,7 +1264,7 @@ class _PlaylistCard extends StatelessWidget {
             const SizedBox(height: 2),
             Text(
               playlist.creatorName == null || playlist.creatorName!.isEmpty
-                  ? 'by TIDAL'
+                  ? fallbackCreator
                   : 'by ${playlist.creatorName}',
               style: const TextStyle(
                 color: AppTheme.secondaryColor,
@@ -1197,7 +1301,7 @@ class _ArtistCard extends StatelessWidget {
             Container(
               width: 120,
               height: 120,
-              decoration: BoxDecoration(
+              decoration: const BoxDecoration(
                 shape: BoxShape.circle,
                 color: AppTheme.surfaceColor,
               ),

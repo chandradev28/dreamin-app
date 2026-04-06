@@ -9,6 +9,7 @@ enum AlbumType {
   single,
   compilation,
   live,
+  other,
 }
 
 class Album extends Equatable {
@@ -60,14 +61,15 @@ class Album extends Equatable {
         : (json['artist']?['id']?.toString() ?? '');
 
     // Try multiple image fields
-    final cover = json['cover'] as String? 
-        ?? json['image'] as String?
-        ?? json['squareImage'] as String?;
+    final cover = json['cover'] as String? ??
+        json['image'] as String? ??
+        json['squareImage'] as String?;
     String? coverUrl;
     if (cover != null && cover.isNotEmpty) {
       if (cover.contains('-')) {
         final formattedCover = cover.replaceAll('-', '/');
-        coverUrl = 'https://resources.tidal.com/images/$formattedCover/640x640.jpg';
+        coverUrl =
+            'https://resources.tidal.com/images/$formattedCover/640x640.jpg';
       } else if (cover.startsWith('http')) {
         coverUrl = cover;
       } else {
@@ -82,9 +84,14 @@ class Album extends Equatable {
       albumType = AlbumType.ep;
     } else if (typeStr.contains('single') || typeStr == 'single') {
       albumType = AlbumType.single;
-    } else if (typeStr.contains('compilation') || typeStr.contains('greatest') || typeStr.contains('best')) {
+    } else if (typeStr.contains('other')) {
+      albumType = AlbumType.other;
+    } else if (typeStr.contains('compilation') ||
+        typeStr.contains('greatest') ||
+        typeStr.contains('best')) {
       albumType = AlbumType.compilation;
-    } else if (typeStr.contains('live') || (json['title'] as String? ?? '').toLowerCase().contains('live')) {
+    } else if (typeStr.contains('live') ||
+        (json['title'] as String? ?? '').toLowerCase().contains('live')) {
       albumType = AlbumType.live;
     }
 
@@ -113,7 +120,9 @@ class Album extends Equatable {
     return {
       'id': id,
       'title': title,
-      'artists': [{'id': artistId, 'name': artist}],
+      'artists': [
+        {'id': artistId, 'name': artist}
+      ],
       'cover': coverArtUrl,
       'releaseDate': year != null ? '$year-01-01' : null,
       'numberOfTracks': trackCount,
