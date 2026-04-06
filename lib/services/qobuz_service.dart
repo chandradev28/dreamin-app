@@ -85,6 +85,18 @@ class QobuzWebPlayerCredentials {
   });
 }
 
+class _TimedCacheEntry<T> {
+  final T value;
+  final DateTime expiresAt;
+
+  const _TimedCacheEntry({
+    required this.value,
+    required this.expiresAt,
+  });
+
+  bool get isValid => DateTime.now().isBefore(expiresAt);
+}
+
 /// Qobuz Service Implementation
 /// Uses qobuz.squid.wtf as primary with dab.yeet.su and dabmusic.xyz as fallbacks
 /// Provides 24-bit Hi-Res FLAC streaming
@@ -131,6 +143,16 @@ class QobuzServiceImpl implements MusicService {
   static int _lastWorkingStreamIndex = 0;
   static QobuzWebPlayerCredentials? _cachedWebPlayerCredentials;
   static final http.Client _client = http.Client();
+  static const Duration _searchCacheTtl = Duration(minutes: 8);
+  static const Duration _detailCacheTtl = Duration(minutes: 15);
+  static const Duration _streamCacheTtl = Duration(minutes: 3);
+  static final Map<String, _TimedCacheEntry<SearchResult>> _searchCache = {};
+  static final Map<String, _TimedCacheEntry<AlbumDetail?>> _albumCache = {};
+  static final Map<String, _TimedCacheEntry<ArtistDetail?>> _artistCache = {};
+  static final Map<String, _TimedCacheEntry<PlaylistDetail?>> _playlistCache =
+      {};
+  static final Map<String, _TimedCacheEntry<List<QobuzStreamInfo>>>
+      _streamCandidateCache = {};
   final QobuzAuthConfig? authConfig;
 
   QobuzServiceImpl({this.authConfig});
@@ -139,6 +161,36 @@ class QobuzServiceImpl implements MusicService {
   MusicSource get source => MusicSource.qobuz;
 
   bool get _hasOfficialAuth => authConfig?.isComplete == true;
+
+  String get _cacheNamespace => authConfig == null
+      ? 'anon'
+      : '${authConfig!.userId}:${authConfig!.appId}';
+
+  String _cacheKey(String kind, String id) => '$kind|$_cacheNamespace|$id';
+
+  T? _readCache<T>(Map<String, _TimedCacheEntry<T>> cache, String key) {
+    final entry = cache[key];
+    if (entry == null) {
+      return null;
+    }
+    if (!entry.isValid) {
+      cache.remove(key);
+      return null;
+    }
+    return entry.value;
+  }
+
+  void _writeCache<T>(
+    Map<String, _TimedCacheEntry<T>> cache,
+    String key,
+    T value,
+    Duration ttl,
+  ) {
+    cache[key] = _TimedCacheEntry<T>(
+      value: value,
+      expiresAt: DateTime.now().add(ttl),
+    );
+  }
 
   static Future<QobuzResolvedAuth> resolveTokenLogin({
     required String userToken,
@@ -627,6 +679,13 @@ class QobuzServiceImpl implements MusicService {
           source: MusicSource.qobuz);
     }
 
+    final normalizedQuery = query.trim().toLowerCase();
+    final searchCacheKey = _cacheKey('search', '$normalizedQuery|$limit');
+    final cachedSearch = _readCache(_searchCache, searchCacheKey);
+    if (cachedSearch != null) {
+      return cachedSearch;
+    }
+
     print('[Qobuz] Searching for: $query');
 
     final List<Track> allTracks = [];
@@ -675,13 +734,15 @@ class QobuzServiceImpl implements MusicService {
           allPlaylists.add(_playlistFromJson(playlist as Map<String, dynamic>));
         }
 
-        return SearchResult(
+        final result = SearchResult(
           tracks: allTracks,
           albums: allAlbums,
           artists: allArtists,
           playlists: allPlaylists,
           source: MusicSource.qobuz,
         );
+        _writeCache(_searchCache, searchCacheKey, result, _searchCacheTtl);
+        return result;
       } catch (e) {
         print('[Qobuz] Official search failed, falling back to proxy: $e');
       }
@@ -762,26 +823,35 @@ class QobuzServiceImpl implements MusicService {
       print(
           '[Qobuz] Total: ${allTracks.length} tracks, ${allAlbums.length} albums, ${allArtists.length} artists');
 
-      return SearchResult(
+      final result = SearchResult(
         tracks: allTracks,
         albums: allAlbums,
         artists: allArtists,
         playlists: allPlaylists,
         source: MusicSource.qobuz,
       );
+      _writeCache(_searchCache, searchCacheKey, result, _searchCacheTtl);
+      return result;
     } catch (e) {
       lastError = e.toString();
       print('[Qobuz] Search error: $e');
 
       // Return partial results if any
       if (allTracks.isNotEmpty || allAlbums.isNotEmpty) {
-        return SearchResult(
+        final partialResult = SearchResult(
           tracks: allTracks,
           albums: allAlbums,
           artists: allArtists,
           playlists: allPlaylists,
           source: MusicSource.qobuz,
         );
+        _writeCache(
+          _searchCache,
+          searchCacheKey,
+          partialResult,
+          const Duration(minutes: 3),
+        );
+        return partialResult;
       }
 
       // Throw exception if completely failed
@@ -819,6 +889,11 @@ class QobuzServiceImpl implements MusicService {
   Future<AlbumDetail?> getAlbum(String id) async {
     // Strip qobuz: prefix if present
     final albumId = id.replaceFirst('qobuz:', '');
+    final albumCacheKey = _cacheKey('album', albumId);
+    final cachedAlbum = _readCache(_albumCache, albumCacheKey);
+    if (cachedAlbum != null) {
+      return cachedAlbum;
+    }
     print('[Qobuz] Getting album: $albumId');
 
     try {
@@ -872,7 +947,7 @@ class QobuzServiceImpl implements MusicService {
 
       print('[Qobuz] Found ${tracks.length} tracks in album');
 
-      return AlbumDetail(
+      final detail = AlbumDetail(
         id: 'qobuz:$albumId',
         title: albumData['title'] ?? 'Unknown Album',
         artist: artistName,
@@ -885,6 +960,8 @@ class QobuzServiceImpl implements MusicService {
         description: albumData['description'],
         copyright: albumData['copyright'],
       );
+      _writeCache(_albumCache, albumCacheKey, detail, _detailCacheTtl);
+      return detail;
     } catch (e) {
       print('[Qobuz] Album fetch error: $e');
       return null;
@@ -896,6 +973,11 @@ class QobuzServiceImpl implements MusicService {
   @override
   Future<ArtistDetail?> getArtist(String id) async {
     final artistId = id.replaceFirst('qobuz:', '');
+    final artistCacheKey = _cacheKey('artist', artistId);
+    final cachedArtist = _readCache(_artistCache, artistCacheKey);
+    if (cachedArtist != null) {
+      return cachedArtist;
+    }
     print('[Qobuz] Getting artist: $artistId');
 
     try {
@@ -959,7 +1041,7 @@ class QobuzServiceImpl implements MusicService {
               print('[Qobuz] Official related artists failed: $e');
             }
 
-            return ArtistDetail(
+            final detail = ArtistDetail(
               id: 'qobuz:$artistId',
               name: artistName,
               imageUrl: imageUrl,
@@ -971,6 +1053,8 @@ class QobuzServiceImpl implements MusicService {
               playlists: playlists,
               relatedArtists: relatedArtists,
             );
+            _writeCache(_artistCache, artistCacheKey, detail, _detailCacheTtl);
+            return detail;
           }
         } catch (e) {
           print('[Qobuz] Official artist fetch failed, falling back: $e');
@@ -1137,7 +1221,7 @@ class QobuzServiceImpl implements MusicService {
       print(
           '[Qobuz] Artist loaded: $artistName - ${albums.length} albums, ${topTracks.length} tracks');
 
-      return ArtistDetail(
+      final detail = ArtistDetail(
         id: 'qobuz:$artistId',
         name: artistName,
         imageUrl: imageUrl,
@@ -1148,6 +1232,8 @@ class QobuzServiceImpl implements MusicService {
         bio: bio,
         playlists: playlists,
       );
+      _writeCache(_artistCache, artistCacheKey, detail, _detailCacheTtl);
+      return detail;
     } catch (e) {
       print('[Qobuz] Artist fetch error: $e');
       return null;
@@ -1389,6 +1475,11 @@ class QobuzServiceImpl implements MusicService {
   @override
   Future<PlaylistDetail?> getPlaylist(String id) async {
     final playlistId = id.replaceFirst('qobuz:', '');
+    final playlistCacheKey = _cacheKey('playlist', playlistId);
+    final cachedPlaylist = _readCache(_playlistCache, playlistCacheKey);
+    if (cachedPlaylist != null) {
+      return cachedPlaylist;
+    }
     print('[Qobuz] Getting playlist: $playlistId');
 
     final List<Track> allTracks = [];
@@ -1465,7 +1556,7 @@ class QobuzServiceImpl implements MusicService {
 
       print('[Qobuz] Loaded ${allTracks.length} total tracks from playlist');
 
-      return PlaylistDetail(
+      final detail = PlaylistDetail(
         id: 'qobuz:$playlistId',
         title: playlistName ?? 'Unknown Playlist',
         description: description ?? '',
@@ -1474,6 +1565,8 @@ class QobuzServiceImpl implements MusicService {
         source: MusicSource.qobuz,
         tracks: allTracks,
       );
+      _writeCache(_playlistCache, playlistCacheKey, detail, _detailCacheTtl);
+      return detail;
     } catch (e) {
       print('[Qobuz] Playlist fetch error: $e');
       return null;
@@ -1484,10 +1577,12 @@ class QobuzServiceImpl implements MusicService {
   Future<QobuzStreamInfo?> getStreamInfo(
     String trackId, {
     AudioQuality? fallbackQuality,
+    bool forceRefresh = false,
   }) async {
     final candidates = await getStreamCandidates(
       trackId,
       fallbackQuality: fallbackQuality,
+      forceRefresh: forceRefresh,
     );
     return candidates.isEmpty ? null : candidates.first;
   }
@@ -1495,11 +1590,24 @@ class QobuzServiceImpl implements MusicService {
   Future<List<QobuzStreamInfo>> getStreamCandidates(
     String trackId, {
     AudioQuality? fallbackQuality,
+    bool forceRefresh = false,
   }) async {
     final cleanId = trackId.replaceFirst('qobuz:', '');
+    final qualityKey =
+        '${fallbackQuality?.bitDepth ?? 0}:${fallbackQuality?.sampleRate ?? 0}';
+    final streamCacheKey = _cacheKey('stream', '$cleanId|$qualityKey');
+    if (!forceRefresh) {
+      final cachedCandidates =
+          _readCache(_streamCandidateCache, streamCacheKey);
+      if (cachedCandidates != null && cachedCandidates.isNotEmpty) {
+        return cachedCandidates;
+      }
+    }
     print('[Qobuz] Getting stream info for track: $cleanId');
     final candidates = <QobuzStreamInfo>[];
     final seenUrls = <String>{};
+    int? preferredBitDepth;
+    int? preferredSampleRate;
 
     if (_hasOfficialAuth) {
       final officialCandidates = await _getOfficialStreamCandidates(
@@ -1507,9 +1615,23 @@ class QobuzServiceImpl implements MusicService {
         fallbackQuality: fallbackQuality,
       );
       for (final candidate in officialCandidates) {
+        preferredBitDepth ??= candidate.bitDepth;
+        preferredSampleRate ??= candidate.sampleRate;
+        if (candidate.bitDepth != preferredBitDepth ||
+            candidate.sampleRate != preferredSampleRate) {
+          continue;
+        }
         if (seenUrls.add(candidate.url)) {
           candidates.add(candidate);
         }
+      }
+      if (candidates.isNotEmpty) {
+        _writeCache(
+          _streamCandidateCache,
+          streamCacheKey,
+          candidates,
+          _streamCacheTtl,
+        );
       }
       return candidates;
     }
@@ -1598,6 +1720,13 @@ class QobuzServiceImpl implements MusicService {
             '[Qobuz] Stream quality: $qualityCode (${inferredBitDepth}-bit/${inferredSampleRate}Hz) via ${endpoint['name'] ?? 'unknown'}',
           );
 
+          preferredBitDepth ??= inferredBitDepth;
+          preferredSampleRate ??= inferredSampleRate;
+          if (inferredBitDepth != preferredBitDepth ||
+              inferredSampleRate != preferredSampleRate) {
+            continue;
+          }
+
           candidates.add(
             QobuzStreamInfo(
               url: streamUrl,
@@ -1615,11 +1744,32 @@ class QobuzServiceImpl implements MusicService {
 
     if (candidates.isEmpty) {
       print('[Qobuz] All stream endpoints failed for track: $cleanId');
+    } else {
+      _writeCache(
+        _streamCandidateCache,
+        streamCacheKey,
+        candidates,
+        _streamCacheTtl,
+      );
     }
     return candidates;
   }
 
-  List<String> _preferredFormats() {
+  List<String> _preferredFormats(AudioQuality? fallbackQuality) {
+    final bitDepth = fallbackQuality?.bitDepth ?? 0;
+    final sampleRate = fallbackQuality?.sampleRate ?? 0;
+
+    if (bitDepth >= 24) {
+      if (sampleRate >= 176400) {
+        return const ['27', '7', '6', '5'];
+      }
+      return const ['7', '27', '6', '5'];
+    }
+
+    if (bitDepth >= 16 && sampleRate > 0) {
+      return const ['6', '5'];
+    }
+
     return const ['27', '7', '6', '5'];
   }
 
@@ -1637,7 +1787,9 @@ class QobuzServiceImpl implements MusicService {
 
     final candidates = <QobuzStreamInfo>[];
     final seenUrls = <String>{};
-    for (final format in _preferredFormats()) {
+    int? preferredBitDepth;
+    int? preferredSampleRate;
+    for (final format in _preferredFormats(fallbackQuality)) {
       try {
         final timestamp =
             (DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000).toString();
@@ -1675,6 +1827,13 @@ class QobuzServiceImpl implements MusicService {
                 : (fallbackQuality?.sampleRate ?? 44100));
         final qualityCode = bitDepth >= 24 ? 'HI_RES_LOSSLESS' : 'LOSSLESS';
 
+        preferredBitDepth ??= bitDepth;
+        preferredSampleRate ??= sampleRate;
+        if (bitDepth != preferredBitDepth ||
+            sampleRate != preferredSampleRate) {
+          continue;
+        }
+
         print(
           '[Qobuz] Official stream quality: $qualityCode (${bitDepth}-bit/${sampleRate}Hz)',
         );
@@ -1688,6 +1847,10 @@ class QobuzServiceImpl implements MusicService {
             endpoint: 'official',
           ),
         );
+
+        // Official Qobuz should stick to one resolved tier per track.
+        // Once we have the top/original tier, stop probing lower formats.
+        break;
       } catch (e) {
         print('[Qobuz] Official getFileUrl failed for format $format: $e');
       }

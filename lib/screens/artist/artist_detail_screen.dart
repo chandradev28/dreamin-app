@@ -92,6 +92,289 @@ class _ArtistDiscographyGroups {
   });
 }
 
+class _ArtistScopedSearchDelegate extends SearchDelegate<void> {
+  final WidgetRef ref;
+  final ArtistDetail artistDetail;
+  final _ArtistDiscographyGroups discography;
+  final List<Track> topTracks;
+  final List<Playlist> playlists;
+  final List<Artist> relatedArtists;
+
+  _ArtistScopedSearchDelegate({
+    required this.ref,
+    required this.artistDetail,
+    required this.discography,
+    required this.topTracks,
+    required this.playlists,
+    required this.relatedArtists,
+  }) : super(searchFieldLabel: 'Search ${artistDetail.name}');
+
+  List<Album> get _allAlbums => [
+        ...discography.albums,
+        ...discography.epsSingles,
+        ...discography.liveAlbums,
+        ...discography.compilations,
+        ...discography.others,
+        ...discography.otherVersions,
+      ];
+
+  String _normalize(String value) {
+    return value.toLowerCase().trim();
+  }
+
+  bool _matches(String haystack, String needle) {
+    return _normalize(haystack).contains(_normalize(needle));
+  }
+
+  List<Track> _filteredTracks() {
+    if (query.trim().isEmpty) return const [];
+    return topTracks.where((track) {
+      return _matches(track.title, query) ||
+          _matches(track.artist, query) ||
+          _matches(track.album, query);
+    }).toList();
+  }
+
+  List<Album> _filteredAlbums() {
+    if (query.trim().isEmpty) return const [];
+    final seen = <String>{};
+    return _allAlbums.where((album) {
+      final key = album.id.isNotEmpty
+          ? album.id
+          : '${album.title}|${album.artist}|${album.year}';
+      if (!seen.add(key)) {
+        return false;
+      }
+      return _matches(album.title, query) ||
+          _matches(album.artist, query) ||
+          _matches(album.year?.toString() ?? '', query);
+    }).toList();
+  }
+
+  List<Playlist> _filteredPlaylists() {
+    if (query.trim().isEmpty) return const [];
+    return playlists.where((playlist) {
+      return _matches(playlist.title, query) ||
+          _matches(playlist.creatorName ?? '', query) ||
+          _matches(playlist.description ?? '', query);
+    }).toList();
+  }
+
+  List<Artist> _filteredArtists() {
+    if (query.trim().isEmpty) return const [];
+    return relatedArtists.where((artist) {
+      return _matches(artist.name, query);
+    }).toList();
+  }
+
+  @override
+  ThemeData appBarTheme(BuildContext context) {
+    final base = Theme.of(context);
+    return base.copyWith(
+      scaffoldBackgroundColor: AppTheme.backgroundColor,
+      appBarTheme: const AppBarTheme(
+        backgroundColor: AppTheme.backgroundColor,
+        foregroundColor: Colors.white,
+        elevation: 0,
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        border: InputBorder.none,
+        hintStyle: AppTheme.bodyLarge.copyWith(
+          color: Colors.white.withOpacity(0.42),
+        ),
+      ),
+      textTheme: base.textTheme.copyWith(
+        titleLarge: AppTheme.titleLarge.copyWith(color: Colors.white),
+      ),
+    );
+  }
+
+  @override
+  List<Widget>? buildActions(BuildContext context) {
+    return [
+      if (query.isNotEmpty)
+        IconButton(
+          icon: const Icon(Icons.close, color: Colors.white),
+          onPressed: () {
+            query = '';
+            showSuggestions(context);
+          },
+        ),
+    ];
+  }
+
+  @override
+  Widget? buildLeading(BuildContext context) {
+    return IconButton(
+      icon: const Icon(Icons.arrow_back, color: Colors.white),
+      onPressed: () => close(context, null),
+    );
+  }
+
+  @override
+  Widget buildSuggestions(BuildContext context) {
+    return _buildBody(context, showPrompt: query.trim().isEmpty);
+  }
+
+  @override
+  Widget buildResults(BuildContext context) {
+    return _buildBody(context, showPrompt: query.trim().isEmpty);
+  }
+
+  Widget _buildBody(BuildContext context, {required bool showPrompt}) {
+    if (showPrompt) {
+      return _buildPromptState();
+    }
+
+    final tracks = _filteredTracks();
+    final albums = _filteredAlbums();
+    final matchedPlaylists = _filteredPlaylists();
+    final artists = _filteredArtists();
+
+    if (tracks.isEmpty &&
+        albums.isEmpty &&
+        matchedPlaylists.isEmpty &&
+        artists.isEmpty) {
+      return _buildEmptyState();
+    }
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(0, 8, 0, 24),
+      children: [
+        if (tracks.isNotEmpty) ...[
+          _SearchSectionHeader(title: 'Tracks'),
+          ...tracks.map((track) => _SearchTrackTile(
+                track: track,
+                onTap: () {
+                  close(context, null);
+                  ref.read(playerProvider.notifier).playQueue(
+                        topTracks,
+                        startIndex: topTracks.indexOf(track),
+                        source: 'Artist: ${artistDetail.name}',
+                      );
+                },
+              )),
+        ],
+        if (albums.isNotEmpty) ...[
+          _SearchSectionHeader(title: 'Albums & Releases'),
+          ...albums.map((album) => _SearchAlbumTile(
+                album: album,
+                onTap: () {
+                  close(context, null);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          AlbumDetailScreen(albumId: album.id, album: album),
+                    ),
+                  );
+                },
+              )),
+        ],
+        if (matchedPlaylists.isNotEmpty) ...[
+          _SearchSectionHeader(title: 'Playlists'),
+          ...matchedPlaylists.map((playlist) => _SearchPlaylistTile(
+                playlist: playlist,
+                onTap: () {
+                  close(context, null);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => PlaylistDetailScreen(
+                        playlistId: playlist.id,
+                        playlist: playlist,
+                      ),
+                    ),
+                  );
+                },
+              )),
+        ],
+        if (artists.isNotEmpty) ...[
+          _SearchSectionHeader(title: 'Related Artists'),
+          ...artists.map((artist) => _SearchArtistTile(
+                artist: artist,
+                onTap: () {
+                  close(context, null);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ArtistDetailScreen(
+                        artistId: artist.id,
+                        artist: artist,
+                      ),
+                    ),
+                  );
+                },
+              )),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildPromptState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 36),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.manage_search_rounded,
+              size: 52,
+              color: Colors.white.withOpacity(0.34),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              'Search within ${artistDetail.name}',
+              textAlign: TextAlign.center,
+              style: AppTheme.titleLarge.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Find tracks, albums, EPs, playlists, and related artists from this page only.',
+              textAlign: TextAlign.center,
+              style: AppTheme.bodyMedium.copyWith(
+                color: Colors.white.withOpacity(0.62),
+                height: 1.45,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 36),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.search_off_rounded,
+              size: 52,
+              color: Colors.white.withOpacity(0.34),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              'No matches in ${artistDetail.name}',
+              textAlign: TextAlign.center,
+              style: AppTheme.titleLarge.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 final artistPageExtrasProvider =
     FutureProvider.family<_ArtistPageExtras, _ArtistExtrasArgs>((
   ref,
@@ -281,7 +564,23 @@ class ArtistDetailScreen extends ConsumerWidget {
       backgroundColor: AppTheme.backgroundColor,
       body: CustomScrollView(
         slivers: [
-          _buildHeroHeader(context, artistDetail, bioText, artistSummary),
+          _buildHeroHeader(
+            context,
+            artistDetail,
+            bioText,
+            artistSummary,
+            onSearchTap: () => showSearch<void>(
+              context: context,
+              delegate: _ArtistScopedSearchDelegate(
+                ref: ref,
+                artistDetail: artistDetail,
+                discography: discography,
+                topTracks: topTracks,
+                playlists: playlists,
+                relatedArtists: relatedArtists,
+              ),
+            ),
+          ),
           SliverToBoxAdapter(
             child: Padding(
               padding: EdgeInsets.fromLTRB(
@@ -468,7 +767,7 @@ class ArtistDetailScreen extends ConsumerWidget {
             title: 'Compilations',
             viewAllTitle: 'Compilations by ${artistDetail.name}',
             albums: discography.compilations,
-            railHeight: 218,
+            railHeight: 224,
           ),
           ..._buildAlbumRailSection(
             context,
@@ -505,12 +804,9 @@ class ArtistDetailScreen extends ConsumerWidget {
     );
   }
 
-  SliverAppBar _buildHeroHeader(
-    BuildContext context,
-    ArtistDetail artistDetail,
-    String? bioText,
-    Artist artistSummary,
-  ) {
+  SliverAppBar _buildHeroHeader(BuildContext context, ArtistDetail artistDetail,
+      String? bioText, Artist artistSummary,
+      {required VoidCallback onSearchTap}) {
     return SliverAppBar(
       backgroundColor: AppTheme.backgroundColor,
       elevation: 0,
@@ -523,7 +819,7 @@ class ArtistDetailScreen extends ConsumerWidget {
       actions: [
         IconButton(
           icon: const Icon(Icons.search, color: Colors.white),
-          onPressed: () {},
+          onPressed: onSearchTap,
         ),
         IconButton(
           icon: const Icon(Icons.more_vert, color: Colors.white),
@@ -728,7 +1024,8 @@ class ArtistDetailScreen extends ConsumerWidget {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => AlbumDetailScreen(albumId: album.id),
+                        builder: (_) =>
+                            AlbumDetailScreen(albumId: album.id, album: album),
                       ),
                     );
                   },
@@ -772,7 +1069,7 @@ class ArtistDetailScreen extends ConsumerWidget {
       ),
       SliverToBoxAdapter(
         child: SizedBox(
-          height: 236,
+          height: 252,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -834,7 +1131,7 @@ class ArtistDetailScreen extends ConsumerWidget {
       ),
       SliverToBoxAdapter(
         child: SizedBox(
-          height: 214,
+          height: 236,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1069,6 +1366,236 @@ class _ActionIconButton extends StatelessWidget {
   }
 }
 
+class _SearchSectionHeader extends StatelessWidget {
+  final String title;
+
+  const _SearchSectionHeader({required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 8),
+      child: Text(
+        title,
+        style: AppTheme.titleLarge.copyWith(
+          color: Colors.white,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+class _SearchTrackTile extends StatelessWidget {
+  final Track track;
+  final VoidCallback onTap;
+
+  const _SearchTrackTile({
+    required this.track,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      onTap: onTap,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      leading: ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: SizedBox(
+          width: 52,
+          height: 52,
+          child: track.coverArtUrl != null
+              ? CachedNetworkImage(
+                  imageUrl: track.coverArtUrl!,
+                  fit: BoxFit.cover,
+                )
+              : Container(
+                  color: AppTheme.surfaceColor,
+                  child: const Icon(
+                    Icons.music_note,
+                    color: AppTheme.secondaryColor,
+                  ),
+                ),
+        ),
+      ),
+      title: Text(
+        track.title,
+        style: AppTheme.bodyLarge.copyWith(color: Colors.white),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: Text(
+        track.artist,
+        style: AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
+  }
+}
+
+class _SearchAlbumTile extends StatelessWidget {
+  final Album album;
+  final VoidCallback onTap;
+
+  const _SearchAlbumTile({
+    required this.album,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final typeLabel = switch (album.albumType) {
+      AlbumType.ep => 'EP',
+      AlbumType.single => 'Single',
+      AlbumType.live => 'Live album',
+      AlbumType.compilation => 'Compilation',
+      AlbumType.other => 'Release',
+      AlbumType.album => 'Album',
+    };
+
+    return ListTile(
+      onTap: onTap,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      leading: ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: SizedBox(
+          width: 52,
+          height: 52,
+          child: album.coverArtUrl != null
+              ? CachedNetworkImage(
+                  imageUrl: album.coverArtUrl!,
+                  fit: BoxFit.cover,
+                )
+              : Container(
+                  color: AppTheme.surfaceColor,
+                  child: const Icon(
+                    Icons.album,
+                    color: AppTheme.secondaryColor,
+                  ),
+                ),
+        ),
+      ),
+      title: Text(
+        album.title,
+        style: AppTheme.bodyLarge.copyWith(color: Colors.white),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: Text(
+        '$typeLabel • ${album.artist}',
+        style: AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
+  }
+}
+
+class _SearchPlaylistTile extends StatelessWidget {
+  final Playlist playlist;
+  final VoidCallback onTap;
+
+  const _SearchPlaylistTile({
+    required this.playlist,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final creator = playlist.creatorName?.trim().isNotEmpty == true
+        ? playlist.creatorName!
+        : playlist.source == MusicSource.qobuz
+            ? 'Qobuz'
+            : 'TIDAL';
+
+    return ListTile(
+      onTap: onTap,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      leading: ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: SizedBox(
+          width: 52,
+          height: 52,
+          child: playlist.coverArtUrl != null
+              ? CachedNetworkImage(
+                  imageUrl: playlist.coverArtUrl!,
+                  fit: BoxFit.cover,
+                )
+              : Container(
+                  color: AppTheme.surfaceColor,
+                  child: const Icon(
+                    Icons.queue_music,
+                    color: AppTheme.secondaryColor,
+                  ),
+                ),
+        ),
+      ),
+      title: Text(
+        playlist.title,
+        style: AppTheme.bodyLarge.copyWith(color: Colors.white),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: Text(
+        'by $creator',
+        style: AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
+  }
+}
+
+class _SearchArtistTile extends StatelessWidget {
+  final Artist artist;
+  final VoidCallback onTap;
+
+  const _SearchArtistTile({
+    required this.artist,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      onTap: onTap,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      leading: Container(
+        width: 52,
+        height: 52,
+        decoration: const BoxDecoration(
+          shape: BoxShape.circle,
+          color: AppTheme.surfaceColor,
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: artist.imageUrl != null && artist.imageUrl!.isNotEmpty
+            ? CachedNetworkImage(
+                imageUrl: artist.imageUrl!,
+                fit: BoxFit.cover,
+              )
+            : Center(
+                child: Text(
+                  artist.name.isNotEmpty ? artist.name[0].toUpperCase() : '?',
+                  style: AppTheme.titleLarge.copyWith(color: Colors.white),
+                ),
+              ),
+      ),
+      title: Text(
+        artist.name,
+        style: AppTheme.bodyLarge.copyWith(color: Colors.white),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: Text(
+        'Related artist',
+        style: AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor),
+      ),
+    );
+  }
+}
+
 /// Track Tile for Top Tracks list
 class _TrackTile extends StatelessWidget {
   final Track track;
@@ -1253,6 +1780,8 @@ class _AlbumCard extends StatelessWidget {
 class _PlaylistCard extends StatelessWidget {
   final Playlist playlist;
   final VoidCallback onTap;
+  static const double _cardWidth = 156;
+  static const double _coverSize = 156;
 
   const _PlaylistCard({
     required this.playlist,
@@ -1270,13 +1799,13 @@ class _PlaylistCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: SizedBox(
-        width: 140,
+        width: _cardWidth,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
-              width: 140,
-              height: 140,
+              width: _coverSize,
+              height: _coverSize,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(6),
                 color: AppTheme.surfaceColor,
@@ -1328,8 +1857,8 @@ class _PlaylistCard extends StatelessWidget {
 class _ArtistCard extends StatelessWidget {
   final Artist artist;
   final VoidCallback onTap;
-  static const double _cardWidth = 132;
-  static const double _imageSize = 132;
+  static const double _cardWidth = 156;
+  static const double _imageSize = 156;
 
   const _ArtistCard({
     required this.artist,

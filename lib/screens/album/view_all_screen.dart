@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/responsive.dart';
 import '../../models/models.dart';
+import '../../providers/providers.dart';
 import '../../widgets/album_options_sheet.dart';
 import '../../widgets/playlist_options_sheet.dart';
 import '../album/album_detail_screen.dart';
@@ -12,7 +14,7 @@ import '../scaffold_with_mini_player.dart';
 
 /// View All Screen - Grid display for albums/artists/playlists
 /// Shows 20 items max in a 2-column grid layout (TIDAL style)
-class ViewAllScreen extends StatelessWidget {
+class ViewAllScreen extends ConsumerWidget {
   final String title;
   final List<Album>? albums;
   final List<Artist>? artists;
@@ -27,7 +29,7 @@ class ViewAllScreen extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final responsive = Responsive(context);
 
     return ScaffoldWithMiniPlayer(
@@ -49,14 +51,18 @@ class ViewAllScreen extends StatelessWidget {
         ),
       ),
       body: SafeArea(
-        child: _buildContent(context, responsive),
+        child: _buildContent(context, responsive, ref),
       ),
     );
   }
 
-  Widget _buildContent(BuildContext context, Responsive responsive) {
+  Widget _buildContent(
+    BuildContext context,
+    Responsive responsive,
+    WidgetRef ref,
+  ) {
     if (albums != null && albums!.isNotEmpty) {
-      return _buildAlbumGrid(context, responsive);
+      return _buildAlbumGrid(context, responsive, ref);
     } else if (artists != null && artists!.isNotEmpty) {
       return _buildArtistGrid(context, responsive);
     } else if (playlists != null && playlists!.isNotEmpty) {
@@ -70,7 +76,11 @@ class ViewAllScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildAlbumGrid(BuildContext context, Responsive responsive) {
+  Widget _buildAlbumGrid(
+    BuildContext context,
+    Responsive responsive,
+    WidgetRef ref,
+  ) {
     final items = albums!;
 
     return GridView.builder(
@@ -86,7 +96,7 @@ class ViewAllScreen extends StatelessWidget {
         final album = items[index];
         return _AlbumGridItem(
           album: album,
-          onTap: () => _navigateToAlbum(context, album),
+          onTap: () => _navigateToAlbum(context, ref, album),
         );
       },
     );
@@ -144,16 +154,96 @@ class ViewAllScreen extends StatelessWidget {
     );
   }
 
-  void _navigateToAlbum(BuildContext context, Album album) {
+  Future<void> _navigateToAlbum(
+    BuildContext context,
+    WidgetRef ref,
+    Album album,
+  ) async {
+    final resolvedAlbum = await _resolveAlbumForNavigation(ref, album);
+    if (!context.mounted) {
+      return;
+    }
+
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => AlbumDetailScreen(
-          albumId: album.id,
-          album: album,
+          albumId: resolvedAlbum.id,
+          album: resolvedAlbum,
         ),
       ),
     );
+  }
+
+  Future<Album> _resolveAlbumForNavigation(WidgetRef ref, Album album) async {
+    if (album.source != MusicSource.qobuz) {
+      return album;
+    }
+
+    final musicService = ref.read(musicServiceProvider);
+    try {
+      final query = '${album.artist} ${album.title}'.trim();
+      final candidates = await musicService.searchAlbums(query, limit: 25);
+      final resolved = _pickBestAlbumMatch(
+        candidates,
+        artistName: album.artist,
+        title: album.title,
+      );
+      if (resolved != null) {
+        return resolved;
+      }
+    } catch (_) {}
+
+    return album;
+  }
+
+  Album? _pickBestAlbumMatch(
+    List<Album> albums, {
+    required String artistName,
+    required String title,
+  }) {
+    if (albums.isEmpty) {
+      return null;
+    }
+
+    final normalizedArtist = _normalizeArtistName(artistName);
+    final normalizedTitle = _normalizeAlbumTitle(title);
+
+    for (final album in albums) {
+      if (_normalizeArtistName(album.artist) == normalizedArtist &&
+          _normalizeAlbumTitle(album.title) == normalizedTitle) {
+        return album;
+      }
+    }
+
+    for (final album in albums) {
+      if (_normalizeArtistName(album.artist) == normalizedArtist) {
+        final candidateTitle = _normalizeAlbumTitle(album.title);
+        if (candidateTitle.contains(normalizedTitle) ||
+            normalizedTitle.contains(candidateTitle)) {
+          return album;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  String _normalizeArtistName(String name) {
+    return name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
+  }
+
+  String _normalizeAlbumTitle(String title) {
+    var normalized = title.toLowerCase();
+    normalized = normalized.replaceAll(RegExp(r'\((.*?)\)|\[(.*?)\]'), ' ');
+    normalized = normalized.replaceAll(
+      RegExp(
+        r'\b(remaster(ed)?|deluxe|expanded|edition|version|mono|stereo|anniversary|bonus|track|disc|single|ep|album)\b',
+      ),
+      ' ',
+    );
+    normalized = normalized.replaceAll(RegExp(r'[^a-z0-9]+'), ' ');
+    return normalized.replaceAll(RegExp(r'\s+'), ' ').trim();
   }
 
   void _navigateToArtist(BuildContext context, Artist artist) {

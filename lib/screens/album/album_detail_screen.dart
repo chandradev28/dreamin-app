@@ -48,27 +48,30 @@ class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
     if (_isLoadingExtras || _hasLoadedExtras) return;
     setState(() => _isLoadingExtras = true);
 
-    final tidalService = ref.read(tidalServiceProvider);
+    final musicService = ref.read(musicServiceProvider);
     final lastFmService = ref.read(lastFmServiceProvider);
 
     try {
       final sameArtistAlbums = <Album>[];
+      ArtistDetail? sourceArtistDetail;
       try {
-        final artist = await tidalService.getArtist(albumDetail.artistId);
-        sameArtistAlbums.addAll(
-          artist.albums.where(
-            (album) => _belongsToArtist(
-              album,
-              albumDetail.artistId,
-              albumDetail.artist,
+        sourceArtistDetail = await musicService.getArtist(albumDetail.artistId);
+        if (sourceArtistDetail != null) {
+          sameArtistAlbums.addAll(
+            sourceArtistDetail.albums.where(
+              (album) => _belongsToArtist(
+                album,
+                albumDetail.artistId,
+                albumDetail.artist,
+              ),
             ),
-          ),
-        );
+          );
+        }
       } catch (_) {}
 
       if (sameArtistAlbums.length < 12) {
         try {
-          final searchedAlbums = await tidalService.searchAlbums(
+          final searchedAlbums = await musicService.searchAlbums(
             albumDetail.artist,
             limit: 50,
           );
@@ -95,61 +98,83 @@ class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
       final seenArtistIds = <String>{albumDetail.artistId};
       final seenRelatedAlbumIds = <String>{albumDetail.id};
 
-      try {
-        final lastFmSimilar = await lastFmService.getSimilarArtists(
-          albumDetail.artist,
-          limit: 12,
-        );
-
-        for (final lfmArtist in lastFmSimilar) {
-          try {
-            final tidalArtists =
-                await tidalService.searchArtists(lfmArtist.name, limit: 5);
-            final matchedArtist =
-                _pickBestArtistMatch(tidalArtists, lfmArtist.name);
-            if (matchedArtist == null ||
-                seenArtistIds.contains(matchedArtist.id) ||
-                _normalizeArtistName(matchedArtist.name) ==
-                    _normalizeArtistName(albumDetail.artist)) {
-              continue;
-            }
-
-            seenArtistIds.add(matchedArtist.id);
-            relatedArtists.add(matchedArtist);
-
-            if (relatedAlbums.length < 12) {
-              try {
-                final detail = await tidalService.getArtist(matchedArtist.id);
-                final firstAlbum = detail.albums.firstWhere(
-                  (album) =>
-                      !_belongsToArtist(
-                        album,
-                        albumDetail.artistId,
-                        albumDetail.artist,
-                      ) &&
-                      !seenRelatedAlbumIds.contains(album.id),
-                  orElse: () => const Album(
-                    id: '',
-                    title: '',
-                    artist: '',
-                    artistId: '',
-                    trackCount: 0,
-                    source: MusicSource.tidal,
-                  ),
-                );
-                if (firstAlbum.id.isNotEmpty) {
-                  seenRelatedAlbumIds.add(firstAlbum.id);
-                  relatedAlbums.add(firstAlbum);
-                }
-              } catch (_) {}
-            }
-
-            if (relatedArtists.length >= 10) {
-              break;
-            }
-          } catch (_) {}
+      void addRelatedArtist(Artist artist) {
+        if (artist.id.isEmpty ||
+            seenArtistIds.contains(artist.id) ||
+            _normalizeArtistName(artist.name) ==
+                _normalizeArtistName(albumDetail.artist)) {
+          return;
         }
-      } catch (_) {}
+        seenArtistIds.add(artist.id);
+        relatedArtists.add(artist);
+      }
+
+      if (sourceArtistDetail != null) {
+        for (final artist in sourceArtistDetail.relatedArtists) {
+          addRelatedArtist(artist);
+          if (relatedArtists.length >= 10) {
+            break;
+          }
+        }
+      }
+
+      if (relatedArtists.isEmpty && musicService.source == MusicSource.tidal) {
+        try {
+          final lastFmSimilar = await lastFmService.getSimilarArtists(
+            albumDetail.artist,
+            limit: 12,
+          );
+
+          for (final lfmArtist in lastFmSimilar) {
+            try {
+              final sourceArtists =
+                  await musicService.searchArtists(lfmArtist.name, limit: 5);
+              final matchedArtist =
+                  _pickBestArtistMatch(sourceArtists, lfmArtist.name);
+              if (matchedArtist == null) {
+                continue;
+              }
+              addRelatedArtist(matchedArtist);
+              if (relatedArtists.length >= 10) {
+                break;
+              }
+            } catch (_) {}
+          }
+        } catch (_) {}
+      }
+
+      for (final relatedArtist in relatedArtists) {
+        if (relatedAlbums.length >= 12) {
+          break;
+        }
+        try {
+          final detail = await musicService.getArtist(relatedArtist.id);
+          if (detail == null) {
+            continue;
+          }
+          final firstAlbum = detail.albums.firstWhere(
+            (album) =>
+                !_belongsToArtist(
+                  album,
+                  albumDetail.artistId,
+                  albumDetail.artist,
+                ) &&
+                !seenRelatedAlbumIds.contains(album.id),
+            orElse: () => Album(
+              id: '',
+              title: '',
+              artist: '',
+              artistId: '',
+              trackCount: 0,
+              source: musicService.source,
+            ),
+          );
+          if (firstAlbum.id.isNotEmpty) {
+            seenRelatedAlbumIds.add(firstAlbum.id);
+            relatedAlbums.add(firstAlbum);
+          }
+        } catch (_) {}
+      }
 
       if (mounted) {
         setState(() {
@@ -256,6 +281,60 @@ class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
       }
     }
     return artists.first;
+  }
+
+  Future<Album> _resolveAlbumForNavigation(Album album) async {
+    if (album.source != MusicSource.qobuz) {
+      return album;
+    }
+
+    final musicService = ref.read(musicServiceProvider);
+    try {
+      final query = '${album.artist} ${album.title}'.trim();
+      final candidates = await musicService.searchAlbums(query, limit: 25);
+      final resolved = _pickBestAlbumMatch(
+        candidates,
+        artistName: album.artist,
+        title: album.title,
+      );
+      if (resolved != null) {
+        return resolved;
+      }
+    } catch (_) {}
+
+    return album;
+  }
+
+  Album? _pickBestAlbumMatch(
+    List<Album> albums, {
+    required String artistName,
+    required String title,
+  }) {
+    if (albums.isEmpty) {
+      return null;
+    }
+
+    final normalizedArtist = _normalizeArtistName(artistName);
+    final normalizedTitle = _normalizedAlbumTitle(title);
+
+    for (final album in albums) {
+      if (_normalizeArtistName(album.artist) == normalizedArtist &&
+          _normalizedAlbumTitle(album.title) == normalizedTitle) {
+        return album;
+      }
+    }
+
+    for (final album in albums) {
+      if (_normalizeArtistName(album.artist) == normalizedArtist) {
+        final candidateTitle = _normalizedAlbumTitle(album.title);
+        if (candidateTitle.contains(normalizedTitle) ||
+            normalizedTitle.contains(candidateTitle)) {
+          return album;
+        }
+      }
+    }
+
+    return null;
   }
 
   void _showAlbumCredits(BuildContext context, AlbumDetail albumDetail) {
@@ -761,10 +840,19 @@ class _AlbumDetailScreenState extends ConsumerState<AlbumDetailScreen> {
     );
   }
 
-  void _navigateToAlbum(BuildContext context, Album album) {
+  Future<void> _navigateToAlbum(BuildContext context, Album album) async {
+    final resolvedAlbum = await _resolveAlbumForNavigation(album);
+    if (!context.mounted) {
+      return;
+    }
+
     Navigator.of(context).push(
       MaterialPageRoute(
-          builder: (_) => AlbumDetailScreen(albumId: album.id, album: album)),
+        builder: (_) => AlbumDetailScreen(
+          albumId: resolvedAlbum.id,
+          album: resolvedAlbum,
+        ),
+      ),
     );
   }
 }
@@ -1345,16 +1433,20 @@ class _SectionHeader extends StatelessWidget {
 class _HorizontalAlbumList extends StatelessWidget {
   final List<Album> albums;
   final Function(Album) onAlbumTap;
-  static const double _cardWidth = 132;
-  static const double _coverSize = 132;
-  static const double _railHeight = 204;
+  static const double _tidalCardWidth = 156;
+  static const double _tidalCoverSize = 156;
+  static const double _tidalRailHeight = 224;
 
   const _HorizontalAlbumList({required this.albums, required this.onAlbumTap});
 
   @override
   Widget build(BuildContext context) {
+    const cardWidth = _tidalCardWidth;
+    const coverSize = _tidalCoverSize;
+    const railHeight = _tidalRailHeight;
+
     return SizedBox(
-      height: _railHeight,
+      height: railHeight,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 18),
@@ -1364,7 +1456,7 @@ class _HorizontalAlbumList extends StatelessWidget {
           return GestureDetector(
             onTap: () => onAlbumTap(album),
             child: Container(
-              width: _cardWidth,
+              width: cardWidth,
               margin: const EdgeInsets.only(right: 12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1374,18 +1466,18 @@ class _HorizontalAlbumList extends StatelessWidget {
                     child: album.coverArtUrl != null
                         ? CachedNetworkImage(
                             imageUrl: album.coverArtUrl!,
-                            width: _coverSize,
-                            height: _coverSize,
+                            width: coverSize,
+                            height: coverSize,
                             fit: BoxFit.cover,
                             placeholder: (_, __) => Container(
-                              width: _coverSize,
-                              height: _coverSize,
+                              width: coverSize,
+                              height: coverSize,
                               color: AppTheme.surfaceColor,
                             ),
                           )
                         : Container(
-                            width: _coverSize,
-                            height: _coverSize,
+                            width: coverSize,
+                            height: coverSize,
                             color: AppTheme.surfaceColor,
                             child: const Icon(
                               Icons.album,
@@ -1429,9 +1521,9 @@ class _HorizontalAlbumList extends StatelessWidget {
 class _HorizontalArtistList extends StatelessWidget {
   final List<Artist> artists;
   final Function(Artist) onArtistTap;
-  static const double _imageSize = 92;
-  static const double _cardWidth = 104;
-  static const double _railHeight = 146;
+  static const double _imageSize = 156;
+  static const double _cardWidth = 156;
+  static const double _railHeight = 236;
 
   const _HorizontalArtistList(
       {required this.artists, required this.onArtistTap});
@@ -1496,8 +1588,8 @@ class _HorizontalArtistList extends StatelessWidget {
 
   Widget _buildArtistPlaceholder(Artist artist) {
     return Container(
-      width: 80,
-      height: 80,
+      width: _imageSize,
+      height: _imageSize,
       color: AppTheme.surfaceLight,
       child: Center(
         child: Text(

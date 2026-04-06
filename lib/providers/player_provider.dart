@@ -171,8 +171,11 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   String? _activePlaybackTrackKey;
   final Map<String, int> _candidateRetryStartIndex = {};
   bool _isRecoveringShortTrack = false;
+  bool _isRecoveringTrack = false;
+  final Map<String, int> _trackRecoveryAttempts = {};
   static const _minimumPlayDuration = Duration(seconds: 30);
   static const _maxConsecutiveFailures = 3; // Stop skipping after 3 failures
+  static const _maxTrackRecoveryAttempts = 3;
 
   // Volume normalization (Android loudness enhancer)
   AndroidLoudnessEnhancer? _loudnessEnhancer;
@@ -259,6 +262,14 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       (event) {},
       onError: (Object e, StackTrace stackTrace) {
         print('Audio Player Error: $e');
+        final currentTrack = state.currentTrack;
+        if (currentTrack != null &&
+            _scheduleTrackRecovery(
+              currentTrack,
+              reason: 'playback event error',
+            )) {
+          return;
+        }
         // Auto-skip to next on error
         if (state.queue.isNotEmpty &&
             state.queueIndex < state.queue.length - 1) {
@@ -281,6 +292,15 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
         'Retrying ${state.currentTrack?.title} with another stream candidate after early completion',
       );
       _retryCurrentTrackWithNextCandidate();
+      return PlaybackStatus.loading;
+    }
+
+    if (endedTooEarly &&
+        state.currentTrack != null &&
+        _scheduleTrackRecovery(
+          state.currentTrack!,
+          reason: 'track ended too early',
+        )) {
       return PlaybackStatus.loading;
     }
 
@@ -541,6 +561,55 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     });
   }
 
+  bool _supportsSameTrackRecovery(Track track) {
+    return track.source == MusicSource.qobuz;
+  }
+
+  bool _scheduleTrackRecovery(
+    Track track, {
+    required String reason,
+  }) {
+    if (!_supportsSameTrackRecovery(track) || _isRecoveringTrack) {
+      return false;
+    }
+
+    final key = _trackKey(track);
+    final attempts = _trackRecoveryAttempts[key] ?? 0;
+    if (attempts >= _maxTrackRecoveryAttempts) {
+      print(
+        'Stopping Qobuz same-track recovery for "${track.title}" after $attempts attempts ($reason)',
+      );
+      return false;
+    }
+
+    _trackRecoveryAttempts[key] = attempts + 1;
+    _candidateRetryStartIndex.remove(key);
+    _clearActivePlaybackCandidates();
+    _isRecoveringTrack = true;
+    state = state.copyWith(
+      status: PlaybackStatus.loading,
+      error: 'Retrying "${track.title}"...',
+    );
+
+    Future.microtask(() async {
+      try {
+        await _audioPlayer.stop();
+      } catch (_) {}
+
+      try {
+        await Future.delayed(const Duration(milliseconds: 250));
+        await play(track);
+      } finally {
+        _isRecoveringTrack = false;
+      }
+    });
+
+    print(
+      'Retrying Qobuz track "${track.title}" with a fresh stream (${attempts + 1}/$_maxTrackRecoveryAttempts) because: $reason',
+    );
+    return true;
+  }
+
   List<String> _trimQueuedTrackKeys(
       List<Track> queue, int queueIndex, List<String> queuedTrackKeys) {
     if (queuedTrackKeys.isEmpty || queue.isEmpty) {
@@ -594,6 +663,9 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   Future<void> play(Track track) async {
     final playRequestId = ++_playRequestCounter;
     _syncQueueForDirectPlay(track);
+    if (!_isRecoveringTrack) {
+      _trackRecoveryAttempts.remove(_trackKey(track));
+    }
 
     // Record previous track if any
     if (state.currentTrack != null) {
@@ -725,9 +797,12 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
             final qobuzService =
                 _musicService is QobuzServiceImpl ? _musicService : null;
             if (qobuzService != null) {
+              final qobuzTrackKey = _trackKey(track);
               qobuzCandidates = await qobuzService.getStreamCandidates(
                 track.id,
                 fallbackQuality: track.quality,
+                forceRefresh: _isRecoveringTrack ||
+                    (_trackRecoveryAttempts[qobuzTrackKey] ?? 0) > 0,
               );
               if (qobuzCandidates.isNotEmpty) {
                 playbackCandidates.addAll(
@@ -751,7 +826,9 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
               }
             }
 
-            streamUrl ??= await _musicService.getStreamUrl(track.id);
+            if (streamUrl == null && qobuzService == null) {
+              streamUrl = await _musicService.getStreamUrl(track.id);
+            }
             quality ??= fallbackBitDepth >= 24 ? 'HI_RES_LOSSLESS' : 'LOSSLESS';
             codec ??= 'FLAC';
             if (bitDepth < 1) {
@@ -873,6 +950,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
 
       // Reset consecutive failures on successful play
       _consecutiveFailures = 0;
+      _trackRecoveryAttempts.remove(_trackKey(track));
 
       // Update state with current quality
       state = state.copyWith(
@@ -892,6 +970,10 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
 
       // Store the actual error so UI can show it
       final errorMsg = e.toString().replaceAll('TidalApiException: ', '');
+
+      if (_scheduleTrackRecovery(track, reason: errorMsg)) {
+        return;
+      }
 
       // Check if we should try next track or stop
       final hasMoreTracks =
