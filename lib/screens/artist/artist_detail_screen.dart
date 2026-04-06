@@ -45,6 +45,35 @@ class _ArtistPageExtras {
   });
 }
 
+final artistFallbackByNameProvider =
+    FutureProvider.family<ArtistDetail?, String>((ref, artistName) async {
+  final musicService = ref.watch(musicServiceProvider);
+  final cleaned = artistName.trim();
+  if (cleaned.isEmpty) {
+    return null;
+  }
+
+  try {
+    final results = await musicService.searchArtists(cleaned, limit: 8);
+    if (results.isEmpty) {
+      return null;
+    }
+
+    String normalize(String value) =>
+        value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
+
+    final target = normalize(cleaned);
+    final bestMatch = results.firstWhere(
+      (artist) => normalize(artist.name) == target,
+      orElse: () => results.first,
+    );
+
+    return await musicService.getArtist(bestMatch.id);
+  } catch (_) {
+    return null;
+  }
+});
+
 class _ArtistDiscographyGroups {
   final List<Album> albums;
   final List<Album> epsSingles;
@@ -127,6 +156,9 @@ class ArtistDetailScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final responsive = Responsive(context);
     final artistDetail = ref.watch(artistDetailProvider(artistId));
+    final fallbackArtistDetail = artist != null
+        ? ref.watch(artistFallbackByNameProvider(artist!.name))
+        : const AsyncValue<ArtistDetail?>.data(null);
 
     return ScaffoldWithMiniPlayer(
       body: artistDetail.when(
@@ -135,7 +167,18 @@ class ArtistDetailScreen extends ConsumerWidget {
             _buildErrorState(context, error.toString(), responsive),
         data: (data) {
           if (data == null) {
-            return _buildErrorState(context, 'Artist not found', responsive);
+            return fallbackArtistDetail.when(
+              loading: () => _buildLoadingState(context, responsive),
+              error: (_, __) =>
+                  _buildErrorState(context, 'Artist not found', responsive),
+              data: (fallback) {
+                if (fallback == null) {
+                  return _buildErrorState(
+                      context, 'Artist not found', responsive);
+                }
+                return _buildContent(context, ref, fallback, responsive);
+              },
+            );
           }
           return _buildContent(context, ref, data, responsive);
         },
@@ -643,7 +686,7 @@ class ArtistDetailScreen extends ConsumerWidget {
     required String title,
     required String viewAllTitle,
     required List<Album> albums,
-    double railHeight = 200,
+    double railHeight = 224,
   }) {
     if (albums.isEmpty) {
       return const [];
@@ -729,7 +772,7 @@ class ArtistDetailScreen extends ConsumerWidget {
       ),
       SliverToBoxAdapter(
         child: SizedBox(
-          height: 218,
+          height: 236,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -791,7 +834,7 @@ class ArtistDetailScreen extends ConsumerWidget {
       ),
       SliverToBoxAdapter(
         child: SizedBox(
-          height: 190,
+          height: 214,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1129,6 +1172,8 @@ class _AlbumCard extends StatelessWidget {
   final Album album;
   final String? subtitle;
   final VoidCallback onTap;
+  static const double _cardWidth = 156;
+  static const double _coverSize = 156;
 
   const _AlbumCard({
     required this.album,
@@ -1141,14 +1186,14 @@ class _AlbumCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: SizedBox(
-        width: 140,
+        width: _cardWidth,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Album Cover
             Container(
-              width: 140,
-              height: 140,
+              width: _coverSize,
+              height: _coverSize,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(4),
                 color: AppTheme.surfaceColor,
@@ -1283,6 +1328,8 @@ class _PlaylistCard extends StatelessWidget {
 class _ArtistCard extends StatelessWidget {
   final Artist artist;
   final VoidCallback onTap;
+  static const double _cardWidth = 132;
+  static const double _imageSize = 132;
 
   const _ArtistCard({
     required this.artist,
@@ -1294,13 +1341,13 @@ class _ArtistCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: SizedBox(
-        width: 120,
+        width: _cardWidth,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Container(
-              width: 120,
-              height: 120,
+              width: _imageSize,
+              height: _imageSize,
               decoration: const BoxDecoration(
                 shape: BoxShape.circle,
                 color: AppTheme.surfaceColor,

@@ -1263,7 +1263,11 @@ class _TrackListItem extends StatelessWidget {
                   size: 18,
                   color: AppTheme.secondaryColor,
                 ),
-                onPressed: () => TrackOptionsSheet.show(context, track),
+                onPressed: () => TrackOptionsSheet.show(
+                  context,
+                  track,
+                  showGoToAlbum: false,
+                ),
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
               ),
@@ -1341,13 +1345,16 @@ class _SectionHeader extends StatelessWidget {
 class _HorizontalAlbumList extends StatelessWidget {
   final List<Album> albums;
   final Function(Album) onAlbumTap;
+  static const double _cardWidth = 132;
+  static const double _coverSize = 132;
+  static const double _railHeight = 204;
 
   const _HorizontalAlbumList({required this.albums, required this.onAlbumTap});
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 184,
+      height: _railHeight,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 18),
@@ -1357,7 +1364,7 @@ class _HorizontalAlbumList extends StatelessWidget {
           return GestureDetector(
             onTap: () => onAlbumTap(album),
             child: Container(
-              width: 116,
+              width: _cardWidth,
               margin: const EdgeInsets.only(right: 12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1367,18 +1374,18 @@ class _HorizontalAlbumList extends StatelessWidget {
                     child: album.coverArtUrl != null
                         ? CachedNetworkImage(
                             imageUrl: album.coverArtUrl!,
-                            width: 116,
-                            height: 116,
+                            width: _coverSize,
+                            height: _coverSize,
                             fit: BoxFit.cover,
                             placeholder: (_, __) => Container(
-                              width: 116,
-                              height: 116,
+                              width: _coverSize,
+                              height: _coverSize,
                               color: AppTheme.surfaceColor,
                             ),
                           )
                         : Container(
-                            width: 116,
-                            height: 116,
+                            width: _coverSize,
+                            height: _coverSize,
                             color: AppTheme.surfaceColor,
                             child: const Icon(
                               Icons.album,
@@ -1422,6 +1429,9 @@ class _HorizontalAlbumList extends StatelessWidget {
 class _HorizontalArtistList extends StatelessWidget {
   final List<Artist> artists;
   final Function(Artist) onArtistTap;
+  static const double _imageSize = 92;
+  static const double _cardWidth = 104;
+  static const double _railHeight = 146;
 
   const _HorizontalArtistList(
       {required this.artists, required this.onArtistTap});
@@ -1429,7 +1439,7 @@ class _HorizontalArtistList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 130,
+      height: _railHeight,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1439,14 +1449,14 @@ class _HorizontalArtistList extends StatelessWidget {
           return GestureDetector(
             onTap: () => onArtistTap(artist),
             child: Container(
-              width: 90,
+              width: _cardWidth,
               margin: const EdgeInsets.only(right: 16),
               child: Column(
                 children: [
                   // Circular Artist Image
                   Container(
-                    width: 80,
-                    height: 80,
+                    width: _imageSize,
+                    height: _imageSize,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: AppTheme.surfaceColor,
@@ -1455,8 +1465,8 @@ class _HorizontalArtistList extends StatelessWidget {
                       child: artist.imageUrl != null
                           ? CachedNetworkImage(
                               imageUrl: artist.imageUrl!,
-                              width: 80,
-                              height: 80,
+                              width: _imageSize,
+                              height: _imageSize,
                               fit: BoxFit.cover,
                               placeholder: (_, __) =>
                                   _buildArtistPlaceholder(artist),

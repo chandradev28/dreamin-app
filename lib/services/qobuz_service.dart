@@ -903,9 +903,6 @@ class QobuzServiceImpl implements MusicService {
         try {
           final uri = _officialUri('/artist/get', {
             'artist_id': artistId,
-            'extra': 'playlists',
-            'limit': '24',
-            'offset': '0',
           });
           final response = await _client
               .get(uri, headers: _officialHeaders())
@@ -919,9 +916,19 @@ class QobuzServiceImpl implements MusicService {
                 _extractCoverUrl(artistData['image'] as Map<String, dynamic>?);
             final bio = _extractQobuzBiography(artistData);
             final albumCount = (artistData['albums_count'] as num?)?.toInt();
-            final playlists = _extractQobuzArtistPlaylists(artistData);
-            final albums =
-                await _fetchOfficialArtistReleaseList(artistId, artistName);
+            List<Playlist> playlists = const [];
+            try {
+              playlists = _extractQobuzArtistPlaylists(artistData);
+            } catch (e) {
+              print('[Qobuz] Artist playlists extraction failed: $e');
+            }
+            List<Album> albums = const [];
+            try {
+              albums =
+                  await _fetchOfficialArtistReleaseList(artistId, artistName);
+            } catch (e) {
+              print('[Qobuz] Official release list failed: $e');
+            }
 
             SearchResult searchResult = const SearchResult(
               source: MusicSource.qobuz,
@@ -943,9 +950,14 @@ class QobuzServiceImpl implements MusicService {
               artistName: artistName,
               limit: 30,
             );
-            final relatedArtists = await _fetchOfficialRelatedArtists(
-              artistData['similar_artist_ids'] as List?,
-            );
+            List<Artist> relatedArtists = const [];
+            try {
+              relatedArtists = await _fetchOfficialRelatedArtists(
+                artistData['similar_artist_ids'] as List?,
+              );
+            } catch (e) {
+              print('[Qobuz] Official related artists failed: $e');
+            }
 
             return ArtistDetail(
               id: 'qobuz:$artistId',
@@ -1676,7 +1688,6 @@ class QobuzServiceImpl implements MusicService {
             endpoint: 'official',
           ),
         );
-        return candidates;
       } catch (e) {
         print('[Qobuz] Official getFileUrl failed for format $format: $e');
       }

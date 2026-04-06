@@ -12,15 +12,27 @@ import '../screens/artist/artist_detail_screen.dart';
 /// Shows when user taps 3-dot menu on any track
 class TrackOptionsSheet extends ConsumerWidget {
   final Track track;
+  final bool showGoToAlbum;
 
-  const TrackOptionsSheet({super.key, required this.track});
+  const TrackOptionsSheet({
+    super.key,
+    required this.track,
+    this.showGoToAlbum = true,
+  });
 
-  static void show(BuildContext context, Track track) {
+  static void show(
+    BuildContext context,
+    Track track, {
+    bool showGoToAlbum = true,
+  }) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (context) => TrackOptionsSheet(track: track),
+      builder: (context) => TrackOptionsSheet(
+        track: track,
+        showGoToAlbum: showGoToAlbum,
+      ),
     );
   }
 
@@ -67,7 +79,8 @@ class TrackOptionsSheet extends ConsumerWidget {
                           imageUrl: track.coverArtUrl!,
                           fit: BoxFit.cover,
                         )
-                      : const Icon(Icons.music_note, color: AppTheme.secondaryColor),
+                      : const Icon(Icons.music_note,
+                          color: AppTheme.secondaryColor),
                 ),
                 const SizedBox(width: 12),
                 // Track info
@@ -84,7 +97,8 @@ class TrackOptionsSheet extends ConsumerWidget {
                       const SizedBox(height: 2),
                       Text(
                         track.artist,
-                        style: AppTheme.bodySmall.copyWith(color: AppTheme.secondaryColor),
+                        style: AppTheme.bodySmall
+                            .copyWith(color: AppTheme.secondaryColor),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -130,16 +144,17 @@ class TrackOptionsSheet extends ConsumerWidget {
 
           _OptionTile(
             icon: isFavorite ? Icons.favorite : Icons.favorite_border,
-            label: isFavorite ? 'Remove from Collection' : 'Add to My Collection',
+            label:
+                isFavorite ? 'Remove from Collection' : 'Add to My Collection',
             iconColor: isFavorite ? AppTheme.primaryColor : null,
             onTap: () {
               ref.read(favoritesProvider.notifier).toggleFavorite(track);
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text(isFavorite 
-                    ? 'Removed from Collection' 
-                    : 'Added to Collection'),
+                  content: Text(isFavorite
+                      ? 'Removed from Collection'
+                      : 'Added to Collection'),
                   duration: const Duration(seconds: 2),
                 ),
               );
@@ -160,19 +175,21 @@ class TrackOptionsSheet extends ConsumerWidget {
             builder: (context, ref, _) {
               final downloadState = ref.watch(downloadProvider);
               final isDownloaded = downloadState.isDownloaded(track.id);
-              final isDownloading = downloadState.isCurrentlyDownloading(track.id);
+              final isDownloading =
+                  downloadState.isCurrentlyDownloading(track.id);
               final isInQueue = downloadState.isInQueue(track.id);
-              
+
               String label;
               IconData icon;
               Color? iconColor;
-              
+
               if (isDownloaded) {
                 label = 'Downloaded';
                 icon = Icons.download_done_rounded;
                 iconColor = AppTheme.primaryColor;
               } else if (isDownloading) {
-                label = 'Downloading... ${(downloadState.currentProgress * 100).toInt()}%';
+                label =
+                    'Downloading... ${(downloadState.currentProgress * 100).toInt()}%';
                 icon = Icons.downloading_rounded;
                 iconColor = AppTheme.primaryColor;
               } else if (isInQueue) {
@@ -182,28 +199,30 @@ class TrackOptionsSheet extends ConsumerWidget {
                 label = 'Download';
                 icon = Icons.download_outlined;
               }
-              
+
               return _OptionTile(
                 icon: icon,
                 label: label,
                 iconColor: iconColor,
-                onTap: (isDownloaded || isDownloading || isInQueue) ? () {
-                  Navigator.pop(context);
-                } : () {
-                  ref.read(downloadProvider.notifier).addToQueue(track);
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Downloading "${track.title}"'),
-                      duration: const Duration(seconds: 2),
-                    ),
-                  );
-                },
+                onTap: (isDownloaded || isDownloading || isInQueue)
+                    ? () {
+                        Navigator.pop(context);
+                      }
+                    : () {
+                        ref.read(downloadProvider.notifier).addToQueue(track);
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Downloading "${track.title}"'),
+                            duration: const Duration(seconds: 2),
+                          ),
+                        );
+                      },
               );
             },
           ),
 
-          if (track.albumId != null)
+          if (showGoToAlbum && track.albumId.isNotEmpty)
             _OptionTile(
               icon: Icons.album_outlined,
               label: 'Go to album',
@@ -212,7 +231,8 @@ class TrackOptionsSheet extends ConsumerWidget {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => AlbumDetailScreen(albumId: track.albumId!),
+                    builder: (context) =>
+                        AlbumDetailScreen(albumId: track.albumId),
                   ),
                 );
               },
@@ -224,9 +244,9 @@ class TrackOptionsSheet extends ConsumerWidget {
             onTap: () {
               Navigator.pop(context);
               // Check if artistId is a valid numeric ID (TIDAL IDs are numeric)
-              final hasValidId = track.artistId.isNotEmpty && 
+              final hasValidId = track.artistId.isNotEmpty &&
                   int.tryParse(track.artistId) != null;
-              
+
               if (hasValidId) {
                 Navigator.push(
                   context,
@@ -257,9 +277,10 @@ class TrackOptionsSheet extends ConsumerWidget {
     );
   }
 
-  void _showAddToPlaylistDialog(BuildContext context, WidgetRef ref, Track track) {
+  void _showAddToPlaylistDialog(
+      BuildContext context, WidgetRef ref, Track track) {
     final database = ref.read(databaseProvider);
-    
+
     showModalBottomSheet(
       context: context,
       backgroundColor: AppTheme.surfaceColor,
@@ -267,7 +288,7 @@ class TrackOptionsSheet extends ConsumerWidget {
         future: database.getAllPlaylists(),
         builder: (context, snapshot) {
           final playlists = snapshot.data ?? [];
-          
+
           return Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -279,31 +300,36 @@ class TrackOptionsSheet extends ConsumerWidget {
               if (playlists.isEmpty)
                 Padding(
                   padding: const EdgeInsets.all(16),
-                  child: Text('No playlists yet', style: AppTheme.bodyMedium.copyWith(color: AppTheme.secondaryColor)),
+                  child: Text('No playlists yet',
+                      style: AppTheme.bodyMedium
+                          .copyWith(color: AppTheme.secondaryColor)),
                 )
               else
                 ...playlists.map((playlist) => ListTile(
-                  leading: const Icon(Icons.playlist_play, color: AppTheme.secondaryColor),
-                  title: Text(playlist.name),
-                  onTap: () async {
-                    await database.addTrackToPlaylist(
-                      playlistId: playlist.id,
-                      trackId: track.id,
-                      source: track.source.index,
-                      trackJson: jsonEncode(track.toJson()),
-                    );
-                    if (context.mounted) {
-                      Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Added to "${playlist.name}"')),
-                      );
-                    }
-                  },
-                )),
+                      leading: const Icon(Icons.playlist_play,
+                          color: AppTheme.secondaryColor),
+                      title: Text(playlist.name),
+                      onTap: () async {
+                        await database.addTrackToPlaylist(
+                          playlistId: playlist.id,
+                          trackId: track.id,
+                          source: track.source.index,
+                          trackJson: jsonEncode(track.toJson()),
+                        );
+                        if (context.mounted) {
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                                content: Text('Added to "${playlist.name}"')),
+                          );
+                        }
+                      },
+                    )),
               // Create new playlist option
               ListTile(
                 leading: const Icon(Icons.add, color: AppTheme.primaryColor),
-                title: Text('Create new playlist', style: TextStyle(color: AppTheme.primaryColor)),
+                title: Text('Create new playlist',
+                    style: TextStyle(color: AppTheme.primaryColor)),
                 onTap: () {
                   Navigator.pop(context);
                   _showCreatePlaylistDialog(context, ref, track);
@@ -317,9 +343,10 @@ class TrackOptionsSheet extends ConsumerWidget {
     );
   }
 
-  void _showCreatePlaylistDialog(BuildContext context, WidgetRef ref, Track track) {
+  void _showCreatePlaylistDialog(
+      BuildContext context, WidgetRef ref, Track track) {
     final controller = TextEditingController();
-    
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -340,7 +367,8 @@ class TrackOptionsSheet extends ConsumerWidget {
             onPressed: () async {
               if (controller.text.isNotEmpty) {
                 final database = ref.read(databaseProvider);
-                final playlistId = await database.createPlaylist(controller.text);
+                final playlistId =
+                    await database.createPlaylist(controller.text);
                 await database.addTrackToPlaylist(
                   playlistId: playlistId,
                   trackId: track.id,
@@ -350,7 +378,9 @@ class TrackOptionsSheet extends ConsumerWidget {
                 if (context.mounted) {
                   Navigator.pop(context);
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Created "${controller.text}" and added track')),
+                    SnackBar(
+                        content: Text(
+                            'Created "${controller.text}" and added track')),
                   );
                 }
               }
