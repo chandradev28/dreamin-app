@@ -5,25 +5,60 @@ class TidalEndpoints {
   /// Keep this pool limited to hosts that are currently healthy for the
   /// app's hifi-api request pattern.
   static const List<String> endpoints = [
-    'https://api.monochrome.tf',
-    'https://arran.monochrome.tf',
     'https://hifi-one.spotisaver.net',
     'https://hifi-two.spotisaver.net',
+    'https://hifi.geeked.wtf',
+    'https://wolf.qqdl.site',
+    'https://maus.qqdl.site',
+    'https://vogel.qqdl.site',
+    'https://katze.qqdl.site',
+    'https://hund.qqdl.site',
+    'https://ohio-1.monochrome.tf',
+    'https://frankfurt-1.monochrome.tf',
   ];
 
   /// Streaming should prefer endpoints that consistently return full media
   /// rather than metadata-only or short preview-like responses.
   static const List<String> streamEndpoints = [
-    'https://api.monochrome.tf',
-    'https://arran.monochrome.tf',
     'https://hifi-one.spotisaver.net',
     'https://hifi-two.spotisaver.net',
+    'https://hifi.geeked.wtf',
+    'https://wolf.qqdl.site',
+    'https://maus.qqdl.site',
+    'https://vogel.qqdl.site',
+    'https://katze.qqdl.site',
+    'https://hund.qqdl.site',
+    'https://ohio-1.monochrome.tf',
+    'https://frankfurt-1.monochrome.tf',
   ];
 
+  /// Monochrome publishes live TIDAL host lists through these workers.
+  /// Dreamin can consume them at runtime to discover currently healthy hosts.
+  static const List<String> workerFeeds = [
+    'https://tidal-uptime.jiffy-puffs-1j.workers.dev/',
+    'https://tidal-uptime.props-76styles.workers.dev/',
+  ];
+
+  /// Hosts excluded from dynamic promotion after direct app-style testing.
+  static const Set<String> excludedDynamicHosts = {
+    'https://api.monochrome.tf',
+    'https://arran.monochrome.tf',
+    'https://triton.squid.wtf',
+    'https://tidal.kinoplus.online',
+    'https://eu-central.monochrome.tf',
+    'https://us-west.monochrome.tf',
+    'https://monochrome-api.samidy.com',
+    'https://singapore-1.monochrome.tf',
+  };
+
   /// Removed from rotation after repeated failures in direct app-style tests:
+  /// - api.monochrome.tf (403 on track stream route)
+  /// - arran.monochrome.tf (502 on info/track routes)
+  /// - eu-central/us-west.monochrome.tf (metadata only, track route 403)
+  /// - monochrome-api.samidy.com (metadata only, track route 403)
   /// - triton.squid.wtf (502)
   /// - tidal.kinoplus.online (403/429 on key routes)
-  /// - hund/katze/maus/vogel/wolf.qqdl.site (401 auth failures)
+  /// - singapore-1.monochrome.tf (artist route timed out in direct tests)
   /// - hifi.401658.xyz redirects to GitHub, not an API
 
   // Core API paths (hifi-api format)
