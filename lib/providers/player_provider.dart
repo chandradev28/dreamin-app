@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:audio_service/audio_service.dart' as audio_service;
 import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
@@ -7,6 +8,7 @@ import '../models/models.dart';
 import '../services/tidal_service.dart';
 import '../services/music_service.dart';
 import '../services/qobuz_service.dart';
+import '../services/dreamin_audio_handler.dart';
 import '../data/database.dart';
 import 'music_provider.dart';
 import 'source_provider.dart';
@@ -68,8 +70,9 @@ class PlayerState {
 
   /// Get quality label for display: MAX (24-bit), HIGH (16-bit FLAC)
   String? get qualityLabel {
-    if (currentQuality == null)
+    if (currentQuality == null) {
       return null; // Don't show badge until quality is known
+    }
     switch (currentQuality) {
       case 'HI_RES_LOSSLESS':
         return 'MAX'; // 24-bit Hi-Res
@@ -185,8 +188,67 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       this._musicService, this._tidalService, this._database, this._ref)
       : _audioPlayer = AudioPlayer(),
         super(const PlayerState()) {
+    _attachRemoteControls();
     _initListeners();
     _initLoudnessEnhancer();
+    _publishMediaSession();
+  }
+
+  void _attachRemoteControls() {
+    dreaminAudioHandler.attachCallbacks(
+      onPlay: _handleRemotePlay,
+      onPause: pause,
+      onStop: stop,
+      onSkipNext: skipNext,
+      onSkipPrevious: skipPrevious,
+      onSeek: seek,
+    );
+  }
+
+  Future<void> _handleRemotePlay() async {
+    if (state.currentTrack != null) {
+      await resume();
+      return;
+    }
+
+    if (state.queue.isNotEmpty) {
+      await playAtIndex(state.queueIndex.clamp(0, state.queue.length - 1));
+    }
+  }
+
+  audio_service.AudioProcessingState _processingStateForStatus(
+      PlaybackStatus status) {
+    switch (status) {
+      case PlaybackStatus.idle:
+        return audio_service.AudioProcessingState.idle;
+      case PlaybackStatus.loading:
+        return audio_service.AudioProcessingState.loading;
+      case PlaybackStatus.playing:
+      case PlaybackStatus.paused:
+        return audio_service.AudioProcessingState.ready;
+      case PlaybackStatus.error:
+        return audio_service.AudioProcessingState.error;
+    }
+  }
+
+  void _publishMediaSession() {
+    dreaminAudioHandler.updateQueueFromTracks(state.queue);
+    dreaminAudioHandler.updateCurrentTrack(state.currentTrack);
+
+    final queueIndex = state.queue.isEmpty
+        ? 0
+        : state.queueIndex.clamp(0, state.queue.length - 1);
+
+    dreaminAudioHandler.updatePlayback(
+      playing: state.isPlaying,
+      processingState: _processingStateForStatus(state.status),
+      updatePosition: state.position,
+      bufferedPosition: _audioPlayer.bufferedPosition,
+      speed: _audioPlayer.speed,
+      queueIndex: queueIndex,
+      canSkipNext: state.queueIndex < state.queue.length - 1,
+      canSkipPrevious: state.position.inSeconds > 3 || state.queueIndex > 0,
+    );
   }
 
   /// Initialize loudness enhancer for volume normalization (Android only)
@@ -245,15 +307,18 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       }
 
       state = state.copyWith(status: status);
+      _publishMediaSession();
     });
 
     _audioPlayer.positionStream.listen((position) {
       state = state.copyWith(position: position);
+      _publishMediaSession();
     });
 
     _audioPlayer.durationStream.listen((duration) {
       if (duration != null) {
         state = state.copyWith(duration: duration);
+        _publishMediaSession();
       }
     });
 
@@ -279,6 +344,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
             status: PlaybackStatus.error,
             error: 'Playback failed. Please try again.',
           );
+          _publishMediaSession();
         }
       },
     );
@@ -377,6 +443,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
         queue: newQueue,
         queueSource: 'Artist: ${currentTrack.artist}',
       );
+      _publishMediaSession();
 
       playAtIndex(state.queueIndex + 1);
     } catch (e) {
@@ -638,12 +705,14 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
         queueSource: null,
         queuedTrackKeys: const [],
       );
+      _publishMediaSession();
     } else if (state.queueIndex != index) {
       state = state.copyWith(
         queueIndex: index,
         queuedTrackKeys:
             _trimQueuedTrackKeys(state.queue, index, state.queuedTrackKeys),
       );
+      _publishMediaSession();
     }
   }
 
@@ -686,6 +755,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       currentSampleRate: null,
       currentCodec: null,
     );
+    _publishMediaSession();
 
     try {
       print(
@@ -959,6 +1029,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
         currentSampleRate: sampleRate > 0 ? sampleRate : null,
         currentCodec: codec,
       );
+      _publishMediaSession();
     } catch (e) {
       if (playRequestId != _playRequestCounter) {
         print('Ignoring stale play failure for "${track.title}"');
@@ -1001,6 +1072,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
         status: PlaybackStatus.error,
         error: 'Track unavailable: "$errorMsg"',
       );
+      _publishMediaSession();
     }
   }
 
@@ -1016,6 +1088,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       queueSource: source,
       queuedTrackKeys: const [],
     );
+    _publishMediaSession();
 
     await play(tracks[startIndex]);
   }
@@ -1025,6 +1098,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     if (index < 0 || index >= state.queue.length) return;
 
     state = state.copyWith(queueIndex: index);
+    _publishMediaSession();
     await play(state.queue[index]);
   }
 
@@ -1117,6 +1191,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     final queuedTrackKeys = List<String>.from(state.queuedTrackKeys)
       ..add(_trackKey(track));
     state = state.copyWith(queue: newQueue, queuedTrackKeys: queuedTrackKeys);
+    _publishMediaSession();
   }
 
   /// Add track to play next (after current track)
@@ -1134,6 +1209,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     final queuedTrackKeys = List<String>.from(state.queuedTrackKeys)
       ..add(_trackKey(track));
     state = state.copyWith(queue: newQueue, queuedTrackKeys: queuedTrackKeys);
+    _publishMediaSession();
   }
 
   /// Toggle shuffle mode
@@ -1149,6 +1225,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
             : 0,
         queuedTrackKeys: const [],
       );
+      _publishMediaSession();
     } else {
       // Shuffle queue
       final shuffled = List<Track>.from(state.queue)..shuffle();
@@ -1166,6 +1243,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
         queueIndex: 0,
         queuedTrackKeys: const [],
       );
+      _publishMediaSession();
     }
   }
 
@@ -1221,6 +1299,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       queuedTrackKeys:
           _trimQueuedTrackKeys(queue, newIndex, state.queuedTrackKeys),
     );
+    _publishMediaSession();
   }
 
   /// Reorder tracks inside the active queue
@@ -1250,6 +1329,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       queue: queue,
       queueIndex: queueIndex,
     );
+    _publishMediaSession();
   }
 
   /// Reorder only the user-added queued tracks that sit after the current track.
@@ -1279,6 +1359,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       queue: queue,
       queuedTrackKeys: queuedTrackKeys,
     );
+    _publishMediaSession();
   }
 
   /// Clear only the manually queued upcoming tracks.
@@ -1300,6 +1381,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       queue: queue,
       queuedTrackKeys: const [],
     );
+    _publishMediaSession();
   }
 
   /// Stop playback
@@ -1307,6 +1389,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     await _recordPlayToHistory();
     await _audioPlayer.stop();
     state = const PlayerState();
+    _publishMediaSession();
   }
 
   @override
