@@ -9,6 +9,15 @@ android {
     compileSdk = 34
     ndkVersion = "25.1.8937393"
 
+    signingConfigs {
+        release {
+            storeFile file("dreamin-debug.keystore")
+            storePassword "android"
+            keyAlias "androiddebugkey"
+            keyPassword "android"
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_1_8
         targetCompatibility = JavaVersion.VERSION_1_8
@@ -28,7 +37,7 @@ android {
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.debug
+            signingConfig = signingConfigs.release
         }
     }
 }
