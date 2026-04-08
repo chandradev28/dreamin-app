@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:audio_service/audio_service.dart' as audio_service;
 import 'package:just_audio/just_audio.dart';
@@ -175,6 +176,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   final Map<String, int> _candidateRetryStartIndex = {};
   bool _isRecoveringShortTrack = false;
   bool _isRecoveringTrack = false;
+  bool _isInterruptingPlayback = false;
   final Map<String, int> _trackRecoveryAttempts = {};
   static const _minimumPlayDuration = Duration(seconds: 30);
   static const _maxConsecutiveFailures = 3; // Stop skipping after 3 failures
@@ -326,6 +328,9 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     _audioPlayer.playbackEventStream.listen(
       (event) {},
       onError: (Object e, StackTrace stackTrace) {
+        if (_isInterruptingPlayback) {
+          return;
+        }
         print('Audio Player Error: $e');
         final currentTrack = state.currentTrack;
         if (currentTrack != null &&
@@ -513,32 +518,69 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     return deduped;
   }
 
-  Future<void> _recordPlayToHistory() async {
-    if (state.currentTrack == null || _playStartTime == null) return;
-
-    final playedDuration = DateTime.now().difference(_playStartTime!);
-
-    // Only record if played for at least 30 seconds
-    if (playedDuration >= _minimumPlayDuration) {
-      try {
-        await _database.recordPlay(
-          trackId: state.currentTrack!.id,
-          source: state.currentTrack!.source.index,
-          trackJson: jsonEncode(state.currentTrack!.toJson()),
-          playedDurationMs: playedDuration.inMilliseconds,
-          genre: state.currentTrack!.genre,
-          artistId: state.currentTrack!.artistId,
-          artistName: state.currentTrack!.artist,
-        );
-
-        // Refresh history in the provider
-        _ref.read(historyProvider.notifier).loadHistory();
-      } catch (e) {
-        // Silent fail for history recording
-      }
+  Future<void> _recordTrackSnapshotToHistory(
+    Track track,
+    Duration playedDuration,
+  ) async {
+    if (playedDuration < _minimumPlayDuration) {
+      return;
     }
 
+    try {
+      await _database.recordPlay(
+        trackId: track.id,
+        source: track.source.index,
+        trackJson: jsonEncode(track.toJson()),
+        playedDurationMs: playedDuration.inMilliseconds,
+        genre: track.genre,
+        artistId: track.artistId,
+        artistName: track.artist,
+      );
+
+      _ref.read(historyProvider.notifier).loadHistory();
+    } catch (_) {
+      // Silent fail for history recording
+    }
+  }
+
+  void _scheduleOutgoingTrackRecord(Track? track, DateTime? playStartTime) {
+    if (track == null || playStartTime == null) {
+      _playStartTime = null;
+      return;
+    }
+
+    final playedDuration = DateTime.now().difference(playStartTime);
     _playStartTime = null;
+
+    if (playedDuration < _minimumPlayDuration) {
+      unawaited(
+        _database.recordSkip(track.id, track.source.index).catchError((_) {}),
+      );
+      return;
+    }
+
+    unawaited(_recordTrackSnapshotToHistory(track, playedDuration));
+  }
+
+  Future<void> _interruptCurrentPlayback() async {
+    _isInterruptingPlayback = true;
+    try {
+      await _audioPlayer.stop();
+    } catch (_) {
+      // Ignore stop failures while interrupting a stale stream.
+    } finally {
+      _isInterruptingPlayback = false;
+    }
+  }
+
+  Future<void> _recordPlayToHistory() async {
+    final track = state.currentTrack;
+    final playStartTime = _playStartTime;
+    _playStartTime = null;
+    if (track == null || playStartTime == null) return;
+
+    final playedDuration = DateTime.now().difference(playStartTime);
+    await _recordTrackSnapshotToHistory(track, playedDuration);
   }
 
   bool _isSameTrack(Track a, Track b) {
@@ -629,7 +671,8 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   }
 
   bool _supportsSameTrackRecovery(Track track) {
-    return track.source == MusicSource.qobuz;
+    return track.source == MusicSource.qobuz ||
+        track.source == MusicSource.tidal;
   }
 
   bool _scheduleTrackRecovery(
@@ -736,10 +779,18 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       _trackRecoveryAttempts.remove(_trackKey(track));
     }
 
-    // Record previous track if any
-    if (state.currentTrack != null) {
-      await _recordPlayToHistory();
+    final previousTrack = state.currentTrack;
+    final previousPlayStartTime = _playStartTime;
+    final isSwitchingTracks =
+        previousTrack != null && !_isSameTrack(previousTrack, track);
+
+    if (isSwitchingTracks) {
+      _scheduleOutgoingTrackRecord(previousTrack, previousPlayStartTime);
+    } else if (!_isRecoveringTrack && !_isRecoveringShortTrack) {
+      _playStartTime = null;
     }
+
+    await _interruptCurrentPlayback();
 
     if (playRequestId != _playRequestCounter) {
       return;
@@ -749,6 +800,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       currentTrack: track,
       status: PlaybackStatus.loading,
       position: Duration.zero,
+      duration: Duration.zero,
       error: null,
       currentQuality: '',
       currentBitDepth: null,
@@ -1110,9 +1162,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   /// Resume playback
   Future<void> resume() async {
     await _audioPlayer.play();
-    if (_playStartTime == null) {
-      _playStartTime = DateTime.now();
-    }
+    _playStartTime ??= DateTime.now();
   }
 
   /// Toggle play/pause
@@ -1132,17 +1182,6 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   /// Skip to next track
   Future<void> skipNext() async {
     if (state.queue.isEmpty) return;
-
-    // Check if this was a skip (played less than 30 seconds)
-    if (state.currentTrack != null &&
-        _playStartTime != null &&
-        DateTime.now().difference(_playStartTime!) < _minimumPlayDuration) {
-      // Record as skip
-      await _database.recordSkip(
-          state.currentTrack!.id, state.currentTrack!.source.index);
-    } else {
-      await _recordPlayToHistory();
-    }
 
     int nextIndex = state.queueIndex + 1;
     if (nextIndex >= state.queue.length) {

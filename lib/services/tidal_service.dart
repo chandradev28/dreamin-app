@@ -29,6 +29,8 @@ enum TidalQuality {
 class TidalService {
   final Dio _dio;
   int _currentEndpointIndex;
+  List<String> _apiEndpoints;
+  List<String> _streamEndpoints;
 
   /// Per-endpoint health tracking
   /// Key: endpoint index, Value: failure count
@@ -41,9 +43,17 @@ class TidalService {
   /// Prefer master first now that DASH manifests are supported.
   TidalQuality preferredQuality = TidalQuality.master;
 
+  static const Duration _endpointRefreshTtl = Duration(minutes: 10);
+  static DateTime? _lastEndpointRefreshAt;
+  static List<String>? _dynamicApiEndpoints;
+  static List<String>? _dynamicStreamEndpoints;
+  static Future<void>? _endpointRefreshFuture;
+
   TidalService()
       : _dio = Dio(),
-        _currentEndpointIndex = 0 {
+        _currentEndpointIndex = 0,
+        _apiEndpoints = List<String>.from(TidalEndpoints.endpoints),
+        _streamEndpoints = List<String>.from(TidalEndpoints.streamEndpoints) {
     // Fast timeouts for quick failover (DNS failures detected in ~3s)
     _dio.options.connectTimeout = const Duration(seconds: 3);
     _dio.options.receiveTimeout = const Duration(seconds: 5);
@@ -52,10 +62,135 @@ class TidalService {
       'User-Agent':
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
     };
+
+    _applyDynamicEndpoints();
+    _ensureEndpointListsReady();
   }
 
-  String get _currentEndpoint =>
-      TidalEndpoints.endpoints[_currentEndpointIndex];
+  String get _currentEndpoint => _apiEndpoints[_currentEndpointIndex];
+
+  void _applyDynamicEndpoints() {
+    _apiEndpoints =
+        _mergeEndpoints(_dynamicApiEndpoints, TidalEndpoints.endpoints);
+    _streamEndpoints = _mergeEndpoints(
+        _dynamicStreamEndpoints, TidalEndpoints.streamEndpoints);
+    if (_currentEndpointIndex >= _apiEndpoints.length) {
+      _currentEndpointIndex = 0;
+    }
+  }
+
+  List<String> _mergeEndpoints(
+      List<String>? dynamicList, List<String> fallback) {
+    final merged = <String>[];
+    final seen = <String>{};
+
+    for (final endpoint in [...?dynamicList, ...fallback]) {
+      if (seen.add(endpoint)) {
+        merged.add(endpoint);
+      }
+    }
+
+    return merged.isEmpty ? List<String>.from(fallback) : merged;
+  }
+
+  Future<void> _ensureEndpointListsReady() async {
+    _applyDynamicEndpoints();
+
+    final refreshedAt = _lastEndpointRefreshAt;
+    if (refreshedAt != null &&
+        DateTime.now().difference(refreshedAt) < _endpointRefreshTtl) {
+      return;
+    }
+
+    final inflight = _endpointRefreshFuture;
+    if (inflight != null) {
+      await inflight;
+      _applyDynamicEndpoints();
+      return;
+    }
+
+    final future = _refreshDynamicEndpoints();
+    _endpointRefreshFuture = future;
+    try {
+      await future;
+    } finally {
+      if (identical(_endpointRefreshFuture, future)) {
+        _endpointRefreshFuture = null;
+      }
+      _applyDynamicEndpoints();
+    }
+  }
+
+  Future<void> _refreshDynamicEndpoints() async {
+    final discoveredApi = <String>[];
+    final discoveredStream = <String>[];
+    final seenApi = <String>{};
+    final seenStream = <String>{};
+
+    for (final workerUrl in TidalEndpoints.workerFeeds) {
+      try {
+        final response = await _dio.get(
+          workerUrl,
+          options: Options(
+            sendTimeout: const Duration(seconds: 4),
+            receiveTimeout: const Duration(seconds: 4),
+          ),
+        );
+
+        final data = response.data;
+        if (data is! Map<String, dynamic>) {
+          continue;
+        }
+
+        final downHosts = <String>{};
+        final down = data['down'];
+        if (down is List) {
+          for (final item in down) {
+            if (item is Map<String, dynamic>) {
+              final url = item['url']?.toString();
+              if (url != null && url.isNotEmpty) {
+                downHosts.add(url);
+              }
+            }
+          }
+        }
+
+        void collect(
+          dynamic rawList,
+          List<String> target,
+          Set<String> seen,
+        ) {
+          if (rawList is! List) return;
+          for (final item in rawList) {
+            if (item is! Map<String, dynamic>) continue;
+            final url = item['url']?.toString();
+            if (url == null ||
+                url.isEmpty ||
+                downHosts.contains(url) ||
+                TidalEndpoints.excludedDynamicHosts.contains(url)) {
+              continue;
+            }
+            if (seen.add(url)) {
+              target.add(url);
+            }
+          }
+        }
+
+        collect(data['api'], discoveredApi, seenApi);
+        collect(data['streaming'], discoveredStream, seenStream);
+      } catch (e) {
+        print('[TIDAL] Worker discovery failed for $workerUrl: $e');
+      }
+    }
+
+    if (discoveredApi.isNotEmpty) {
+      _dynamicApiEndpoints = discoveredApi;
+    }
+    if (discoveredStream.isNotEmpty) {
+      _dynamicStreamEndpoints = discoveredStream;
+    }
+    _lastEndpointRefreshAt = DateTime.now();
+  }
 
   /// Check if endpoint is available (not in cooldown)
   bool _isEndpointAvailable(int index) {
@@ -70,7 +205,7 @@ class TidalService {
 
   /// Find next available endpoint
   int _findNextAvailableEndpoint(int startIndex) {
-    final endpointCount = TidalEndpoints.endpoints.length;
+    final endpointCount = _apiEndpoints.length;
     for (int i = 0; i < endpointCount; i++) {
       final index = (startIndex + i) % endpointCount;
       if (_isEndpointAvailable(index)) {
@@ -95,7 +230,7 @@ class TidalService {
     _endpointCooldown[index] =
         DateTime.now().add(Duration(seconds: cooldownSeconds));
     print(
-        'âš ï¸ Endpoint ${TidalEndpoints.endpoints[index]} failed (${isDnsFailure ? "DNS" : "connection"}) - cooldown ${cooldownSeconds}s');
+        'âš ï¸ Endpoint ${_apiEndpoints[index]} failed (${isDnsFailure ? "DNS" : "connection"}) - cooldown ${cooldownSeconds}s');
   }
 
   /// Mark endpoint as successful - reset failure count
@@ -111,7 +246,9 @@ class TidalService {
   Future<Response<T>> _executeWithFallback<T>(
     Future<Response<T>> Function(String baseUrl) request,
   ) async {
-    final endpointCount = TidalEndpoints.endpoints.length;
+    await _ensureEndpointListsReady();
+
+    final endpointCount = _apiEndpoints.length;
     int attempts = 0;
     Exception? lastError;
     String lastErrorType = '';
@@ -119,7 +256,7 @@ class TidalService {
     while (attempts < endpointCount) {
       // Find next available endpoint
       _currentEndpointIndex = _findNextAvailableEndpoint(_currentEndpointIndex);
-      final endpoint = TidalEndpoints.endpoints[_currentEndpointIndex];
+      final endpoint = _apiEndpoints[_currentEndpointIndex];
 
       try {
         print('ðŸ“¡ Trying endpoint: $endpoint');
@@ -733,13 +870,15 @@ class TidalService {
 
     final candidates = <StreamInfo>[];
     final seenUrls = <String>{};
+    const maxPreferredCandidates = 3;
+    const maxFallbackCandidates = 2;
     final qualitiesToTry = <TidalQuality>[
       requestedQuality,
       if (requestedQuality != TidalQuality.hifi) TidalQuality.hifi,
     ];
 
     for (final candidateQuality in qualitiesToTry) {
-      for (final endpoint in TidalEndpoints.streamEndpoints) {
+      for (final endpoint in _streamEndpoints) {
         try {
           final streamInfo = await _fetchStreamInfoFromEndpoint(
             endpoint,
@@ -748,12 +887,30 @@ class TidalService {
           );
           if (streamInfo.url.isNotEmpty && seenUrls.add(streamInfo.url)) {
             candidates.add(streamInfo);
+            final reachedPreferredLimit =
+                candidateQuality == requestedQuality &&
+                    candidates.length >= maxPreferredCandidates;
+            final reachedFallbackLimit = candidateQuality != requestedQuality &&
+                candidates.length >= maxFallbackCandidates;
+            if (reachedPreferredLimit || reachedFallbackLimit) {
+              print(
+                '[TIDAL] Returning ${candidates.length} early stream candidates from ${candidateQuality.apiValue}',
+              );
+              return candidates;
+            }
           }
         } catch (e) {
           print(
             '[TIDAL] ${candidateQuality.apiValue} failed on $endpoint: $e',
           );
         }
+      }
+
+      if (candidateQuality == requestedQuality && candidates.isNotEmpty) {
+        print(
+          '[TIDAL] Returning ${candidates.length} preferred-quality stream candidates',
+        );
+        return candidates;
       }
     }
 
@@ -769,7 +926,8 @@ class TidalService {
 
   Future<StreamInfo> _fetchStreamInfo(
       int numericId, TidalQuality quality) async {
-    for (final endpoint in TidalEndpoints.streamEndpoints) {
+    await _ensureEndpointListsReady();
+    for (final endpoint in _streamEndpoints) {
       try {
         return await _fetchStreamInfoFromEndpoint(endpoint, numericId, quality);
       } catch (_) {}
@@ -825,7 +983,8 @@ class TidalService {
     Future<Response<T>> Function(String baseUrl) request,
   ) async {
     Exception? lastError;
-    for (final endpoint in TidalEndpoints.streamEndpoints) {
+    await _ensureEndpointListsReady();
+    for (final endpoint in _streamEndpoints) {
       try {
         return await request(endpoint);
       } on DioException catch (e) {
