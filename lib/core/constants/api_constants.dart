@@ -5,9 +5,14 @@ class TidalEndpoints {
   /// Keep this pool limited to hosts that are currently healthy for the
   /// app's hifi-api request pattern.
   static const List<String> endpoints = [
+    'https://triton.squid.wtf',
     'https://hifi-one.spotisaver.net',
     'https://hifi-two.spotisaver.net',
     'https://hifi.geeked.wtf',
+    'https://singapore-1.monochrome.tf',
+    'https://hfapi.dyamuh.dev',
+    'https://hfapi.aluratech.org',
+    'https://api.studentsneed.help',
     'https://wolf.qqdl.site',
     'https://maus.qqdl.site',
     'https://vogel.qqdl.site',
@@ -20,16 +25,21 @@ class TidalEndpoints {
   /// Streaming should prefer endpoints that consistently return full media
   /// rather than metadata-only or short preview-like responses.
   static const List<String> streamEndpoints = [
-    'https://hifi-one.spotisaver.net',
     'https://hifi-two.spotisaver.net',
+    'https://hifi-one.spotisaver.net',
+    'https://hfapi.aluratech.org',
+    'https://api.studentsneed.help',
+    'https://hfapi.dyamuh.dev',
     'https://hifi.geeked.wtf',
+    'https://triton.squid.wtf',
+    'https://singapore-1.monochrome.tf',
+    'https://frankfurt-1.monochrome.tf',
+    'https://ohio-1.monochrome.tf',
     'https://wolf.qqdl.site',
     'https://maus.qqdl.site',
     'https://vogel.qqdl.site',
     'https://katze.qqdl.site',
     'https://hund.qqdl.site',
-    'https://ohio-1.monochrome.tf',
-    'https://frankfurt-1.monochrome.tf',
   ];
 
   /// Monochrome publishes live TIDAL host lists through these workers.
@@ -43,12 +53,10 @@ class TidalEndpoints {
   static const Set<String> excludedDynamicHosts = {
     'https://api.monochrome.tf',
     'https://arran.monochrome.tf',
-    'https://triton.squid.wtf',
     'https://tidal.kinoplus.online',
     'https://eu-central.monochrome.tf',
     'https://us-west.monochrome.tf',
     'https://monochrome-api.samidy.com',
-    'https://singapore-1.monochrome.tf',
   };
 
   /// Removed from rotation after repeated failures in direct app-style tests:
@@ -56,9 +64,9 @@ class TidalEndpoints {
   /// - arran.monochrome.tf (502 on info/track routes)
   /// - eu-central/us-west.monochrome.tf (metadata only, track route 403)
   /// - monochrome-api.samidy.com (metadata only, track route 403)
-  /// - triton.squid.wtf (502)
+  /// - triton.squid.wtf was previously failing, but is now healthy again
   /// - tidal.kinoplus.online (403/429 on key routes)
-  /// - singapore-1.monochrome.tf (artist route timed out in direct tests)
+  /// - singapore-1.monochrome.tf was previously timing out, but is now healthy
   /// - hifi.401658.xyz redirects to GitHub, not an API
 
   // Core API paths (hifi-api format)

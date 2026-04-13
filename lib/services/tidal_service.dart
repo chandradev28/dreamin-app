@@ -31,6 +31,7 @@ class TidalService {
   int _currentEndpointIndex;
   List<String> _apiEndpoints;
   List<String> _streamEndpoints;
+  int _preferredStreamEndpointIndex;
 
   /// Per-endpoint health tracking
   /// Key: endpoint index, Value: failure count
@@ -46,14 +47,14 @@ class TidalService {
   static const Duration _endpointRefreshTtl = Duration(minutes: 10);
   static DateTime? _lastEndpointRefreshAt;
   static List<String>? _dynamicApiEndpoints;
-  static List<String>? _dynamicStreamEndpoints;
   static Future<void>? _endpointRefreshFuture;
 
   TidalService()
       : _dio = Dio(),
         _currentEndpointIndex = 0,
         _apiEndpoints = List<String>.from(TidalEndpoints.endpoints),
-        _streamEndpoints = List<String>.from(TidalEndpoints.streamEndpoints) {
+        _streamEndpoints = List<String>.from(TidalEndpoints.streamEndpoints),
+        _preferredStreamEndpointIndex = 0 {
     // Fast timeouts for quick failover (DNS failures detected in ~3s)
     _dio.options.connectTimeout = const Duration(seconds: 3);
     _dio.options.receiveTimeout = const Duration(seconds: 5);
@@ -72,10 +73,15 @@ class TidalService {
   void _applyDynamicEndpoints() {
     _apiEndpoints =
         _mergeEndpoints(_dynamicApiEndpoints, TidalEndpoints.endpoints);
-    _streamEndpoints = _mergeEndpoints(
-        _dynamicStreamEndpoints, TidalEndpoints.streamEndpoints);
+    // Keep stream playback on the verified static pool. Worker-fed dynamic
+    // hosts can be useful for metadata discovery, but they add too much
+    // startup risk for playback when a worker advertises slow or dead hosts.
+    _streamEndpoints = List<String>.from(TidalEndpoints.streamEndpoints);
     if (_currentEndpointIndex >= _apiEndpoints.length) {
       _currentEndpointIndex = 0;
+    }
+    if (_preferredStreamEndpointIndex >= _streamEndpoints.length) {
+      _preferredStreamEndpointIndex = 0;
     }
   }
 
@@ -185,9 +191,6 @@ class TidalService {
 
     if (discoveredApi.isNotEmpty) {
       _dynamicApiEndpoints = discoveredApi;
-    }
-    if (discoveredStream.isNotEmpty) {
-      _dynamicStreamEndpoints = discoveredStream;
     }
     _lastEndpointRefreshAt = DateTime.now();
   }
@@ -872,13 +875,17 @@ class TidalService {
     final seenUrls = <String>{};
     const maxPreferredCandidates = 3;
     const maxFallbackCandidates = 2;
+    final orderedStreamEndpoints = [
+      ..._streamEndpoints.sublist(_preferredStreamEndpointIndex),
+      ..._streamEndpoints.sublist(0, _preferredStreamEndpointIndex),
+    ];
     final qualitiesToTry = <TidalQuality>[
       requestedQuality,
       if (requestedQuality != TidalQuality.hifi) TidalQuality.hifi,
     ];
 
     for (final candidateQuality in qualitiesToTry) {
-      for (final endpoint in _streamEndpoints) {
+      for (final endpoint in orderedStreamEndpoints) {
         try {
           final streamInfo = await _fetchStreamInfoFromEndpoint(
             endpoint,
@@ -886,6 +893,10 @@ class TidalService {
             candidateQuality,
           );
           if (streamInfo.url.isNotEmpty && seenUrls.add(streamInfo.url)) {
+            final originalIndex = _streamEndpoints.indexOf(endpoint);
+            if (originalIndex != -1) {
+              _preferredStreamEndpointIndex = originalIndex;
+            }
             candidates.add(streamInfo);
             final reachedPreferredLimit =
                 candidateQuality == requestedQuality &&
@@ -927,9 +938,19 @@ class TidalService {
   Future<StreamInfo> _fetchStreamInfo(
       int numericId, TidalQuality quality) async {
     await _ensureEndpointListsReady();
-    for (final endpoint in _streamEndpoints) {
+    final orderedStreamEndpoints = [
+      ..._streamEndpoints.sublist(_preferredStreamEndpointIndex),
+      ..._streamEndpoints.sublist(0, _preferredStreamEndpointIndex),
+    ];
+    for (final endpoint in orderedStreamEndpoints) {
       try {
-        return await _fetchStreamInfoFromEndpoint(endpoint, numericId, quality);
+        final streamInfo =
+            await _fetchStreamInfoFromEndpoint(endpoint, numericId, quality);
+        final originalIndex = _streamEndpoints.indexOf(endpoint);
+        if (originalIndex != -1) {
+          _preferredStreamEndpointIndex = originalIndex;
+        }
+        return streamInfo;
       } catch (_) {}
     }
     throw TidalApiException(
@@ -948,6 +969,10 @@ class TidalService {
         'id': numericId,
         'quality': quality.apiValue,
       },
+      options: Options(
+        sendTimeout: const Duration(seconds: 2),
+        receiveTimeout: const Duration(seconds: 4),
+      ),
     );
 
     final data = response.data as Map<String, dynamic>;
@@ -984,9 +1009,18 @@ class TidalService {
   ) async {
     Exception? lastError;
     await _ensureEndpointListsReady();
-    for (final endpoint in _streamEndpoints) {
+    final orderedStreamEndpoints = [
+      ..._streamEndpoints.sublist(_preferredStreamEndpointIndex),
+      ..._streamEndpoints.sublist(0, _preferredStreamEndpointIndex),
+    ];
+    for (final endpoint in orderedStreamEndpoints) {
       try {
-        return await request(endpoint);
+        final response = await request(endpoint);
+        final originalIndex = _streamEndpoints.indexOf(endpoint);
+        if (originalIndex != -1) {
+          _preferredStreamEndpointIndex = originalIndex;
+        }
+        return response;
       } on DioException catch (e) {
         lastError = e;
       } catch (e) {
